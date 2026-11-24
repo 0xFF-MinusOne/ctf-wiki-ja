@@ -1,12 +1,12 @@
 # TurboFan JIT Compiler
 
-对于全量代码编译的场景，大部分代码可能就执行一到两次，那么这个这个时候使用解释执行的方式去运行 JavaScript 代码的效率是比传统的 JIT 编译运行是要高的，但当一段代码需要被反复多次执行时，使用 JIT 编译的方式去运行的整体销量就比解释执行要高了——由此我们编有 V8 的 JIT compiler：[TurboFan Compiler](https://v8.dev/docs/turbofan) ，当一段代码被反复执行多次、或是手动指定要编译时，Ignition 便会将 bytecode 传递给 TurboFan，由其进行 JIT 编译生成对应架构的机器码
+全コードコンパイルの場面では、ほとんどのコードは 1、2 回しか実行されないかもしれません。そのような場合、JavaScript コードをインタプリタ実行するほうが、従来の JIT コンパイルによる実行よりも効率が高くなります。しかし、あるコードを何度も繰り返し実行する必要がある場合には、JIT コンパイルで実行するほうが、全体の効率はインタプリタ実行より高くなります。このため V8 には JIT compiler である [TurboFan Compiler](https://v8.dev/docs/turbofan) があります。あるコードが繰り返し何度も実行されたとき、あるいは手動でコンパイルを指定されたとき、Ignition は bytecode を TurboFan に渡し、TurboFan が JIT コンパイルを行って、対応するアーキテクチャのマシンコードを生成します。
 
 ![](https://s2.loli.net/2025/03/11/rfiMqLce6Qt435h.png)
 
 ## TurboFan Internals
 
-> 待施工。
+> 作成中です。
 
 ## Reference
 
@@ -24,7 +24,7 @@ https://arttnba3.cn
 
 [JavaScript engine fundamentals: Shapes and Inline Caches](https://mathiasbynens.be/notes/shapes-ics)
 
-[Winty's blog - 现代浏览器架构漫谈](https://github.com/LuckyWinty/blog/blob/master/markdown/Q%26A/%E7%8E%B0%E4%BB%A3%E6%B5%8F%E8%A7%88%E5%99%A8%E6%9E%B6%E6%9E%84%E6%BC%AB%E8%B0%88.md)
+[Winty's blog - 現代ブラウザのアーキテクチャ雑談](https://github.com/LuckyWinty/blog/blob/master/markdown/Q%26A/%E7%8E%B0%E4%BB%A3%E6%B5%8F%E8%A7%88%E5%99%A8%E6%9E%B6%E6%9E%84%E6%BC%AB%E8%B0%88.md)
 
 [Firing up the Ignition interpreter](https://v8.dev/blog/ignition-interpreter)
 

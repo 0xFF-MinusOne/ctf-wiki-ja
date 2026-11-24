@@ -1,68 +1,68 @@
-# 基础操作
+# 基本操作
 
 ## unlink
 
-unlink 用来将一个双向链表（只存储空闲的 chunk）中的一个元素取出来，可能在以下地方使用
+unlink は、双方向リスト(空き chunk のみを格納する)から要素を 1 つ取り出すためのもので、次の場所で使われることがあります。
 
 - malloc
-    - 从恰好大小合适的 large bin 中获取 chunk。
-        - **这里需要注意的是 fastbin 与 small bin 就没有使用 unlink，这就是为什么漏洞会经常出现在它们这里的原因。**
-        - 依次遍历处理 unsorted bin 时也没有使用 unlink 。
-    - 从比请求的 chunk 所在的 bin 大的 bin 中取 chunk。
+    - ちょうどよいサイズの large bin から chunk を取得するとき。
+        - **ここで注意すべきは、fastbin と small bin では unlink が使われないことで、これが脆弱性がこれらでよく見つかる理由です。**
+        - unsorted bin を順に走査して処理するときにも unlink は使われません。
+    - 要求された chunk が属する bin より大きい bin から chunk を取り出すとき。
 - free
-    - 后向合并，合并物理相邻低地址空闲 chunk。
-    - 前向合并，合并物理相邻高地址空闲 chunk（除了 top chunk）。
+    - 後方統合。物理的に隣接する低位アドレスの空き chunk を統合する。
+    - 前方統合。物理的に隣接する高位アドレスの空き chunk を統合する(top chunk を除く)。
 - malloc_consolidate
-    - 后向合并，合并物理相邻低地址空闲 chunk。
-    - 前向合并，合并物理相邻高地址空闲 chunk（除了 top chunk）。
+    - 後方統合。物理的に隣接する低位アドレスの空き chunk を統合する。
+    - 前方統合。物理的に隣接する高位アドレスの空き chunk を統合する(top chunk を除く)。
 - realloc
-    - 前向扩展，合并物理相邻高地址空闲 chunk（除了top chunk）。
+    - 前方拡張。物理的に隣接する高位アドレスの空き chunk を統合する(top chunk を除く)。
 
-由于 unlink 使用非常频繁，所以 unlink 被实现为了一个宏，如下
+unlink は非常に頻繁に使われるため、次のようにマクロとして実装されています。
 
 ```c
 /* Take a chunk off a bin list */
 // unlink p
 #define unlink(AV, P, BK, FD) {                                            \
-    // 由于 P 已经在双向链表中，所以有两个地方记录其大小，所以检查一下其大小是否一致。
+    // P はすでに双方向リストの中にあるため、サイズを記録している箇所が 2 つある。そこでサイズが一致するかを検査する。
     if (__builtin_expect (chunksize(P) != prev_size (next_chunk(P)), 0))      \
       malloc_printerr ("corrupted size vs. prev_size");			      \
     FD = P->fd;                                                                      \
     BK = P->bk;                                                                      \
-    // 防止攻击者简单篡改空闲的 chunk 的 fd 与 bk 来实现任意写的效果。
+    // 攻撃者が空き chunk の fd と bk を単純に改ざんして任意書き込みを実現するのを防ぐ。
     if (__builtin_expect (FD->bk != P || BK->fd != P, 0))                      \
       malloc_printerr (check_action, "corrupted double-linked list", P, AV);  \
     else {                                                                      \
         FD->bk = BK;                                                              \
         BK->fd = FD;                                                              \
-        // 下面主要考虑 P 对应的 nextsize 双向链表的修改
+        // 以下では主に、P に対応する nextsize 双方向リストの変更を考える
         if (!in_smallbin_range (chunksize_nomask (P))                              \
-            // 如果P->fd_nextsize为 NULL，表明 P 未插入到 nextsize 链表中。
-            // 那么其实也就没有必要对 nextsize 字段进行修改了。
-            // 这里没有去判断 bk_nextsize 字段，可能会出问题。
+            // P->fd_nextsize が NULL なら、P は nextsize リストに挿入されていない。
+            // その場合、nextsize フィールドを変更する必要もない。
+            // ここでは bk_nextsize フィールドを判定していないため、問題が起きる可能性がある。
             && __builtin_expect (P->fd_nextsize != NULL, 0)) {                      \
-            // 类似于小的 chunk 的检查思路
+            // 小さい chunk の検査と同様の考え方
             if (__builtin_expect (P->fd_nextsize->bk_nextsize != P, 0)              \
                 || __builtin_expect (P->bk_nextsize->fd_nextsize != P, 0))    \
               malloc_printerr (check_action,                                      \
                                "corrupted double-linked list (not small)",    \
                                P, AV);                                              \
-            // 这里说明 P 已经在 nextsize 链表中了。
-            // 如果 FD 没有在 nextsize 链表中
+            // ここは、P がすでに nextsize リストの中にあることを意味する。
+            // FD が nextsize リストの中にない場合
             if (FD->fd_nextsize == NULL) {                                      \
-                // 如果 nextsize 串起来的双链表只有 P 本身，那就直接拿走 P
-                // 令 FD 为 nextsize 串起来的
+                // nextsize でつながれた双方向リストが P 自身だけなら、P をそのまま取り除く
+                // FD を nextsize でつながれたリストとする
                 if (P->fd_nextsize == P)                                      \
                   FD->fd_nextsize = FD->bk_nextsize = FD;                      \
                 else {                                                              \
-                // 否则我们需要将 FD 插入到 nextsize 形成的双链表中
+                // そうでなければ、FD を nextsize が形成する双方向リストに挿入する必要がある
                     FD->fd_nextsize = P->fd_nextsize;                              \
                     FD->bk_nextsize = P->bk_nextsize;                              \
                     P->fd_nextsize->bk_nextsize = FD;                              \
                     P->bk_nextsize->fd_nextsize = FD;                              \
                   }                                                              \
               } else {                                                              \
-                // 如果在的话，直接拿走即可
+                // リストの中にあるなら、そのまま取り除けばよい
                 P->fd_nextsize->bk_nextsize = P->bk_nextsize;                      \
                 P->bk_nextsize->fd_nextsize = P->fd_nextsize;                      \
               }                                                                      \
@@ -71,27 +71,27 @@ unlink 用来将一个双向链表（只存储空闲的 chunk）中的一个元�
 }
 ```
 
-这里我们以 small bin 的 unlink 为例子介绍一下。对于 large bin 的 unlink，与其类似，只是多了一个nextsize 的处理。
+ここでは small bin の unlink を例に紹介します。large bin の unlink もこれと似ており、nextsize の処理が加わるだけです。
 
 ![](./figure/unlink_smallbin_intro.png)
 
-可以看出， **P 最后的 fd 和 bk 指针并没有发生变化**，但是当我们去遍历整个双向链表时，已经遍历不到对应的链表了。这一点没有变化还是很有用处的，因为我们有时候可以使用这个方法来泄漏地址
+**P の最終的な fd と bk ポインタは変化していない**ことがわかりますが、双方向リスト全体を走査しても、対応するリストにはもうたどり着けません。この「変化していない」点は役に立ちます。この方法でアドレスをリークできることがあるからです。
 
-- libc 地址
-    - P 位于双向链表头部，bk 泄漏
-    - P 位于双向链表尾部，fd 泄漏
-    - 双向链表只包含一个空闲 chunk 时，P 位于双向链表中，fd 和 bk 均可以泄漏
-- 泄漏堆地址，双向链表包含多个空闲 chunk
-    - P 位于双向链表头部，fd 泄漏
-    - P 位于双向链表中，fd 和 bk 均可以泄漏
-    - P 位于双向链表尾部，bk 泄漏
+- libc のアドレス
+    - P が双方向リストの先頭にあるとき、bk でリークできる
+    - P が双方向リストの末尾にあるとき、fd でリークできる
+    - 双方向リストに空き chunk が 1 つだけのとき、P は双方向リストの中にあり、fd と bk のどちらでもリークできる
+- ヒープのアドレスのリーク(双方向リストに複数の空き chunk がある場合)
+    - P が双方向リストの先頭にあるとき、fd でリークできる
+    - P が双方向リストの中にあるとき、fd と bk のどちらでもリークできる
+    - P が双方向リストの末尾にあるとき、bk でリークできる
 
 **注意**
 
-- 这里的头部指的是 bin 的 fd 指向的 chunk，即双向链表中最新加入的 chunk。
-- 这里的尾部指的是 bin 的 bk 指向的 chunk，即双向链表中最先加入的 chunk。
+- ここでの先頭とは、bin の fd が指す chunk、つまり双方向リストの中で最も新しく追加された chunk を指します。
+- ここでの末尾とは、bin の bk が指す chunk、つまり双方向リストの中で最も早く追加された chunk を指します。
 
-同时，无论是对于 fd，bk 还是 fd_nextsize ，bk_nextsize，程序都会检测 fd 和 bk 是否满足对应的要求。
+また、fd、bk に対しても fd_nextsize、bk_nextsize に対しても、プログラムは fd と bk が対応する要件を満たしているかを検査します。
 
 ```c
 // fd bk
@@ -106,13 +106,13 @@ if (__builtin_expect (FD->bk != P || BK->fd != P, 0))                      \
                                P, AV);
 ```
 
-看起来似乎很正常。我们以 fd 和 bk 为例，P 的 forward chunk 的 bk 很自然是 P ，同样 P 的 backward chunk 的 fd 也很自然是 P 。如果没有做相应的检查的话，我们可以修改 P 的 fd 与 bk，从而可以很容易地达到任意地址写的效果。关于更加详细的例子，可以参见利用部分的 unlink 。
+一見、ごく普通に見えます。fd と bk を例にすると、P の forward chunk の bk は当然 P であり、同様に P の backward chunk の fd も当然 P です。対応する検査がなければ、P の fd と bk を書き換えることで、任意アドレス書き込みの効果を簡単に得られてしまいます。より詳しい例については、攻撃編の unlink を参照してください。
 
-**注意：堆的第一个 chunk 所记录的 prev_inuse 位默认为1。**
+**注意: ヒープの最初の chunk が記録する prev_inuse ビットは、デフォルトで 1 です。**
 
 ## malloc_printerr
 
-在 glibc malloc 时检测到错误的时候，会调用 `malloc_printerr` 函数。
+glibc の malloc でエラーが検出されると、`malloc_printerr` 関数が呼び出されます。
 
 ```cpp
 static void malloc_printerr(const char *str) {
@@ -121,7 +121,7 @@ static void malloc_printerr(const char *str) {
 }
 ```
 
-主要会调用 `__libc_message` 来执行`abort` 函数，如下
+主に `__libc_message` を呼び出して `abort` 関数を実行します。次のとおりです。
 
 ```c
   if ((action & do_abort)) {
@@ -133,7 +133,7 @@ static void malloc_printerr(const char *str) {
   }
 ```
 
-在`abort` 函数里，在 glibc 还是2.23 版本时，会 fflush stream。
+`abort` 関数では、glibc が 2.23 のバージョンの場合、stream を fflush します。
 
 ```c
   /* Flush all streams.  We cannot close them now because the user
@@ -144,4 +144,3 @@ static void malloc_printerr(const char *str) {
       fflush (NULL);
     }
 ```
-

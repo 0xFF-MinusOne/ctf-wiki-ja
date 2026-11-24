@@ -1,37 +1,37 @@
 # Change Others
 
-如果我们可以改变特权进程的执行轨迹，也可以实现提权。这里我们从以下角度来考虑如何改变特权进程的执行轨迹。
+特権プロセスの実行の流れを変えられれば、権限昇格も実現できます。ここでは、特権プロセスの実行の流れを変える方法を次の観点から考えます。
 
-- 改数据
-- 改代码
+- データを改ざんする
+- コードを改ざんする
 
-## 改数据
+## データを改ざんする
 
-这里给出几种通过改变特权进程使用的数据来进行提权的方法。
+ここでは、特権プロセスが使うデータを改ざんして権限昇格する方法をいくつか紹介します。
 
-### 符号链接
+### シンボリックリンク
 
-如果一个 root 权限的进程会执行一个符号链接的程序，并且该符号链接或者符号链接指向的程序可以由攻击者控制，攻击者就可以实现提权。 
+root 権限のプロセスがシンボリックリンクのプログラムを実行し、そのシンボリックリンク、またはリンク先のプログラムを攻撃者が制御できる場合、攻撃者は権限昇格を実現できます。
 
 ### call_usermodehelper
 
-`call_usermodehelper` 是一种内核线程执行用户态应用的方式，并且启动的进程具有 root 权限。因此，如果我们能够**控制具体要执行的应用**，那就可以实现提权。在内核中，`call_usermodehelper` 具体要执行的应用往往是由某个变量指定的，因此我们只需要想办法修改掉这个变量即可。
+`call_usermodehelper` は、カーネルスレッドからユーザー空間のアプリケーションを実行する方法で、起動されたプロセスは root 権限を持ちます。したがって、**実行するアプリケーションを制御**できれば、権限昇格を実現できます。カーネルでは、`call_usermodehelper` が実行するアプリケーションは多くの場合ある変数で指定されているため、その変数を書き換える方法を考えればよいことになります。
 
-值得一提的是，在部分近期 CTF 题目及少数现实应用（如 AOSP 内核）中启用了 CONFIG_STATIC_USERMODEHELPER 选项，这会导致 `call_usermodehelper` 只能直接执行特定的应用（由一个编译时确定的只读字符串控制），从而防御此利用方式。  
+なお、最近の一部の CTF の問題や少数の実システム(AOSP カーネルなど)では CONFIG_STATIC_USERMODEHELPER オプションが有効になっています。これにより `call_usermodehelper` は特定のアプリケーション(コンパイル時に決まる読み取り専用の文字列で指定されるもの)しか直接実行できなくなり、この攻略手法は防がれます。
 
-不难看出，这是一种典型的数据流攻击方法。一般常用的主要有以下几种方式。
+これは典型的なデータフロー攻撃の手法です。よく使われる方法は主に次のとおりです。
 
-#### 修改 modprobe_path
+#### modprobe_path の書き換え
 
-修改 modprobe_path 实现提权的基本流程如下
+modprobe_path を書き換えて権限昇格する基本的な流れは次のとおりです。
 
-1. 获取 modprobe_path 的地址。
-2. 修改 modprobe_path 为指定的程序。
-3. 触发执行 `call_modprobe`，从而实现提权 。这里我们可以利用以下几种方式来触发
-    1. （已过时）执行一个非法的可执行文件。非法的可执行文件需要满足相应的要求（参考 call_usermodehelper 部分的介绍）。然而，在 2024 年 11 月中引入的[新补丁](https://web.git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=fa1bdca98d74472dcdb79cb948b54f63b5886c04)移除了加载非法可执行文件对 binfmt 的自动加载，使得此方法不再适用于 Linux 6.12 之后的版本。
-    2. 引诱内核加载新内核模块（如使用未知协议来）触发。
+1. modprobe_path のアドレスを取得する。
+2. modprobe_path を、指定したプログラムに書き換える。
+3. `call_modprobe` を実行させて権限昇格を実現する。実行させるには次のような方法があります。
+    1. (すでに古い)不正な実行ファイルを実行する。不正な実行ファイルは、所定の条件を満たす必要があります(call_usermodehelper の節の説明を参照)。ただし、2024 年 11 月に導入された[新しいパッチ](https://web.git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/commit/?id=fa1bdca98d74472dcdb79cb948b54f63b5886c04)により、不正な実行ファイルのロード時に binfmt が自動ロードされなくなったため、この方法は Linux 6.12 以降のバージョンでは使えません。
+    2. カーネルに新しいカーネルモジュールをロードさせる(未知のプロトコルを使うなど)ことで実行させる。
 
-这里我们也给出使用 modprobe_path 的模板。
+modprobe_path を使う場合のテンプレートも示します。
 
 ```c
 // step 1. modify modprobe_path to the target value
@@ -49,44 +49,44 @@ system("/home/pwn/dummy");
 socket(AF_INET,SOCK_STREAM,132);
 ```
 
-在这个过程中，我们着重关注下如何定位 modprobe_path。
+この過程では、modprobe_path をどのように特定するかが特に重要になります。
 
-##### 直接定位
+##### 直接特定する
 
-由于 modprobe_path 的取值是确定的，所以我们可以直接扫描内存，寻找对应的字符串。这需要我们具有扫描内存的能力。
+modprobe_path の値は決まっているため、メモリをスキャンして対応する文字列を探せます。これには、メモリをスキャンする能力が必要です。
 
-##### 间接定位
+##### 間接的に特定する
 
-考虑到 modprobe_path 相对于内核基地址的偏移是固定的，我们可以先获取到内核的基地址，然后根据相对偏移来得到 modprobe_path 的地址。
+modprobe_path のカーネルベースアドレスからのオフセットは固定なので、まずカーネルのベースアドレスを取得し、相対オフセットから modprobe_path のアドレスを求められます。
 
-#### 修改 poweroff_cmd
+#### poweroff_cmd の書き換え
 
-1. 修改 poweroff_cmd 为指定的程序。
-2. 劫持控制流执行 `__orderly_poweroff`。
+1. poweroff_cmd を、指定したプログラムに書き換える。
+2. 制御フローを奪って `__orderly_poweroff` を実行させる。
 
-关于如何定位 poweroff_cmd，我们可以采用类似于定位 `modprobe_path` 的方法。
+poweroff_cmd の特定方法は、`modprobe_path` の特定と同様の方法が使えます。
 
-#### 修改 core_pattern
+#### core_pattern の書き換え
 
-1. 修改 core_pattern 为 `|/path/to/your/program`。
-2. 启用崩溃转储，触发内核执行 core_pattern [管道符后的程序](https://elixir.bootlin.com/linux/v6.18.1/source/fs/coredump.c#L971)。
+1. core_pattern を `|/path/to/your/program` に書き換える。
+2. クラッシュダンプを有効にし、カーネルに core_pattern の[パイプ記号以降のプログラム](https://elixir.bootlin.com/linux/v6.18.1/source/fs/coredump.c#L971)を実行させる。
 
-由于 core_pattern 中大写 %P 表示崩溃进程在宿主机中的 PID，因此也常被用来取代 modprobe_path 用于容器环境下的提权。
+core_pattern 中の大文字の %P はクラッシュしたプロセスのホスト側での PID を表すため、コンテナ環境での権限昇格では modprobe_path の代わりによく使われます。
 
-关于如何定位 core_pattern，我们可以采用类似于定位 `modprobe_path` 的方法。  
-关于使用 core_pattern 进行提权的更多细节，可以参考[近期 kctf 的 exp](https://github.com/google/security-research/blob/master/pocs/linux/kernelctf/CVE-2025-21836_lts/exploit/lts-6.6.75/exploit.c#L398) 。  
+core_pattern の特定方法は、`modprobe_path` の特定と同様の方法が使えます。  
+core_pattern を使った権限昇格の詳細については、[最近の kctf の exp](https://github.com/google/security-research/blob/master/pocs/linux/kernelctf/CVE-2025-21836_lts/exploit/lts-6.6.75/exploit.c#L398) を参照してください。  
 
-## 改代码
+## コードを改ざんする
 
-在程序运行时，如果我们可以修改 root 权限进程执行的代码，那其实我们也可以实现提权。
+プログラムの実行中に、root 権限のプロセスが実行するコードを書き換えられるなら、権限昇格を実現できます。
 
-### 修改 vDSO 代码
+### vDSO のコードの書き換え
 
-内核中 vDSO 的代码会被映射到所有的用户态进程中。如果有一个高特权的进程会周期性地调用 vDSO 中的函数，那我们可以考虑把 vDSO 中相应的函数修改为特定的 shellcode。当高权限的进程执行相应的代码时，我们就可以进行提权。
+カーネルの vDSO のコードは、すべてのユーザー空間プロセスにマップされます。高い権限のプロセスが vDSO 内の関数を定期的に呼び出す場合、vDSO 内の該当関数を特定の shellcode に書き換えることを考えられます。高い権限のプロセスがそのコードを実行したとき、権限昇格が可能になります。
 
-在早期的时候，Linux 中的 vDSO 是可写的，考虑到这样的风险，Kees Cook 提出引入 `post-init read-only` 的数据，即将那些初始化后不再被写的数据标记为只读，来防御这样的利用。
+初期の Linux では vDSO は書き込み可能でした。こうしたリスクを考慮して、Kees Cook は `post-init read-only` のデータ、つまり初期化後に書き込まれないデータを読み取り専用にする仕組みを導入し、この種の攻略を防ぎました。
 
-在引入之前，vDSO 对应的 raw_data 只是标记了对齐属性。
+導入前は、vDSO に対応する raw_data にはアラインメント属性が付いているだけでした。
 
 ```c
 	fprintf(outfile, "/* AUTOMATICALLY GENERATED -- DO NOT EDIT */\n\n");
@@ -99,7 +99,7 @@ socket(AF_INET,SOCK_STREAM,132);
 		mapping_size);
 ```
 
-引入之后，vDSO 对应的 raw_data 则被标记为了初始化后只读。
+導入後は、vDSO に対応する raw_data は初期化後読み取り専用としてマークされています。
 
 ```c
 	fprintf(outfile, "/* AUTOMATICALLY GENERATED -- DO NOT EDIT */\n\n");
@@ -112,19 +112,19 @@ socket(AF_INET,SOCK_STREAM,132);
 		mapping_size);
 ```
 
-通过修改 vDSO 进行提权的基本方式如下
+vDSO を書き換えて権限昇格する基本的な方法は次のとおりです。
 
-- 定位 vDSO
-- 修改 vDSO 的特定函数为指定的 shellcode
-- 等待触发执行 shellcode
+- vDSO を特定する
+- vDSO の特定の関数を、指定した shellcode に書き換える
+- shellcode が実行されるのを待つ
 
-这里我们着重关注下如何定位 vDSO。
+ここでは、vDSO をどのように特定するかが特に重要になります。
 
-#### ida 里定位
+#### ida で特定する
 
-这里我们介绍一下如何在 vmlinux 中找到 vDSO 的位置。
+ここでは、vmlinux から vDSO の位置を見つける方法を紹介します。
 
-1. 在 ida 里定位 init_vdso 函数的地址
+1. ida で init_vdso 関数のアドレスを特定する
 
 ```c
 __int64 init_vdso()
@@ -139,7 +139,7 @@ __int64 init_vdso()
 }
 ```
 
-2. 可以看到 `vdso_image_64` 和 `vdso_image_x32`。以`vdso_image_64` 为例，点到该变量的地址
+2. `vdso_image_64` と `vdso_image_x32` が見つかります。`vdso_image_64` を例に、その変数のアドレスへ移動します
 
 ```
 .rodata:FFFFFFFF81A01300                 public vdso_image_64
@@ -147,7 +147,7 @@ __int64 init_vdso()
 .rodata:FFFFFFFF81A01300                                         ; init_vdso+1↓o
 ```
 
-3. 点击 `raw_data` 即可知道 64 位 vDSO 在内核镜像中的地址，可以看到，vDSO 确实是以页对齐的。
+3. `raw_data` をクリックすると、64 ビット vDSO のカーネルイメージ内でのアドレスが分かります。vDSO は確かにページアラインされています。
 
 ```
 .data:FFFFFFFF81E04000 raw_data        db  7Fh ;              ; DATA XREF: .rodata:vdso_image_64↑o
@@ -156,17 +156,17 @@ __int64 init_vdso()
 .data:FFFFFFFF81E04003                 db  46h ; F
 ```
 
-从最后的符号来看，我们也可以直接使用 `raw_data` 来寻找 vDSO。
+最後のシンボルからも分かるように、`raw_data` を直接使って vDSO を探すこともできます。
 
-#### 内存中定位
+#### メモリ上で特定する
 
-##### 直接定位
+##### 直接特定する
 
-vDSO 其实是一个 ELF 文件，具有 ELF 文件头。同时，vDSO 中特定位置存储着导出函数的字符串。因此我们可以根据这两个特征来扫描内存，定位 vDSO 的位置。
+vDSO は実は ELF ファイルであり、ELF ヘッダを持っています。また、vDSO 内の特定の位置にはエクスポート関数の文字列が格納されています。この 2 つの特徴からメモリをスキャンして、vDSO の位置を特定できます。
 
-##### 间接定位
+##### 間接的に特定する
 
-考虑到 vDSO 相对于内核基地址的偏移是固定的，我们可以先获取到内核的基地址，然后根据相对偏移来得到 vDSO 的地址。
+vDSO のカーネルベースアドレスからのオフセットは固定なので、まずカーネルのベースアドレスを取得し、相対オフセットから vDSO のアドレスを求められます。
 
 #### 参考
 

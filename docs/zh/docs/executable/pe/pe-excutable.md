@@ -1,9 +1,9 @@
-# PE 文件格式
+# PE ファイル形式
 
-## PE 简介
+## PE の紹介
 
-PE 文件的全称是 Portable Executable ，意为可移植的可执行的文件，常见的EXE、DLL、OCX、SYS、COM都是PE 文件，PE 文件是微软Windows操作系统上的程序文件，可能是间接被执行，如DLL）。
-一个 32-bits 的 PE 文件布局如下图所示：
+PE ファイルの正式名称は Portable Executable で、移植可能な実行ファイルを意味します。よく見る EXE、DLL、OCX、SYS、COM はどれも PE ファイルです。PE ファイルは Microsoft Windows オペレーティングシステム上のプログラムファイルで、DLL のように間接的に実行されるものもあります。
+32 ビットの PE ファイルのレイアウトは次の図のとおりです。
 
 ```text
 +-------------------------------+ \
@@ -33,10 +33,10 @@ PE 文件的全称是 Portable Executable ，意为可移植的可执行的文�
 : 
 ```
 
-接下来将会以一个 32-bit 的 PE 文件作为标本介绍一下 PE 文件。
+以降では、32 ビットの PE ファイルを見本にして PE ファイルを紹介します。
 
 ```c
-// 示例代码 test.c
+// サンプルコード test.c
 #include <stdio.h>
 
 int main(){
@@ -46,28 +46,28 @@ int main(){
 }
 ```
 
-**通过 `Devcpp` 软件的 `TDM-GCC 4.9.2 32-bit Release` 方式编译文件生成 `test.exe`，作为示例文件。**
+**`Devcpp` ソフトウェアの `TDM-GCC 4.9.2 32-bit Release` 方式でコンパイルして `test.exe` を生成し、サンプルファイルとして使います。**
 
-### 常用术语及其含义
+### よく使う用語とその意味
 
-- **`映像文件` 因为 PE 文件通常需要加载到内存中才能执行，相当于内存中的映像，所以 PE 文件也叫做映像文件。**
-- **`RVA` 相对虚拟地址，映像文件在虚拟内存中相对于加载基址的偏移。**
-- **`VA` 虚拟地址，映像文件在虚拟内存中的地址。**
-- **`FOA` 文件偏移地址，映像文件在磁盘文件中相对于文件开头的偏移。**
+- **`イメージファイル(映像文件)` PE ファイルは通常、メモリにロードしてはじめて実行できます。メモリ内のイメージに相当するので、PE ファイルはイメージファイルとも呼ばれます。**
+- **`RVA` 相対仮想アドレス(Relative Virtual Address)。イメージファイルの、仮想メモリ内でのロードベースアドレスからのオフセット。**
+- **`VA` 仮想アドレス(Virtual Address)。イメージファイルの、仮想メモリ内でのアドレス。**
+- **`FOA` ファイルオフセットアドレス(File Offset Address)。イメージファイルの、ディスク上のファイルの先頭からのオフセット。**
 
-因为不论是在磁盘文件上，或是在虚拟内存中，数据相对于其所在节的相对偏移是固定的，据此可以实现 RVA 与 FOA 之间的转换，即`RVA - 节区RVA = FOA - 节区FOA`。
+ディスク上のファイルでも仮想メモリ内でも、データが属するセクションに対するデータの相対オフセットは固定されています。これにより、RVA と FOA の相互変換ができます。つまり `RVA - セクションRVA = FOA - セクションFOA` です。
 
-假设某一个属于 .data 节的数据的 RVA 是 0x3100，.data 节的 节区RVA 为 0x3000，那么该数据相对于 .data 节的相对偏移就是 0x100。而 .data 节在的 节区FOA 为 0x1C00，那么该数据在磁盘文件中的 FOA 就是 0x1D00。完整的计算公式是：`FOA = 节区FOA + (RVA - 节区RVA)`。如果该映像文件的加载基址为0x40000000，那么该数据的 VA 就是 0x40003100。
+たとえば、.data セクションに属するあるデータの RVA が 0x3100 で、.data セクションのセクション RVA が 0x3000 なら、このデータの .data セクションに対する相対オフセットは 0x100 です。そして .data セクションのセクション FOA が 0x1C00 なら、このデータのディスク上のファイルでの FOA は 0x1D00 です。完全な計算式は `FOA = セクションFOA + (RVA - セクションRVA)` です。このイメージファイルのロードベースアドレスが 0x40000000 なら、このデータの VA は 0x40003100 になります。
 
-## PE文件头
+## PE ファイルヘッダ
 
-PE 文件的最开始便是 PE 文件头，它由 `MS-DOS 文件头` 和 `IMAGE_NT_HEADERS` 结构体组成。
+PE ファイルの一番最初が PE ファイルヘッダで、`MS-DOS ファイルヘッダ` と `IMAGE_NT_HEADERS` 構造体からなります。
 
-### MS-DOS 文件头
+### MS-DOS ファイルヘッダ
 
-`MS-DOS 文件头` 包含 `IMAGE_DOS_HEADER` 和 `DOS Stub` 两个部分。
+`MS-DOS ファイルヘッダ` は、`IMAGE_DOS_HEADER` と `DOS Stub` の 2 つの部分を含みます。
 
-`IMAGE_DOS_HEADER` 结构体的定义如下：
+`IMAGE_DOS_HEADER` 構造体の定義は次のとおりです。
 
 ```c
 typedef struct _IMAGE_DOS_HEADER
@@ -90,95 +90,95 @@ typedef struct _IMAGE_DOS_HEADER
      WORD e_oemid;
      WORD e_oeminfo;
      WORD e_res2[10];
-     LONG e_lfanew;             // NT 头相对于文件起始处的偏移
+     LONG e_lfanew;             // NT ヘッダの、ファイルの先頭からのオフセット
 } IMAGE_DOS_HEADER, *PIMAGE_DOS_HEADER;
 ```
 
-`IMAGE_DOS_HEADER` 结构体中有 2 个重要成员：
-- **`e_magic` 单字。DOS 签名 "4D5A"，即 ASCII 值 "MZ"。所有 PE 文件的开头都有 DOS 签名。**
-- **`e_lfanew` 单字。`IMAGE_NT_HEADER`相对于文件起始处的偏移。**
+`IMAGE_DOS_HEADER` 構造体には重要なメンバが 2 つあります。
+- **`e_magic` ワード(単字)。DOS シグネチャ "4D5A"、つまり ASCII 値の "MZ"。すべての PE ファイルの先頭には DOS シグネチャがあります。**
+- **`e_lfanew` ワード(単字)。`IMAGE_NT_HEADER` の、ファイルの先頭からのオフセット。**
 
-示例程序的 `IMAGE_DOS_HEADER` 如图 2 所示：
+サンプルプログラムの `IMAGE_DOS_HEADER` は図 2 のとおりです。
 
-![IMAGE_DOS_HEADER](figure/pe2-imagedosheader.png "图 2 - IMAGE_DOS_HEADER")
+![IMAGE_DOS_HEADER](figure/pe2-imagedosheader.png "図 2 - IMAGE_DOS_HEADER")
 
-`IMAGE_DOS_HEADER` 结构体后紧接着是 `DOS Stub`，它的作用很简单，当系统为 MS-DOS 环境时，输出 `This program cannot be run in DOS mode.` 并退出程序，表明该程序不能在 MS-DOS 环境下运行。这使得所有的 PE 文件都对 MS-DOS 环境兼容。利用该特性可以创建出一个在 MS-DOS 和 Windows 环境中都能运行的程序，在 MS-DOS 中执行 16-bit MS-DOS 代码，在 Windows 中执行 32-bit Windows 代码。
+`IMAGE_DOS_HEADER` 構造体のすぐ後ろに `DOS Stub` があります。その役割は単純で、システムが MS-DOS 環境のとき、`This program cannot be run in DOS mode.` と出力してプログラムを終了し、このプログラムが MS-DOS 環境では実行できないことを示します。これにより、すべての PE ファイルが MS-DOS 環境と互換になります。この特性を利用すると、MS-DOS と Windows の両方の環境で実行できるプログラムを作れます。MS-DOS では 16 ビットの MS-DOS コードを実行し、Windows では 32 ビットの Windows コードを実行します。
 
-示例程序的 `DOS Stub` 如图 3 所示：
+サンプルプログラムの `DOS Stub` は図 3 のとおりです。
 
-![DOS Stub](figure/pe2-imagedosstub.png "图 3 - DOS Stub")
+![DOS Stub](figure/pe2-imagedosstub.png "図 3 - DOS Stub")
 
 ### IMAGE_NT_HEADERS
 
-`IMAGE_NT_HEADERS` 结构体，俗称 NT 头。紧跟在 `DOS Stub` 之后，其定义如下：
+`IMAGE_NT_HEADERS` 構造体は、俗に NT ヘッダと呼ばれます。`DOS Stub` のすぐ後ろにあり、定義は次のとおりです。
 
 ```c
 typedef struct _IMAGE_NT_HEADERS {
-  DWORD                   Signature;         /* +0000h PE 标识 */
-  IMAGE_FILE_HEADER       FileHeader;        /* +0004h PE 标准头 */
-  IMAGE_OPTIONAL_HEADER32 OptionalHeader;    /* +0018h PE 可选头  */
+  DWORD                   Signature;         /* +0000h PE シグネチャ */
+  IMAGE_FILE_HEADER       FileHeader;        /* +0004h PE 標準ヘッダ */
+  IMAGE_OPTIONAL_HEADER32 OptionalHeader;    /* +0018h PE オプショナルヘッダ  */
 } IMAGE_NT_HEADERS32, *PIMAGE_NT_HEADERS32;
 ```
 
-示例程序的 `IMAGE_NT_HEADERS` 如图 4 所示：
+サンプルプログラムの `IMAGE_NT_HEADERS` は図 4 のとおりです。
 
-![NT 头](figure/pe2-imagentheader.png "图 4 - IMAGE_NT_HEADERS")
+![NT ヘッダ](figure/pe2-imagentheader.png "図 4 - IMAGE_NT_HEADERS")
 
-接下来详细说一下 NT 头。
+次に、NT ヘッダを詳しく説明します。
 
 #### PE Signature
 
-NT 头的第一个成员是`PE Signature`，它是一个4字节大小的ASCII码字符串 `PE\0\0`，用于指明当前文件是一个 PE 格式的映像文件。其位置可以通过 `IMAGE_DOS_HEADER` 的 `e_lfanew` 成员的值确定。
+NT ヘッダの最初のメンバは `PE Signature` で、4 バイトの ASCII 文字列 `PE\0\0` です。現在のファイルが PE 形式のイメージファイルであることを示すために使われます。その位置は、`IMAGE_DOS_HEADER` の `e_lfanew` メンバの値で決まります。
 
 #### IMAGE_FILE_HEADER
 
-`PE Signature` 后紧跟着是 `IMAGE_FILE_HEADER` 结构体，又称作 `COFF 头（标准通用文件格式头）`。其定义如下：
+`PE Signature` の後ろには `IMAGE_FILE_HEADER` 構造体が続きます。`COFF ヘッダ(標準共通ファイル形式ヘッダ)` とも呼ばれます。その定義は次のとおりです。
 
 ```c
 typedef struct _IMAGE_FILE_HEADER {
-  WORD  Machine;                    /* +0004h 目标机器类型 */
-  WORD  NumberOfSections;           /* +0006h PE 中节的数量 */
-  DWORD TimeDateStamp;              /* +0008h 时间戳 */
-  DWORD PointerToSymbolTable;       /* +000ch 指向符号表的指针 */
-  DWORD NumberOfSymbols;            /* +0010h 符号表中符号数目 */
-  WORD  SizeOfOptionalHeader;       /* +0012h 可选头的大小 */
-  WORD  Characteristics;            /* +0014h 文件属性标志 */
+  WORD  Machine;                    /* +0004h ターゲットマシンの種類 */
+  WORD  NumberOfSections;           /* +0006h PE 内のセクションの数 */
+  DWORD TimeDateStamp;              /* +0008h タイムスタンプ */
+  DWORD PointerToSymbolTable;       /* +000ch シンボルテーブルへのポインタ */
+  DWORD NumberOfSymbols;            /* +0010h シンボルテーブル内のシンボルの数 */
+  WORD  SizeOfOptionalHeader;       /* +0012h オプショナルヘッダの大きさ */
+  WORD  Characteristics;            /* +0014h ファイル属性フラグ */
 } IMAGE_FILE_HEADER, *PIMAGE_FILE_HEADER;
 ```
 
-接下来依次对每一个字段做出解释：
+次に、各フィールドを順に説明します。
 
-- **`Machine`  单字。用于指明 CPU 类型。详细了解所支持的 CPU 类型请参考 [微软 PE 格式 COFF 文件头 Machine 类型](https://docs.microsoft.com/zh-cn/windows/win32/debug/pe-format?redirectedfrom=MSDN#machine-types)。**
-- **`NumberOfSections` 单字。文件中存在的节区数量。PE 文件将代码、数据、资源的依据属性分类到不同节区中存储。**
-- `TimeDateStamp` 双字。低 32 位表示从 1970 年 1 月 1 日 00：00 到文件创建时经过的秒数。
-- `PointerToSymbolTable` 双字。符号表的文件偏移。如果不存在符号表，其值为 0。
-- `NumberOfSymbols` 双字。该字段表示符号表中的符号数量。由于字符串表紧跟在符号表之后，所有能通过该值定位字符串表。
-- **`SizeOfOptionalHeader` 单字。表示可选头的大小。在 32-bit 机器上默认是 0x00E0，在 64-bit 机器上默认是 0x00F0。**
-- **`Characteristics` 单字。用于标识文件属性，以 bit OR 方式组合。**下面是一些已定义的文件属性标志：
+- **`Machine`  ワード(単字)。CPU の種類を示します。サポートされる CPU の種類の詳細は、[Microsoft の PE 形式 COFF ファイルヘッダの Machine 型](https://docs.microsoft.com/zh-cn/windows/win32/debug/pe-format?redirectedfrom=MSDN#machine-types)を参照してください。**
+- **`NumberOfSections` ワード(単字)。ファイルに存在するセクションの数。PE ファイルは、コード、データ、リソースを属性ごとに分けて、異なるセクションに格納します。**
+- `TimeDateStamp` ダブルワード(双字)。下位 32 ビットは、1970 年 1 月 1 日 00:00 からファイルが作られるまでの経過秒数を表します。
+- `PointerToSymbolTable` ダブルワード(双字)。シンボルテーブルのファイルオフセット。シンボルテーブルが存在しなければ、その値は 0 です。
+- `NumberOfSymbols` ダブルワード(双字)。このフィールドは、シンボルテーブル内のシンボルの数を表します。文字列テーブルはシンボルテーブルの直後にあるため、この値から文字列テーブルを特定できます。
+- **`SizeOfOptionalHeader` ワード(単字)。オプショナルヘッダの大きさを表します。32 ビットのマシンでは既定で 0x00E0、64 ビットのマシンでは既定で 0x00F0 です。**
+- **`Characteristics` ワード(単字)。ファイルの属性を示し、ビット OR で組み合わせます。**定義済みのファイル属性フラグの一部を次に示します。
 
 ```c
-// 文件属性标志
-#define IMAGE_FILE_RELOCS_STRIPPED          0x0001    // 表示文件不包含重定位信息，只能在原定的基址加载。如果原定基址不可用，加载器会报出错误
-#define IMAGE_FILE_EXECUTABLE_IMAGE         0x0002    // 表示文件可执行，如果该位未设置，意味着存在链接器错误
-#define IMAGE_FILE_LINE_NUMS_STRIPPED       0x0004    // 不存在行信息
-#define IMAGE_FILE_LOCAL_SYMS_STRIPPED      0x0008    // 不存在符号信息
-#define IMAGE_FILE_AGGRESSIVE_WS_TRIM       0x0010    // 已废弃
-#define IMAGE_FILE_LARGE_ADDRESS_AWARE      0x0020    // 应用可处理大于 2GB 的地址
-#define IMAGE_FILE_BYTES_REVERSED_LO        0x0080    // 小尾存储。已废弃
-#define IMAGE_FILE_32BIT_MACHINE            0x0100    // 基于 32-bit 体系结构
-#define IMAGE_FILE_DEBUG_STRIPPED           0x0200    // 不存在调试信息
-#define IMAGE_FILE_REMOVABLE_RUN_FROM_SWAP  0x0400    // 如果映像文件在可移动介质上，完全加载并复制到内存交换文件中
-#define IMAGE_FILE_NET_RUN_FROM_SWAP        0x0800    // 如果映像文件在网络介质上，完全加载并复制到内存交换文件中
-#define IMAGE_FILE_SYSTEM                   0x1000    // 映像文件是系统文件
-#define IMAGE_FILE_DLL                      0x2000    // 映像文件是动态链接库文件
-#define IMAGE_FILE_UP_SYSTEM_ONLY           0x4000    // 文件只能在单处理器机器上运行
-#define IMAGE_FILE_BYTES_REVERSED_HI        0x8000    // 大尾存储（已废弃）
+// ファイル属性フラグ
+#define IMAGE_FILE_RELOCS_STRIPPED          0x0001    // ファイルにリロケーション情報がなく、もとのベースアドレスにしかロードできないことを示す。もとのベースアドレスが使えない場合、ローダはエラーを出す
+#define IMAGE_FILE_EXECUTABLE_IMAGE         0x0002    // ファイルが実行可能であることを示す。このビットが設定されていなければ、リンカのエラーがあることを意味する
+#define IMAGE_FILE_LINE_NUMS_STRIPPED       0x0004    // 行情報がない
+#define IMAGE_FILE_LOCAL_SYMS_STRIPPED      0x0008    // シンボル情報がない
+#define IMAGE_FILE_AGGRESSIVE_WS_TRIM       0x0010    // 廃止済み
+#define IMAGE_FILE_LARGE_ADDRESS_AWARE      0x0020    // アプリケーションが 2GB を超えるアドレスを扱える
+#define IMAGE_FILE_BYTES_REVERSED_LO        0x0080    // リトルエンディアンでの格納。廃止済み
+#define IMAGE_FILE_32BIT_MACHINE            0x0100    // 32 ビットアーキテクチャ向け
+#define IMAGE_FILE_DEBUG_STRIPPED           0x0200    // デバッグ情報がない
+#define IMAGE_FILE_REMOVABLE_RUN_FROM_SWAP  0x0400    // イメージファイルがリムーバブルメディア上にある場合、完全にロードしてメモリのスワップファイルにコピーする
+#define IMAGE_FILE_NET_RUN_FROM_SWAP        0x0800    // イメージファイルがネットワークメディア上にある場合、完全にロードしてメモリのスワップファイルにコピーする
+#define IMAGE_FILE_SYSTEM                   0x1000    // イメージファイルはシステムファイルである
+#define IMAGE_FILE_DLL                      0x2000    // イメージファイルは動的リンクライブラリファイルである
+#define IMAGE_FILE_UP_SYSTEM_ONLY           0x4000    // ファイルはシングルプロセッサのマシンでしか実行できない
+#define IMAGE_FILE_BYTES_REVERSED_HI        0x8000    // ビッグエンディアンでの格納(廃止済み)
 ```
 
-示例程序的 `IMAGE_FILE_HEADER` 如下：
+サンプルプログラムの `IMAGE_FILE_HEADER` は次のとおりです。
 
 ```text
-// 示例程序 IMAGE_FILE_HEADER
+// サンプルプログラムの IMAGE_FILE_HEADER
 RVA       Value      Description
 ----------------------------------------------------
 00000084  014C       机器类型
@@ -196,212 +196,212 @@ RVA       Value      Description
 
 #### IMAGE_OPTIONAL_HEADER
 
-之所以`IMAGE_OPTIONAL_HEADER` 叫做可选头，是因为对于目标文件，它没有任何作用，只是平白增加了目标文件的大小；但对于映像文件来说，它提供了加载时必需的信息。定义如下：
+`IMAGE_OPTIONAL_HEADER` がオプショナルヘッダ(可選頭)と呼ばれるのは、オブジェクトファイルにとっては何の役割もなく、オブジェクトファイルの大きさをただ増やすだけだからです。しかしイメージファイルにとっては、ロード時に必要な情報を提供します。定義は次のとおりです。
 
 ```c
 typedef struct _IMAGE_OPTIONAL_HEADER {
-  WORD                 Magic;                            /* +0018h 魔数 */
-  BYTE                 MajorLinkerVersion;               /* +001ah 链接器主要版本号 */
-  BYTE                 MinorLinkerVersion;               /* +001bh 链接器次要版本号 */
-  DWORD                SizeOfCode;                       /* +001ch 所有含代码的节的总大小 */
-  DWORD                SizeOfInitializedData;            /* +0020h 所有含已初始化数据的节的总大小 */
-  DWORD                SizeOfUninitializedData;          /* +0024h 所有含未初始化数据的节的总大小 */
-  DWORD                AddressOfEntryPoint;              /* +0028h 程序入口点RVA */
-  DWORD                BaseOfCode;                       /* +002ch 代码节起始RVA */
-  DWORD                BaseOfData;                       /* +0030h 数据节起始RVA */
-  DWORD                ImageBase;                        /* +0034h 映像文件加载时的首选地址 */
-  DWORD                SectionAlignment;                 /* +0038h 内存中节对齐粒度*/
-  DWORD                FileAlignment;                    /* +003ch 文件中节对齐粒度 */
-  WORD                 MajorOperatingSystemVersion;      /* +0040h 操作系统主要版本号 */
-  WORD                 MinorOperatingSystemVersion;      /* +0042h 操作系统次要版本号 */
-  WORD                 MajorImageVersion;                /* +0044h 映像文件主要版本号 */
-  WORD                 MinorImageVersion;                /* +0046h 映像文件次要版本号 */
-  WORD                 MajorSubsystemVersion;            /* +0048h 子系统主要版本号 */
-  WORD                 MinorSubsystemVersion;            /* +004ah 子系统次要版本号 */
-  DWORD                Win32VersionValue;                /* +004ch 保留。置0 */
-  DWORD                SizeOfImage;                      /* +0050h 内存中映像文件的大小 */
-  DWORD                SizeOfHeaders;                    /* +0054h 所有头+节表大小 */
-  DWORD                CheckSum;                         /* +0058h 映像文件校验和 */
-  WORD                 Subsystem;                        /* +005ch 运行映像所需子系统 */
-  WORD                 DllCharacteristics;               /* +005eh 映像文件的DLL属性 */
-  DWORD                SizeOfStackReserve;               /* +0060h 初始化时的保留的栈大小 */
-  DWORD                SizeOfStackCommit;                /* +0064h 初始化时实际提交的栈大小 */
-  DWORD                SizeOfHeapReserve;                /* +0068h 初始化时保留的堆大小 */
-  DWORD                SizeOfHeapCommit;                 /* +006ch 初始化时实际提交的堆大小 */
-  DWORD                LoaderFlags;                      /* +0070h 已废弃 */
-  DWORD                NumberOfRvaAndSizes;              /* +0074h 数据目录结构的数量 */
-  IMAGE_DATA_DIRECTORY DataDirectory[IMAGE_NUMBEROF_DIRECTORY_ENTRIES];     /* +0078h 指向数据目录中第一个 IMAGE_DATA_DIRECTORY 结构体的指针 */
+  WORD                 Magic;                            /* +0018h マジックナンバー */
+  BYTE                 MajorLinkerVersion;               /* +001ah リンカのメジャーバージョン番号 */
+  BYTE                 MinorLinkerVersion;               /* +001bh リンカのマイナーバージョン番号 */
+  DWORD                SizeOfCode;                       /* +001ch コードを含むすべてのセクションの合計サイズ */
+  DWORD                SizeOfInitializedData;            /* +0020h 初期化済みデータを含むすべてのセクションの合計サイズ */
+  DWORD                SizeOfUninitializedData;          /* +0024h 未初期化データを含むすべてのセクションの合計サイズ */
+  DWORD                AddressOfEntryPoint;              /* +0028h プログラムのエントリポイントの RVA */
+  DWORD                BaseOfCode;                       /* +002ch コードセクションの開始 RVA */
+  DWORD                BaseOfData;                       /* +0030h データセクションの開始 RVA */
+  DWORD                ImageBase;                        /* +0034h イメージファイルのロード時の優先アドレス */
+  DWORD                SectionAlignment;                 /* +0038h メモリ内でのセクションのアライメント単位*/
+  DWORD                FileAlignment;                    /* +003ch ファイル内でのセクションのアライメント単位 */
+  WORD                 MajorOperatingSystemVersion;      /* +0040h オペレーティングシステムのメジャーバージョン番号 */
+  WORD                 MinorOperatingSystemVersion;      /* +0042h オペレーティングシステムのマイナーバージョン番号 */
+  WORD                 MajorImageVersion;                /* +0044h イメージファイルのメジャーバージョン番号 */
+  WORD                 MinorImageVersion;                /* +0046h イメージファイルのマイナーバージョン番号 */
+  WORD                 MajorSubsystemVersion;            /* +0048h サブシステムのメジャーバージョン番号 */
+  WORD                 MinorSubsystemVersion;            /* +004ah サブシステムのマイナーバージョン番号 */
+  DWORD                Win32VersionValue;                /* +004ch 予約。0 にする */
+  DWORD                SizeOfImage;                      /* +0050h メモリ内でのイメージファイルの大きさ */
+  DWORD                SizeOfHeaders;                    /* +0054h すべてのヘッダ + セクションテーブルの大きさ */
+  DWORD                CheckSum;                         /* +0058h イメージファイルのチェックサム */
+  WORD                 Subsystem;                        /* +005ch イメージの実行に必要なサブシステム */
+  WORD                 DllCharacteristics;               /* +005eh イメージファイルの DLL 属性 */
+  DWORD                SizeOfStackReserve;               /* +0060h 初期化時に予約するスタックの大きさ */
+  DWORD                SizeOfStackCommit;                /* +0064h 初期化時に実際にコミットするスタックの大きさ */
+  DWORD                SizeOfHeapReserve;                /* +0068h 初期化時に予約するヒープの大きさ */
+  DWORD                SizeOfHeapCommit;                 /* +006ch 初期化時に実際にコミットするヒープの大きさ */
+  DWORD                LoaderFlags;                      /* +0070h 廃止済み */
+  DWORD                NumberOfRvaAndSizes;              /* +0074h データディレクトリ構造の数 */
+  IMAGE_DATA_DIRECTORY DataDirectory[IMAGE_NUMBEROF_DIRECTORY_ENTRIES];     /* +0078h データディレクトリ内の最初の IMAGE_DATA_DIRECTORY 構造体へのポインタ */
 } IMAGE_OPTIONAL_HEADER32, *PIMAGE_OPTIONAL_HEADER32;
 ```
 
-- **`Magic` 单字。指明映像文件的类型。`0x0107h` 表示 ROM 映像；`0x010B` 表示 PE32；`0x020B` 表示 PE32+，即 64-bit 的 PE 文件。**
-- `MajorLinkerVersion` 字节。指定链接器主要版本号。
-- `MinorLinkerVersion` 字节。指定链接器次要版本号。
-- `SizeOfCode` 双字。所有包含代码的节的总大小。**这里的大小指文件对齐后的大小。判断某个节是否包含代码的方法是根据节属性是否包含 `IMAGE_SCN_CNT_CODE` 标志。**
-- `SizeOfInitializedData` 双字。所有包含已初始化数据节的总大小。
-- `SizeOfUninitializedData` 双字。所有包含未初始化数据节的总大小。
-- **`AddressOfEntryPoint` 双字。入口点函数的指针相对于映像文件加载基址的偏移量。对于可执行文件，这是启动地址；对于设备驱动，这是初始化函数的地址；入口点函数对于 DLL 文件是可选的，如果不存在入口点，该成员必须置 0。**
-- `BaseOfCode` 双字。代码节的 RVA，代码节起始处相对于映像文件加载基址的偏移量。通常代码节紧跟在 PE 头 后面，节名为 ".text"。
-- `BaseOfData` 双字。数据节的 RVA，数据节起始处相对于映像文件加载基址的偏移量。通常数据节位于文件末尾，节名为 ".data"。
-- **`ImageBase` 双字。映像文件加载时的优先载入地址，值必须是 64KB 的整数倍。**应用程序的默认值是 0x00400000；DLL 的默认值是 0x10000000。**当一个程序用到了多个 DLL 文件时，PE 加载器会调整 DLL 的载入地址，使所有 DLL 文件都能够被正确载入。**
-- **`SectionAlignment` 双字。内存中的节对齐粒度。该成员的值必须不小于 `FileAlignment` 成员的值。默认的值与系统的页大小相等。**
-- **`FileAlignment` 双字。映像文件中原始数据的对齐粒度。值必须是在 512-64K 范围内的 2 的幂。默认值为512，但如果 `SectionAlignment` 成员的值小于系统页大小，则 `FileAlignment` 与 `SectionAlignment` 两者成员的值必须相同。**
-- `MajorOperatingSystemVersion` 单字。操作系统主要版本号。
-- `MinorOperatingSystemVersion` 单字。操作系统次要版本号。
-- `MajorImageVersion` 单字。映像文件主要版本号。
-- `MinorImageVersion` 单字。映像文件次要版本号。
-- `MajorSubsystemVersion` 单字。子系统主要版本号。
-- `MinorSubsystemVersion` 单字。子系统次要版本号。
-- `Win32VersionValue` 双字。保留。置0。
-- **`SizeOfImage` 双字。映像文件在虚拟内存中所占的大小。值必须为 `SectionAlignment` 的整数倍。**
-- **`SizeOfHeaders` 双字。PE 文件头和所有节表大小的总和按照 `FileAlignment` 对齐后的大小。第一节区在文件开始偏移为 `SizeOfHeaders` 处。**
-- `CheckSum` 双字。映像文件的校验值。需要在装载时校验的文件有所有的驱动，任何在启动时装载的 DLL，以及任何加载到关键系统进程中的 DLL。
-- **`Subsystem` 单字。运行映像文件所需的子系统。已定义的子系统标志如下：**
+- **`Magic` ワード(単字)。イメージファイルの種類を示します。`0x0107h` は ROM イメージ、`0x010B` は PE32、`0x020B` は PE32+、つまり 64 ビットの PE ファイルを表します。**
+- `MajorLinkerVersion` バイト。リンカのメジャーバージョン番号を指定します。
+- `MinorLinkerVersion` バイト。リンカのマイナーバージョン番号を指定します。
+- `SizeOfCode` ダブルワード(双字)。コードを含むすべてのセクションの合計サイズ。**ここでのサイズは、ファイルアライメント後のサイズを指します。あるセクションがコードを含むかどうかは、セクションの属性が `IMAGE_SCN_CNT_CODE` フラグを含むかどうかで判断します。**
+- `SizeOfInitializedData` ダブルワード(双字)。初期化済みデータを含むすべてのセクションの合計サイズ。
+- `SizeOfUninitializedData` ダブルワード(双字)。未初期化データを含むすべてのセクションの合計サイズ。
+- **`AddressOfEntryPoint` ダブルワード(双字)。エントリポイント関数へのポインタの、イメージファイルのロードベースアドレスからのオフセット。実行ファイルでは開始アドレス、デバイスドライバでは初期化関数のアドレスです。エントリポイント関数は DLL ファイルでは省略可能で、エントリポイントがなければ、このメンバは 0 にしなければなりません。**
+- `BaseOfCode` ダブルワード(双字)。コードセクションの RVA。コードセクションの先頭の、イメージファイルのロードベースアドレスからのオフセット。通常、コードセクションは PE ヘッダのすぐ後ろにあり、セクション名は ".text" です。
+- `BaseOfData` ダブルワード(双字)。データセクションの RVA。データセクションの先頭の、イメージファイルのロードベースアドレスからのオフセット。通常、データセクションはファイルの末尾にあり、セクション名は ".data" です。
+- **`ImageBase` ダブルワード(双字)。イメージファイルがロードされるときの優先ロードアドレス。値は 64KB の整数倍でなければなりません。**アプリケーションの既定値は 0x00400000、DLL の既定値は 0x10000000 です。**プログラムが複数の DLL ファイルを使うとき、PE ローダは、すべての DLL ファイルが正しくロードされるように、DLL のロードアドレスを調整します。**
+- **`SectionAlignment` ダブルワード(双字)。メモリ内でのセクションのアライメント単位。このメンバの値は `FileAlignment` メンバの値以上でなければなりません。既定の値はシステムのページサイズと同じです。**
+- **`FileAlignment` ダブルワード(双字)。イメージファイル内の生データのアライメント単位。値は 512-64K の範囲の 2 のべきでなければなりません。既定値は 512 ですが、`SectionAlignment` メンバの値がシステムのページサイズより小さい場合は、`FileAlignment` と `SectionAlignment` の 2 つのメンバの値は同じでなければなりません。**
+- `MajorOperatingSystemVersion` ワード(単字)。オペレーティングシステムのメジャーバージョン番号。
+- `MinorOperatingSystemVersion` ワード(単字)。オペレーティングシステムのマイナーバージョン番号。
+- `MajorImageVersion` ワード(単字)。イメージファイルのメジャーバージョン番号。
+- `MinorImageVersion` ワード(単字)。イメージファイルのマイナーバージョン番号。
+- `MajorSubsystemVersion` ワード(単字)。サブシステムのメジャーバージョン番号。
+- `MinorSubsystemVersion` ワード(単字)。サブシステムのマイナーバージョン番号。
+- `Win32VersionValue` ダブルワード(双字)。予約。0 にします。
+- **`SizeOfImage` ダブルワード(双字)。イメージファイルが仮想メモリ内で占める大きさ。値は `SectionAlignment` の整数倍でなければなりません。**
+- **`SizeOfHeaders` ダブルワード(双字)。PE ファイルヘッダとすべてのセクションテーブルの大きさの合計を、`FileAlignment` に従ってアライメントしたあとの大きさ。最初のセクションは、ファイルの先頭からのオフセットが `SizeOfHeaders` の位置にあります。**
+- `CheckSum` ダブルワード(双字)。イメージファイルのチェックサム値。ロード時に検証が必要なファイルは、すべてのドライバ、起動時にロードされるすべての DLL、重要なシステムプロセスにロードされるすべての DLL です。
+- **`Subsystem` ワード(単字)。イメージファイルの実行に必要なサブシステム。定義済みのサブシステムフラグは次のとおりです。**
 
 ```c
-// Subsystem 标志
-#define IMAGE_SUBSYSTEM_UNKNOWN                      0  // 未知子系统
-#define IMAGE_SUBSYSTEM_NATIVE                       1  // 不需要子系统。设备驱动和本机系统进程
-#define IMAGE_SUBSYSTEM_WINDOWS_GUI                  2  // Windows 图形用户接口（GUI）子系统
-#define IMAGE_SUBSYSTEM_WINDOWS_CUI                  3  // Windows 字符模式用户接口子（CUI）系统
-#define IMAGE_SUBSYSTEM_OS2_CUI                      5  //  OS/2 CUI 子系统
-#define IMAGE_SUBSYSTEM_POSIX_CUI                    7  // POSIX CUI 子系统
-#define IMAGE_SUBSYSTEM_WINDOWS_CE_GUI               9  // Windows CE 系统
-#define IMAGE_SUBSYSTEM_EFI_APPLICATION             10  // 可扩展固件接口（EFI）应用程序
-#define IMAGE_SUBSYSTEM_EFI_BOOT_SERVEICE_DRIVER    11  // 带引导服务的 EFI 驱动程序
-#define IMAGE_SUBSYSTEM_EFI_RUNTIME_DRIVER          12  // 带运行时服务的 EFI 驱动程序
-#define IMAGE_SUBSYSTEM_EFI_ROM                     13  // EFI ROM 映像
-#define IMAGE_SUBSYSTEM_XBOX                        14  // XBOX 系统
-#define IMAGE_SUBSYSTEM_WINDOWS_BOOT_APPLICATION    16  // 引导应用程序
+// Subsystem フラグ
+#define IMAGE_SUBSYSTEM_UNKNOWN                      0  // 不明なサブシステム
+#define IMAGE_SUBSYSTEM_NATIVE                       1  // サブシステム不要。デバイスドライバとネイティブのシステムプロセス
+#define IMAGE_SUBSYSTEM_WINDOWS_GUI                  2  // Windows グラフィカルユーザーインタフェース(GUI)サブシステム
+#define IMAGE_SUBSYSTEM_WINDOWS_CUI                  3  // Windows 文字モードユーザーインタフェース(CUI)サブシステム
+#define IMAGE_SUBSYSTEM_OS2_CUI                      5  //  OS/2 CUI サブシステム
+#define IMAGE_SUBSYSTEM_POSIX_CUI                    7  // POSIX CUI サブシステム
+#define IMAGE_SUBSYSTEM_WINDOWS_CE_GUI               9  // Windows CE システム
+#define IMAGE_SUBSYSTEM_EFI_APPLICATION             10  // Extensible Firmware Interface(EFI)アプリケーション
+#define IMAGE_SUBSYSTEM_EFI_BOOT_SERVEICE_DRIVER    11  // ブートサービス付きの EFI ドライバ
+#define IMAGE_SUBSYSTEM_EFI_RUNTIME_DRIVER          12  // ランタイムサービス付きの EFI ドライバ
+#define IMAGE_SUBSYSTEM_EFI_ROM                     13  // EFI ROM イメージ
+#define IMAGE_SUBSYSTEM_XBOX                        14  // XBOX システム
+#define IMAGE_SUBSYSTEM_WINDOWS_BOOT_APPLICATION    16  // ブートアプリケーション
 ```
 
-- **`DllCharacteristics` 单字。映像文件的 DLL 属性，以 bit OR 方式组合。各标志位的含义如下：**
+- **`DllCharacteristics` ワード(単字)。イメージファイルの DLL 属性で、ビット OR で組み合わせます。各フラグビットの意味は次のとおりです。**
 
 ```c
-// DLL 属性标志
-// 0x0001 0x0002 0x0004 0x0008 保留，值必须为 0。
-#define IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE             0x0040  // DLL 可以在加载时重定位
-#define IMAGE_DLLCHARACTERISTICS_FORCE_INTEGRITY          0x0080  // 强制实行代码完整性检验
-#define IMAGE_DLLCHARACTERISTICS_NX_COMPAT                0x0100  // 映像兼容数据执行保护（DEP）
-#define IMAGE_DLLCHARACTERISTICS_NO_ISOLATION             0x0200  // 映像可以隔离，但不应该被隔离
-#define IMAGE_DLLCHARACTERISTICS_NO_SEH                   0x0400  // 映像不使用结构化异常处理（SEH）
-#define IMAGE_DLLCHARACTERISTICS_NO_BIND                  0x0800  // 不绑定映像
-//#define IMAGE_DLLCHARACTERISTICS_APPCONTAINER           0x1000  // 在 32-bit 保留；64-bit 表示映像必须在 AppContainer 内执行
-#define IMAGE_DLLCHARACTERISTICS_WDM_DRIVER               0x2000  // WDM 驱动
-//#define IMAGE_DLLCHARACTERISTICS_GUARD_CF               0x4000  // 在 32-bit 保留；64-bit 表示映像支持控制流保护
-#define IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE    0x8000  // 映像可用于终端服务器
+// DLL 属性フラグ
+// 0x0001 0x0002 0x0004 0x0008 予約。値は 0 でなければならない。
+#define IMAGE_DLLCHARACTERISTICS_DYNAMIC_BASE             0x0040  // DLL はロード時にリロケーションできる
+#define IMAGE_DLLCHARACTERISTICS_FORCE_INTEGRITY          0x0080  // コードの完全性検査を強制する
+#define IMAGE_DLLCHARACTERISTICS_NX_COMPAT                0x0100  // イメージはデータ実行防止(DEP)と互換
+#define IMAGE_DLLCHARACTERISTICS_NO_ISOLATION             0x0200  // イメージは分離できるが、分離されるべきではない
+#define IMAGE_DLLCHARACTERISTICS_NO_SEH                   0x0400  // イメージは構造化例外処理(SEH)を使わない
+#define IMAGE_DLLCHARACTERISTICS_NO_BIND                  0x0800  // イメージをバインドしない
+//#define IMAGE_DLLCHARACTERISTICS_APPCONTAINER           0x1000  // 32 ビットでは予約。64 ビットでは、イメージが AppContainer 内で実行されなければならないことを表す
+#define IMAGE_DLLCHARACTERISTICS_WDM_DRIVER               0x2000  // WDM ドライバ
+//#define IMAGE_DLLCHARACTERISTICS_GUARD_CF               0x4000  // 32 ビットでは予約。64 ビットでは、イメージがコントロールフローガードをサポートすることを表す
+#define IMAGE_DLLCHARACTERISTICS_TERMINAL_SERVER_AWARE    0x8000  // イメージはターミナルサーバーで使える
 ```
 
-- `SizeOfStackReserve` 双字。初始化时保留的栈内存大小，默认值是 1MB。具体说是初始化时为栈保留的虚拟内存的大小，但并不是所有保留的虚拟内存都能直接作为栈使用。初始化时实际提交的栈大小由 `SizeOfStackCommit` 成员指定。
-- `SizeOfStackCommit` 双字。初始化时实际提交的栈内存大小。
-- `SizeOfHeapReserve` 双字。初始化时保留的堆内存大小，默认值为 1MB。每一个进程至少为会有一个默认的进程堆，在进程启动的时候被创建，并且在进程的声明周期内不会被删除。
-- `SizeOfHeapCommit` 双字。初始化时实际提交的堆内存大小，默认大小为 1 页。可以通过链接器的 "-heap" 参数指定起始保留的堆内存大小和实际提交的堆内存大小。
-- `LoaderFlags` 成员已弃用。
-- **`NumberOfRvaAndSizes` 双字。数据目录结构的数量。通常为 0x00000010，即 16 个。**
-- **`DataDirectory` 结构体。由 `IMAGE_DATA_DIRECTORY` 结构体组成的数组，数组的每项都有被定义的值。结构体定义如下：**
+- `SizeOfStackReserve` ダブルワード(双字)。初期化時に予約されるスタックメモリの大きさで、既定値は 1MB です。正確には、初期化時にスタック用に予約される仮想メモリの大きさですが、予約された仮想メモリのすべてがそのままスタックとして使えるわけではありません。初期化時に実際にコミットされるスタックの大きさは、`SizeOfStackCommit` メンバで指定されます。
+- `SizeOfStackCommit` ダブルワード(双字)。初期化時に実際にコミットされるスタックメモリの大きさ。
+- `SizeOfHeapReserve` ダブルワード(双字)。初期化時に予約されるヒープメモリの大きさで、既定値は 1MB です。どのプロセスにも、少なくとも 1 つの既定のプロセスヒープがあり、プロセスの起動時に作られ、プロセスのライフサイクルの間は削除されません。
+- `SizeOfHeapCommit` ダブルワード(双字)。初期化時に実際にコミットされるヒープメモリの大きさで、既定の大きさは 1 ページです。リンカの "-heap" パラメータで、最初に予約するヒープメモリの大きさと、実際にコミットするヒープメモリの大きさを指定できます。
+- `LoaderFlags` メンバは非推奨です。
+- **`NumberOfRvaAndSizes` ダブルワード(双字)。データディレクトリ構造の数。通常は 0x00000010、つまり 16 個です。**
+- **`DataDirectory` 構造体。`IMAGE_DATA_DIRECTORY` 構造体からなる配列で、配列の各項目には定義された値があります。構造体の定義は次のとおりです。**
 
 ```c
 typedef struct _IMAGE_DATA_DIRECTORY {
-  DWORD VirtualAddress;      /* 数据目录的 RVA */
-  DWORD Size;                /* 数据目录的大小 */
+  DWORD VirtualAddress;      /* データディレクトリの RVA */
+  DWORD Size;                /* データディレクトリの大きさ */
 } IMAGE_DATA_DIRECTORY, *PIMAGE_DATA_DIRECTORY;
 ```
 
-各数组项如下：
+配列の各項目は次のとおりです。
 
 ```c
-// 数据目录
-DataDirectory[0] =   EXPORT Directory           // 导入表 RVA 和大小
-DataDirectory[1] =   IMPORT Directory           // 导入表 RVA 和大小
-DataDirectory[2] =   RESOURCE Directory         // 资源表 RVA 和大小
-DataDirectory[3] =   EXCEPTION Directory        // 异常表 RVA 和大小
-DataDirectory[4] =   CERTIFICATE Directory      // 证书表 FOA 和大小
-DataDirectory[5] =   BASE RELOCATION Directory  // 基址重定位表 RVA 和大小
-DataDirectory[6] =   DEBUG Directory            // 调试信息 RVA 和大小
-DataDirectory[7] =   ARCH DATA Directory        // 指定架构信息 RVA 和大小
-DataDirectory[8] =   GLOBALPTR Directory        // 全局指针寄存器 RVA
-DataDirectory[9] =   TLS Directory              // 线程私有存储表 RVA 和大小
-DataDirectory[10] =  LOAD CONFIG Directory      // 加载配置表 RVA 和大小
-DataDirectory[11] =  BOUND IMPORT Directory     // 绑定导入表 RVA 和大小
-DataDirectory[12] =  `IAT` Directory              // 导入地址表 RVA 和大小
-DataDirectory[13] =  DELAY IMPORT Directory     // 延迟导入描述符 RVA 和大小
-DataDirectory[14] =  CLR Directory              // CLR数据 RVA 和大小
-DataDirectory[15] =  Reserverd                  // 保留
+// データディレクトリ
+DataDirectory[0] =   EXPORT Directory           // インポートテーブルの RVA と大きさ
+DataDirectory[1] =   IMPORT Directory           // インポートテーブルの RVA と大きさ
+DataDirectory[2] =   RESOURCE Directory         // リソーステーブルの RVA と大きさ
+DataDirectory[3] =   EXCEPTION Directory        // 例外テーブルの RVA と大きさ
+DataDirectory[4] =   CERTIFICATE Directory      // 証明書テーブルの FOA と大きさ
+DataDirectory[5] =   BASE RELOCATION Directory  // ベースリロケーションテーブルの RVA と大きさ
+DataDirectory[6] =   DEBUG Directory            // デバッグ情報の RVA と大きさ
+DataDirectory[7] =   ARCH DATA Directory        // アーキテクチャ固有情報の RVA と大きさ
+DataDirectory[8] =   GLOBALPTR Directory        // グローバルポインタレジスタの RVA
+DataDirectory[9] =   TLS Directory              // スレッドプライベートストレージテーブルの RVA と大きさ
+DataDirectory[10] =  LOAD CONFIG Directory      // ロード構成テーブルの RVA と大きさ
+DataDirectory[11] =  BOUND IMPORT Directory     // バウンドインポートテーブルの RVA と大きさ
+DataDirectory[12] =  `IAT` Directory              // インポートアドレステーブルの RVA と大きさ
+DataDirectory[13] =  DELAY IMPORT Directory     // 遅延インポートディスクリプタの RVA と大きさ
+DataDirectory[14] =  CLR Directory              // CLR データの RVA と大きさ
+DataDirectory[15] =  Reserverd                  // 予約
 ```
 
-示例程序的 `IMAGE_OPTIONAL_HEADER` 如下图：
-![可选头上](figure/pe2-imageoptionalheader1.png "图 5 - IMAGE_OPTIONAL_HEADER 结构体")
-![可选头下](figure/pe2-imageoptionalheader2.png "图 6 - DataDirectory 成员")
+サンプルプログラムの `IMAGE_OPTIONAL_HEADER` は次の図のとおりです。
+![オプショナルヘッダ(上)](figure/pe2-imageoptionalheader1.png "図 5 - IMAGE_OPTIONAL_HEADER 構造体")
+![オプショナルヘッダ(下)](figure/pe2-imageoptionalheader2.png "図 6 - DataDirectory メンバ")
 
-## PE 数据主体
+## PE のデータ本体
 
-PE 数据主体包括 `Section Header` 和所有的节区。
+PE のデータ本体は、`Section Header` とすべてのセクションを含みます。
 
 ### Section Header
 
-紧跟在可选头后面的是 `Section Header`，也称作节表。PE 文件种所有节的属性都被定义在节表中。节表由一系列的 `IMAGE_SECTION_HEADER` 结构体组成，结构体大小均为 40 字节。每一个结构体描述一个节的信息，定义如下：
+オプショナルヘッダのすぐ後ろにあるのが `Section Header` で、セクションテーブルとも呼ばれます。PE ファイル内のすべてのセクションの属性は、セクションテーブルに定義されています。セクションテーブルは一連の `IMAGE_SECTION_HEADER` 構造体からなり、構造体の大きさはどれも 40 バイトです。それぞれの構造体が 1 つのセクションの情報を記述します。定義は次のとおりです。
 
 ```c
 typedef struct _IMAGE_SECTION_HEADER {
-  BYTE  Name[IMAGE_SIZEOF_SHORT_NAME];    /* 节区名 */
+  BYTE  Name[IMAGE_SIZEOF_SHORT_NAME];    /* セクション名 */
   union {
-    DWORD PhysicalAddress;                /* 物理地址 */
-    DWORD VirtualSize;                    /* 虚拟内存中节区大小  */
+    DWORD PhysicalAddress;                /* 物理アドレス */
+    DWORD VirtualSize;                    /* 仮想メモリ内でのセクションの大きさ  */
   } Misc;
-  DWORD VirtualAddress;                   /* 虚拟内存中节区 RVA */
-  DWORD SizeOfRawData;                    /* 磁盘文件中节区大小 */
-  DWORD PointerToRawData;                 /* 磁盘文件中节区 FOA */
-  DWORD PointerToRelocations;             /* 指向重定位表的指针 */
-  DWORD PointerToLinenumbers;             /* 指向行号表的指针 */
-  WORD  NumberOfRelocations;              /* 重定位入口数量 */
-  WORD  NumberOfLinenumbers;              /* 行号数量 */
-  DWORD Characteristics;                  /* 节区属性 */
+  DWORD VirtualAddress;                   /* 仮想メモリ内でのセクションの RVA */
+  DWORD SizeOfRawData;                    /* ディスク上のファイルでのセクションの大きさ */
+  DWORD PointerToRawData;                 /* ディスク上のファイルでのセクションの FOA */
+  DWORD PointerToRelocations;             /* リロケーションテーブルへのポインタ */
+  DWORD PointerToLinenumbers;             /* 行番号テーブルへのポインタ */
+  WORD  NumberOfRelocations;              /* リロケーションエントリの数 */
+  WORD  NumberOfLinenumbers;              /* 行番号の数 */
+  DWORD Characteristics;                  /* セクションの属性 */
 } IMAGE_SECTION_HEADER, *PIMAGE_SECTION_HEADER;
 ```
 
-- `Name` 节名称字符串。长度最多 8 个字节。
+- `Name` セクション名の文字列。長さは最大 8 バイト。
 - `Misc`
-  - `PhysicalAddress` 双字。文件地址。
-  - `VirtualSize` 双字。虚拟内存中的节区所占内存大小。 
-- `VirtualAddress` 双字。虚拟内存中节区 RVA。
-- `SizeOfRawData` 双字。对于映像文件，表示磁盘上初始化数据的大小，值必须为 `FileAlignment` 的整数倍；对于目标文件，表示节的大小。
-- `PointerToRawData` 双字。磁盘文件中节区起始处的 FOA。值必须是 `FileAlignment` 的整数倍。
-- `PointerToRelocations` 双字。在对象文件中使用，指向重定位表的指针。
-- `PointerToLinenumbers` 双字。行号信息位置（供调试用）。如果没有行号信息则置 0；同时因为不建议使用 COFF 调试信息，在映像文件中应置 0。
-- `NumberOfRelocations` 单字。重定位入口的数量，在映像文件中置 0。
-- `NumberOfLinenumbers` 单字。行号数量（供调试用）。因为不建议使用 COFF 调试信息，所以在映像文件中应置 0。
-- **`Characteristics` 双字。节区属性。，以 bit OR 方式组合。各标志位的含义如下：**
+  - `PhysicalAddress` ダブルワード(双字)。ファイルアドレス。
+  - `VirtualSize` ダブルワード(双字)。仮想メモリ内でセクションが占めるメモリの大きさ。 
+- `VirtualAddress` ダブルワード(双字)。仮想メモリ内でのセクションの RVA。
+- `SizeOfRawData` ダブルワード(双字)。イメージファイルでは、ディスク上の初期化済みデータの大きさを表し、値は `FileAlignment` の整数倍でなければなりません。オブジェクトファイルでは、セクションの大きさを表します。
+- `PointerToRawData` ダブルワード(双字)。ディスク上のファイルでのセクションの先頭の FOA。値は `FileAlignment` の整数倍でなければなりません。
+- `PointerToRelocations` ダブルワード(双字)。オブジェクトファイルで使われ、リロケーションテーブルへのポインタです。
+- `PointerToLinenumbers` ダブルワード(双字)。行番号情報の位置(デバッグ用)。行番号情報がなければ 0 にします。また、COFF のデバッグ情報は非推奨なので、イメージファイルでは 0 にします。
+- `NumberOfRelocations` ワード(単字)。リロケーションエントリの数で、イメージファイルでは 0 にします。
+- `NumberOfLinenumbers` ワード(単字)。行番号の数(デバッグ用)。COFF のデバッグ情報は非推奨なので、イメージファイルでは 0 にします。
+- **`Characteristics` ダブルワード(双字)。セクションの属性で、ビット OR で組み合わせます。各フラグビットの意味は次のとおりです。**
 
 ```c
-// 节区属性
-#define IMAGE_SCN_CNT_CODE                0x00000020  // 节区包含代码
-#define IMAGE_SCN_CNT_INITIALIZED_DATA    0x00000040  // 节区包含已初始化数据
-#define IMAGE_SCN_CNT_UNINITIALIZED_DATA  0x00000080  // 节区包含未初始化数据
-#define IMAGE_SCN_ALIGN_1BYTES            0x00100000  // 1-byte 对齐。仅用于目标文件
-#define IMAGE_SCN_ALIGN_2BYTES            0x00200000  // 2-byte 对齐。仅用于目标文件
-#define IMAGE_SCN_ALIGN_4BYTES            0x00300000  // 4-byte 对齐。仅用于目标文件
-#define IMAGE_SCN_ALIGN_8BYTES            0x00400000  // 8-byte 对齐。仅用于目标文件
-#define IMAGE_SCN_ALIGN_16BYTES           0x00500000  // 16-byte 对齐。仅用于目标文件
-#define IMAGE_SCN_ALIGN_32BYTES           0x00600000  // 32-byte 对齐。仅用于目标文件
-#define IMAGE_SCN_ALIGN_64BYTES           0x00700000  // 64-byte 对齐。仅用于目标文件
-#define IMAGE_SCN_ALIGN_128BYTES          0x00800000  // 128-byte 对齐。仅用于目标文件
-#define IMAGE_SCN_ALIGN_256BYTES          0x00900000  // 256-byte 对齐。仅用于目标文件
-#define IMAGE_SCN_ALIGN_512BYTES          0x00A00000  // 512-byte 对齐。仅用于目标文件
-#define IMAGE_SCN_ALIGN_1024BYTES         0x00B00000  // 1024-byte 对齐。仅用于目标文件
-#define IMAGE_SCN_ALIGN_2048BYTES         0x00C00000  // 2048-byte 对齐。仅用于目标文件
-#define IMAGE_SCN_ALIGN_4096BYTES         0x00D00000  // 4096-byte 对齐。仅用于目标文件
-#define IMAGE_SCN_ALIGN_8192BYTES         0x00E00000  // 8192-byte 对齐。仅用于目标文件
-#define IMAGE_SCN_LNK_NRELOC_OVFL         0x01000000  // 节区包含扩展的重定位项
-#define IMAGE_SCN_MEM_DISCARDABLE         0x02000000  // 节区可根据需要丢弃，如 .reloc 在进程开始后被丢弃
-#define IMAGE_SCN_MEM_NOT_CACHED          0x04000000  // 节区不会被缓存
-#define IMAGE_SCN_MEM_NOT_PAGED           0x08000000  // 节区不可分页
-#define IMAGE_SCN_MEM_SHARED              0x10000000  // 节区可共享给不同进程
-#define IMAGE_SCN_MEM_EXECUTE             0x20000000  // 节区可作为代码执行
-#define IMAGE_SCN_MEM_READ                0x40000000  // 节区可读
-#define IMAGE_SCN_MEM_WRITE               0x80000000  // 节区可写
+// セクションの属性
+#define IMAGE_SCN_CNT_CODE                0x00000020  // セクションはコードを含む
+#define IMAGE_SCN_CNT_INITIALIZED_DATA    0x00000040  // セクションは初期化済みデータを含む
+#define IMAGE_SCN_CNT_UNINITIALIZED_DATA  0x00000080  // セクションは未初期化データを含む
+#define IMAGE_SCN_ALIGN_1BYTES            0x00100000  // 1-byte アライメント。オブジェクトファイル専用
+#define IMAGE_SCN_ALIGN_2BYTES            0x00200000  // 2-byte アライメント。オブジェクトファイル専用
+#define IMAGE_SCN_ALIGN_4BYTES            0x00300000  // 4-byte アライメント。オブジェクトファイル専用
+#define IMAGE_SCN_ALIGN_8BYTES            0x00400000  // 8-byte アライメント。オブジェクトファイル専用
+#define IMAGE_SCN_ALIGN_16BYTES           0x00500000  // 16-byte アライメント。オブジェクトファイル専用
+#define IMAGE_SCN_ALIGN_32BYTES           0x00600000  // 32-byte アライメント。オブジェクトファイル専用
+#define IMAGE_SCN_ALIGN_64BYTES           0x00700000  // 64-byte アライメント。オブジェクトファイル専用
+#define IMAGE_SCN_ALIGN_128BYTES          0x00800000  // 128-byte アライメント。オブジェクトファイル専用
+#define IMAGE_SCN_ALIGN_256BYTES          0x00900000  // 256-byte アライメント。オブジェクトファイル専用
+#define IMAGE_SCN_ALIGN_512BYTES          0x00A00000  // 512-byte アライメント。オブジェクトファイル専用
+#define IMAGE_SCN_ALIGN_1024BYTES         0x00B00000  // 1024-byte アライメント。オブジェクトファイル専用
+#define IMAGE_SCN_ALIGN_2048BYTES         0x00C00000  // 2048-byte アライメント。オブジェクトファイル専用
+#define IMAGE_SCN_ALIGN_4096BYTES         0x00D00000  // 4096-byte アライメント。オブジェクトファイル専用
+#define IMAGE_SCN_ALIGN_8192BYTES         0x00E00000  // 8192-byte アライメント。オブジェクトファイル専用
+#define IMAGE_SCN_LNK_NRELOC_OVFL         0x01000000  // セクションは拡張されたリロケーション項目を含む
+#define IMAGE_SCN_MEM_DISCARDABLE         0x02000000  // セクションは必要に応じて破棄できる。たとえば .reloc はプロセスの開始後に破棄される
+#define IMAGE_SCN_MEM_NOT_CACHED          0x04000000  // セクションはキャッシュされない
+#define IMAGE_SCN_MEM_NOT_PAGED           0x08000000  // セクションはページングできない
+#define IMAGE_SCN_MEM_SHARED              0x10000000  // セクションは異なるプロセス間で共有できる
+#define IMAGE_SCN_MEM_EXECUTE             0x20000000  // セクションはコードとして実行できる
+#define IMAGE_SCN_MEM_READ                0x40000000  // セクションは読み取り可能
+#define IMAGE_SCN_MEM_WRITE               0x80000000  // セクションは書き込み可能
 ```
 
-示例文件的节区头如下：
+サンプルファイルのセクションヘッダは次のとおりです。
 
 ```text
 No.  Name    VirtualSize  VirtualOffset  RawSize   RawOffset  Characteristics
@@ -425,7 +425,7 @@ No.  Name    VirtualSize  VirtualOffset  RawSize   RawOffset  Characteristics
 
 ### Sections
 
-紧跟在 `Section Header`  后面的就是各个 sections，即节区。PE 文件一般至少要求有两个节区，用于存储可执行数据的代码节区 .text，和存储数据的数据节区 .data。通过节区名可以猜测节区的用途，但节区名不是决定节区用途的因素，只作为一种参考。比如也可以将代码节区的节区名修改为 .data，对于程序执行不会有影响。这里讲一下常见节区的用途：
+`Section Header` の後ろに続くのが各 section、つまりセクションです。PE ファイルは一般に、少なくとも 2 つのセクションを必要とします。実行可能なデータを格納するコードセクション .text と、データを格納するデータセクション .data です。セクション名からそのセクションの用途を推測できますが、セクション名はセクションの用途を決める要因ではなく、参考にすぎません。たとえば、コードセクションのセクション名を .data に変更しても、プログラムの実行に影響はありません。ここで、よく見るセクションの用途を説明します。
 
 ```text
  .text  默认的代码节区。用于保存可执行代码。
@@ -439,4 +439,4 @@ No.  Name    VirtualSize  VirtualOffset  RawSize   RawOffset  Characteristics
 .reloc  用于保存重定位表信息。
 ```
 
-其中有一些 Section 需要重点关注，比如保存着库文件导入相关数据的 .idata 节，或者与线程私有存储相关的 .tls 节等等。对这些重要节进行分析，就是之后学习的主要内容。
+このうち、特に注目すべき Section がいくつかあります。たとえば、ライブラリファイルのインポートに関係するデータを保持する .idata セクションや、スレッドプライベートストレージに関係する .tls セクションなどです。これらの重要なセクションを分析することが、このあとの学習の主な内容です。

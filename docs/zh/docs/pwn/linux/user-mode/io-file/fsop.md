@@ -1,9 +1,9 @@
 # FSOP
 
-## 介绍
-FSOP是File Stream Oriented Programming的缩写，根据前面对FILE的介绍得知进程内所有的_IO_FILE结构会使用_chain域相互连接形成一个链表，这个链表的头部由_IO_list_all维护。
+## 紹介
+FSOP は File Stream Oriented Programming の略です。前述の FILE の紹介のとおり、プロセス内のすべての _IO_FILE 構造体は _chain フィールドによって相互に連結されてリンクリストを形成しており、このリストの先頭は _IO_list_all によって保持されています。
 
-FSOP的核心思想就是劫持_IO_list_all的值来伪造链表和其中的_IO_FILE项，但是单纯的伪造只是构造了数据还需要某种方法进行触发。FSOP选择的触发方法是调用_IO_flush_all_lockp，这个函数会刷新_IO_list_all链表中所有项的文件流，相当于对每个FILE调用fflush，也对应着会调用_IO_FILE_plus.vtable中的_IO_overflow。
+FSOP の中心的な考え方は、_IO_list_all の値をハイジャックしてリンクリストとその中の _IO_FILE エントリを偽造することです。ただし、単に偽造しただけではデータを作ったにすぎず、それを発動させる何らかの方法が必要です。FSOP が発動方法として選ぶのは _IO_flush_all_lockp の呼び出しです。この関数は _IO_list_all のリストにあるすべてのエントリのファイルストリームをフラッシュします。これは各 FILE に対して fflush を呼ぶのと同じで、_IO_FILE_plus.vtable 内の _IO_overflow が呼び出されることにも対応します。
 
 ```
 int
@@ -26,23 +26,23 @@ _IO_flush_all_lockp (int do_lock)
 
 ![](./figure/abort_routine.001.jpeg)
 
-而_IO_flush_all_lockp不需要攻击者手动调用，在一些情况下这个函数会被系统调用：
+そして _IO_flush_all_lockp は攻撃者が手動で呼び出す必要はなく、次のような場合にシステムによって呼び出されます。
 
-1.当libc执行abort流程时
+1. libc が abort の処理を実行するとき
 
-2.当执行exit函数时
+2. exit 関数を実行したとき
 
-3.当执行流从main函数返回时
+3. 実行フローが main 関数から return したとき
 
 
-## 示例
+## 例
 
-梳理一下FSOP利用的条件，首先需要攻击者获知libc.so基址，因为_IO_list_all是作为全局变量储存在libc.so中的，不泄漏libc基址就不能改写_IO_list_all。
+FSOP を利用するための条件を整理します。まず攻撃者は libc.so のベースアドレスを知る必要があります。_IO_list_all はグローバル変数として libc.so 内に格納されているため、libc のベースアドレスをリークしなければ _IO_list_all を書き換えられないからです。
 
-之后需要用任意地址写把_IO_list_all的内容改为指向我们可控内存的指针，
+次に、任意アドレス書き込みによって _IO_list_all の内容を、攻撃者が制御できるメモリを指すポインタに書き換える必要があります。
 
-之后的问题是在可控内存中布置什么数据，毫无疑问的是需要布置一个我们理想函数的vtable指针。但是为了能够让我们构造的fake_FILE能够正常工作，还需要布置一些其他数据。
-这里的依据是我们前面给出的
+その次の問題は、制御可能なメモリにどのようなデータを配置するかです。狙いの関数を指す vtable ポインタを配置する必要があるのは間違いありません。しかし、構築した fake_FILE が正常に動作するようにするには、ほかにもいくつかのデータを配置する必要があります。
+その根拠は、先ほど示した次のコードです。
 
 ```
 if (((fp->_mode <= 0 && fp->_IO_write_ptr > fp->_IO_write_base))
@@ -52,15 +52,15 @@ if (((fp->_mode <= 0 && fp->_IO_write_ptr > fp->_IO_write_base))
           }
 ```
 
-也就是
+つまり次の条件になります。
 
 * fp->_mode <= 0
 * fp->_IO_write_ptr > fp->_IO_write_base
 
 
 
-在这里通过一个示例来验证这一点，首先我们分配一块内存用于存放伪造的vtable和_IO_FILE_plus。
-为了绕过验证，我们提前获得了_IO_write_ptr、_IO_write_base、_mode等数据域的偏移，这样可以在伪造的vtable中构造相应的数据
+ここでは、例を使ってこれを確かめます。まず、偽造した vtable と _IO_FILE_plus を格納するためのメモリを確保します。
+チェックを回避するため、_IO_write_ptr、_IO_write_base、_mode などのデータフィールドのオフセットを事前に取得しておきます。こうすることで、偽造した領域に対応するデータを構築できます。
 
 ```
 #define _IO_list_all 0x7ffff7dd2520
@@ -91,11 +91,11 @@ int main(void)
 }
 ```
 
-我们使用分配内存的前0x100个字节作为_IO_FILE，后0x100个字节作为vtable，在vtable中使用0x41414141这个地址作为伪造的_IO_overflow指针。
+確保したメモリの前半 0x100 バイトを _IO_FILE、後半 0x100 バイトを vtable として使い、vtable 内では 0x41414141 というアドレスを偽の _IO_overflow ポインタとして使います。
 
-之后，覆盖位于libc中的全局变量 _IO_list_all，把它指向我们伪造的_IO_FILE_plus。
+その後、libc 内にあるグローバル変数 _IO_list_all を上書きし、偽造した _IO_FILE_plus を指すようにします。
 
-通过调用exit函数，程序会执行 _IO_flush_all_lockp，经过fflush获取_IO_list_all的值并取出作为_IO_FILE_plus调用其中的_IO_overflow
+exit 関数を呼び出すと、プログラムは _IO_flush_all_lockp を実行します。fflush を経て _IO_list_all の値が取得され、それが _IO_FILE_plus として取り出されて、その中の _IO_overflow が呼び出されます。
 
 ```
 ---> call _IO_overflow

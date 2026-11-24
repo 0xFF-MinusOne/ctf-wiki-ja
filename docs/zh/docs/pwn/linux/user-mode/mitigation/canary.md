@@ -1,20 +1,20 @@
 # Canary
 
-## 介绍 
-Canary 的意思是金丝雀，来源于英国矿井工人用来探查井下气体是否有毒的金丝雀笼子。工人们每次下井都会带上一只金丝雀。如果井下的气体有毒，金丝雀由于对毒性敏感就会停止鸣叫甚至死亡，从而使工人们得到预警。
+## 概要
+Canary はカナリア(金丝雀)のことで、イギリスの炭鉱労働者が坑内のガスが有毒かどうかを調べるために持ち込んだカナリアの籠に由来します。労働者は坑に入るたびにカナリアを1羽連れて行きました。坑内のガスが有毒な場合、カナリアは毒に敏感なので鳴くのをやめたり死んだりし、それによって労働者は警告を受けられます。
 
-我们知道，通常栈溢出的利用方式是通过溢出存在于栈上的局部变量，从而让多出来的数据覆盖 ebp、eip 等，从而达到劫持控制流的目的。栈溢出保护是一种缓冲区溢出攻击缓解手段，当函数存在缓冲区溢出攻击漏洞时，攻击者可以覆盖栈上的返回地址来让 shellcode 能够得到执行。当启用栈保护后，函数开始执行的时候会先往栈底插入 cookie 信息，当函数真正返回的时候会验证 cookie 信息是否合法(栈帧销毁前测试该值是否被改变)，如果不合法就停止程序运行(栈溢出发生)。攻击者在覆盖返回地址的时候往往也会将 cookie 信息给覆盖掉，导致栈保护检查失败而阻止 shellcode 的执行，避免漏洞利用成功。在 Linux 中我们将 cookie 信息称为 Canary。
+ご存じのとおり、スタックオーバーフローの一般的な悪用方法は、スタック上にあるローカル変数をあふれさせ、あふれたデータで ebp や eip などを上書きして制御フローを乗っ取るというものです。スタックオーバーフロー保護はバッファオーバーフロー攻撃の緩和策の一つです。関数にバッファオーバーフローの脆弱性がある場合、攻撃者はスタック上のリターンアドレスを上書きして shellcode を実行させることができます。スタック保護を有効にすると、関数の実行開始時にスタックの底に cookie 情報が挿入され、関数が実際にリターンするときにその cookie が正当かどうかが検証されます(スタックフレームを破棄する前に、この値が変更されていないかをテストします)。正当でなければプログラムは停止します(スタックオーバーフローが発生したということです)。攻撃者はリターンアドレスを上書きするときに cookie も一緒に上書きしてしまうことが多く、その結果スタック保護のチェックが失敗して shellcode の実行が阻止され、攻撃の成功が防がれます。Linux ではこの cookie 情報を Canary と呼びます。
 
-由于 stack overflow 而引发的攻击非常普遍也非常古老，相应地一种叫做 Canary 的 mitigation 技术很早就出现在 glibc 里，直到现在也作为系统安全的第一道防线存在。
+stack overflow に起因する攻撃は非常に一般的で古くからあるため、それに対応する Canary という mitigation(緩和技術)も早い時期から glibc に登場し、現在でもシステムセキュリティの第一の防衛線として存在しています。
 
-Canary 不管是实现还是设计思想都比较简单高效，就是插入一个值在 stack overflow 发生的高危区域的尾部。当函数返回之时检测 Canary 的值是否经过了改变，以此来判断 stack/buffer overflow 是否发生。
+Canary は実装も設計思想も比較的単純で効率的です。stack overflow の危険度が高い領域の末尾に値を一つ挿入し、関数がリターンするときに Canary の値が変更されていないかを検査することで、stack/buffer overflow が発生したかどうかを判断します。
 
-Canary 与 Windows 下的 GS 保护都是缓解栈溢出攻击的有效手段，它的出现很大程度上增加了栈溢出攻击的难度，并且由于它几乎并不消耗系统资源，所以现在成了 Linux 下保护机制的标配。
+Canary は Windows の GS 保護と並んで、スタックオーバーフロー攻撃を緩和する有効な手段です。Canary の登場によってスタックオーバーフロー攻撃の難易度は大きく上がりました。しかもシステムリソースをほとんど消費しないため、現在では Linux の保護機構の標準装備になっています。
 
 
-## Canary 原理
-### 在 GCC 中使用 Canary
-可以在 GCC 中使用以下参数设置 Canary:
+## Canary の原理
+### GCC での Canary の利用
+GCC では次のオプションで Canary を設定できます。
 
 ```
 -fstack-protector 启用保护，不过只为局部变量中含有数组的函数插入保护
@@ -24,9 +24,9 @@ Canary 与 Windows 下的 GS 保护都是缓解栈溢出攻击的有效手段，
 -fno-stack-protector 禁用保护
 ```
 
-### Canary 实现原理
+### Canary の実装原理
 
-开启 Canary 保护的 stack 结构大概如下：
+Canary 保護を有効にした場合の stack の構造はおおよそ次のとおりです。
 
 ```
         High
@@ -45,14 +45,14 @@ Canary 与 Windows 下的 GS 保护都是缓解栈溢出攻击的有效手段，
         Address
 
 ```
-当程序启用 Canary 编译后，在函数序言部分会取 fs 寄存器 0x28 处的值，存放在栈中 %ebp-0x8 的位置。
-这个操作即为向栈中插入 Canary 值，代码如下：
+Canary を有効にしてプログラムをコンパイルすると、関数のプロローグ部分で fs レジスタの 0x28 の位置にある値を取り出し、スタック上の %ebp-0x8 の位置に格納します。
+この操作がスタックへの Canary 値の挿入にあたります。コードは次のとおりです。
 ```asm
 mov    rax, qword ptr fs:[0x28]
 mov    qword ptr [rbp - 8], rax
 ```
 
-在函数返回之前，会将该值取出，并与 fs:0x28 的值进行异或。如果异或的结果为 0，说明 Canary 未被修改，函数会正常返回，这个操作即为检测是否发生栈溢出。
+関数がリターンする前に、この値を取り出して fs:0x28 の値と XOR します。XOR の結果が 0 であれば Canary は変更されておらず、関数は正常にリターンします。この操作が、スタックオーバーフローが発生したかどうかの検査にあたります。
 
 ```asm
 mov    rdx,QWORD PTR [rbp-0x8]
@@ -61,7 +61,7 @@ je     0x4005d7 <main+65>
 call   0x400460 <__stack_chk_fail@plt>
 ```
 
-如果 Canary 已经被非法修改，此时程序流程会走到 `__stack_chk_fail`。`__stack_chk_fail` 也是位于 glibc 中的函数，默认情况下经过 ELF 的延迟绑定，定义如下。
+Canary が不正に変更されていた場合、プログラムの流れは `__stack_chk_fail` に進みます。`__stack_chk_fail` も glibc 内の関数で、デフォルトでは ELF の遅延バインディング(lazy binding)を経由して呼び出されます。定義は次のとおりです。
 
 ```C
 eglibc-2.19/debug/stack_chk_fail.c
@@ -80,9 +80,9 @@ void __attribute__ ((noreturn)) internal_function __fortify_fail (const char *ms
 }
 ```
 
-这意味可以通过劫持 `__stack_chk_fail` 的 got 值劫持流程或者利用 `__stack_chk_fail` 泄漏内容(参见 stack smash)。
+つまり、`__stack_chk_fail` の GOT の値を書き換えて制御フローを乗っ取ったり、`__stack_chk_fail` を利用して内容を leak したりできます(stack smash を参照)。
 
-进一步，对于 Linux 来说，fs 寄存器实际指向的是当前栈的 TLS 结构，fs:0x28 指向的正是 stack\_guard。
+さらに、Linux では fs レジスタは実際には現在のスタックの TLS 構造体を指しており、fs:0x28 が指しているのがまさに stack\_guard です。
 ```C
 typedef struct
 {
@@ -96,47 +96,47 @@ typedef struct
   ...
 } tcbhead_t;
 ```
-如果存在溢出可以覆盖位于 TLS 中保存的 Canary 值那么就可以实现绕过保护机制。
+オーバーフローで TLS に保存されている Canary の値を上書きできるなら、保護機構を回避できます。
 
-事实上，TLS 中的值由函数 security\_init 进行初始化。
+実際には、TLS 内の値は関数 security\_init によって初期化されます。
 
 ```C
 static void
 security_init (void)
 {
-  // _dl_random的值在进入这个函数的时候就已经由kernel写入.
-  // glibc直接使用了_dl_random的值并没有给赋值
-  // 如果不采用这种模式, glibc也可以自己产生随机数
+  // _dl_random の値は、この関数に入る時点ですでに kernel によって書き込まれている。
+  // glibc は _dl_random の値をそのまま使っており、代入はしていない。
+  // この方式をとらない場合、glibc が自分で乱数を生成することもできる。
 
-  //将_dl_random的最后一个字节设置为0x0
+  // _dl_random の最後の1バイトを 0x0 にする
   uintptr_t stack_chk_guard = _dl_setup_stack_chk_guard (_dl_random);
   
-  // 设置Canary的值到TLS中
+  // Canary の値を TLS に設定する
   THREAD_SET_STACK_GUARD (stack_chk_guard);
 
   _dl_random = NULL;
 }
 
-//THREAD_SET_STACK_GUARD宏用于设置TLS
+//THREAD_SET_STACK_GUARD マクロは TLS の設定に使う
 #define THREAD_SET_STACK_GUARD(value) \
   THREAD_SETMEM (THREAD_SELF, header.stack_guard, value)
 
 ```
 
 
-## Canary 绕过技术
+## Canary の回避技術
 
-### 序言
-Canary 是一种十分有效的解决栈溢出问题的漏洞缓解措施。但是并不意味着 Canary 就能够阻止所有的栈溢出利用，在这里给出了常见的存在 Canary 的栈溢出利用思路，请注意每种方法都有特定的环境要求。
+### はじめに
+Canary はスタックオーバーフロー問題に対する非常に有効な脆弱性緩和策です。しかし、Canary があればあらゆるスタックオーバーフローの悪用を防げるというわけではありません。ここでは Canary が存在する場合の代表的なスタックオーバーフローの悪用方針を挙げますが、それぞれの手法には特定の環境条件が必要なことに注意してください。
 
-### 泄露栈中的 Canary
-Canary 设计为以字节 `\x00` 结尾，本意是为了保证 Canary 可以截断字符串。
-泄露栈中的 Canary 的思路是覆盖 Canary 的低字节，来打印出剩余的 Canary 部分。
-这种利用方式需要存在合适的输出函数，并且可能需要第一溢出泄露 Canary，之后再次溢出控制执行流程。
+### スタック上の Canary の leak
+Canary は、文字列を途中で切れるようにするために、バイト `\x00` で終わるように設計されています。
+スタック上の Canary を leak する方針は、Canary の最下位バイトを上書きして、残りの Canary 部分を出力させるというものです。
+この方法には適切な出力関数が必要で、1回目のオーバーフローで Canary を leak し、2回目のオーバーフローで実行フローを制御する、という流れが必要になることもあります。
 
-#### 利用示例
+#### 悪用例
 
-存在漏洞的示例源代码如下:
+脆弱なサンプルのソースコードは次のとおりです。
 
 ```C
 // ex2.c
@@ -167,14 +167,14 @@ int main(void) {
 }
 ```
 
-编译为 32bit 程序并关闭 PIE 保护 （默认开启 NX，ASLR，Canary 保护）
+32bit プログラムとして、PIE 保護を無効にしてコンパイルします(NX、ASLR、Canary 保護はデフォルトで有効です)。
 
 ```bash
 $ gcc -m32 -no-pie ex2.c -o ex2
 ```
 
-首先通过覆盖 Canary 最后一个 `\x00` 字节来打印出 4 位的 Canary
-之后，计算好偏移，将 Canary 填入到相应的溢出位置，实现 Ret 到 getshell 函数中
+まず Canary の最後の `\x00` バイトを上書きして、4バイトの Canary を出力させます。
+その後、オフセットを計算して Canary を該当するオーバーフロー位置に埋め込み、getshell 関数へ Ret します。
 
 ```python
 #!/usr/bin/env python
@@ -205,12 +205,12 @@ io.recv()
 
 io.interactive()
 ```
-### one-by-one 爆破 Canary
+### one-by-one による Canary のブルートフォース
 
-对于 Canary，虽然每次进程重启后的 Canary 不同(相比 GS，GS 重启后是相同的)，但是同一个进程中的不同线程的 Canary 是相同的， 并且
-通过 fork 函数创建的子进程的 Canary 也是相同的，因为 fork 函数会直接拷贝父进程的内存。我们可以利用这样的特点，彻底逐个字节将 Canary 爆破出来。
-在著名的 offset2libc 绕过 linux64bit 的所有保护的文章中，作者就是利用这样的方式爆破得到的 Canary:
-这是爆破的 Python 代码:
+Canary は、プロセスを再起動するたびに値が変わります(GS は再起動しても同じ値です)が、同一プロセス内の異なるスレッドの Canary は同じ値です。さらに、
+fork 関数で作られた子プロセスの Canary も同じです。fork 関数は親プロセスのメモリをそのままコピーするためです。この性質を利用して、Canary を1バイトずつブルートフォースで完全に求めることができます。
+有名な offset2libc の、linux64bit のすべての保護を回避する記事では、著者はこの方法で Canary をブルートフォースして得ています。
+以下がブルートフォースの Python コードです。
 
 ```python
 print "[+] Brute forcing stack canary "
@@ -237,16 +237,16 @@ print "   [+] SSP value is 0x%s" % canary
 ```
 
 
-### 劫持__stack_chk_fail函数
-已知 Canary 失败的处理逻辑会进入到 `__stack_chk_fail`ed 函数，`__stack_chk_fail`ed 函数是一个普通的延迟绑定函数，可以通过修改 GOT 表劫持这个函数。
+### `__stack_chk_fail` 関数の乗っ取り
+Canary の検査に失敗した場合の処理は `__stack_chk_fail` 関数に進むことが分かっています。`__stack_chk_fail` は通常の遅延バインディング関数なので、GOT テーブルを書き換えることで乗っ取れます。
 
-参见 ZCTF2017 Login，利用方式是通过 fsb 漏洞篡改 `__stack_chk_fail` 的 GOT 表，再进行 ROP 利用
+ZCTF2017 Login を参照してください。fsb 脆弱性で `__stack_chk_fail` の GOT を書き換え、そのうえで ROP により攻略します。
 
-### 覆盖 TLS 中储存的 Canary 值
+### TLS に保存された Canary 値の上書き
 
-已知 Canary 储存在 TLS 中，在函数返回前会使用这个值进行对比。当溢出尺寸较大时，可以同时覆盖栈上储存的 Canary 和 TLS 储存的 Canary 实现绕过。
+Canary は TLS に保存されており、関数がリターンする前にこの値と比較されることが分かっています。オーバーフローのサイズが大きい場合、スタック上の Canary と TLS 上の Canary を同時に上書きすることで回避できます。
 
-参见 StarCTF2018 babystack
+StarCTF2018 babystack を参照してください。
 
 
 

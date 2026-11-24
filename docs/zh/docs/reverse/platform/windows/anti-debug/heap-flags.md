@@ -1,21 +1,21 @@
 # Heap Flags
 
-## 关于Heap flags
+## Heap flags について
 
-`Heap flags`包含有两个与`NtGlobalFlag`一起初始化的标志: `Flags`和`ForceFlags`. 这两个字段的值不仅会受调试器的影响, 还会由windows版本而不同, 字段的位置也取决于windows的版本. 
+`Heap flags` には、`NtGlobalFlag` と一緒に初期化される2つのフラグ `Flags` と `ForceFlags` があります。この2つのフィールドの値は、デバッガの影響を受けるだけでなく、Windows のバージョンによっても異なり、フィールドの位置も Windows のバージョンによって決まります。
 
-* Flags字段:
-    * 在32位Windows NT, Windows 2000和Windows XP中, `Flags`位于堆的`0x0C`偏移处. 在32位Windows Vista及更新的系统中, 它位于`0x40`偏移处. 
-    * 在64位Windows XP中, `Flags`字段位于堆的`0x14`偏移处, 而在64位Windows Vista及更新的系统中, 它则是位于`0x70`偏移处.
-* ForceFlags字段:
-    * 在32位Windows NT, Windows 2000和Windows XP中, `ForceFlags`位于堆的`0x10`偏移处. 在32位Windows Vista及更新的系统中, 它位于`0x44`偏移处. 
-    * 在64位Windows XP中, `ForceFlags`字段位于堆的`0x18`偏移处, 而在64位Windows Vista及更新的系统中, 它则是位于`0x74`偏移处.
+* Flags フィールド:
+    * 32ビットの Windows NT、Windows 2000、Windows XP では、`Flags` はヒープのオフセット `0x0C` にあります。32ビットの Windows Vista 以降では、オフセット `0x40` にあります。
+    * 64ビットの Windows XP では、`Flags` フィールドはヒープのオフセット `0x14` にあり、64ビットの Windows Vista 以降では、オフセット `0x70` にあります。
+* ForceFlags フィールド:
+    * 32ビットの Windows NT、Windows 2000、Windows XP では、`ForceFlags` はヒープのオフセット `0x10` にあります。32ビットの Windows Vista 以降では、オフセット `0x44` にあります。
+    * 64ビットの Windows XP では、`ForceFlags` フィールドはヒープのオフセット `0x18` にあり、64ビットの Windows Vista 以降では、オフセット `0x74` にあります。
 
-在所有版本的Windows中, `Flags`字段的值正常情况都设为`HEAP_GROWABLE(2)`, 而`ForceFlags`字段正常情况都设为`0`. 然而对于一个32位进程(64位程序不会有此困扰), 这两个默认值, 都取决于它的宿主进程(host process)的[`subsystem`](https://msdn.microsoft.com/en-us/library/ms933120.aspx)版本(这里不是指所说的比如win10的linux子系统). 只有当`subsystem`在`3.51`及更高的版本, 字段的默认值才如前所述. 如果是在`3.10-3.50`版本之间, 则两个字段的`HEAP_CREATE_ALIGN_16 (0x10000)`都会被设置. 如果版本低于`3.10`, 那么这个程序文件就根本不会被运行. 
+どのバージョンの Windows でも、通常、`Flags` フィールドの値は `HEAP_GROWABLE(2)` に、`ForceFlags` フィールドは `0` に設定されています。ただし32ビットのプロセスでは(64ビットのプログラムにはこの問題はありません)、この2つの既定値は、ホストプロセス(host process)の[`subsystem`](https://msdn.microsoft.com/en-us/library/ms933120.aspx)のバージョンによって決まります(ここでいうのは、たとえば Windows 10 の Linux 用サブシステムのことではありません)。`subsystem` が `3.51` 以降のバージョンの場合にだけ、フィールドの既定値は前述のとおりになります。バージョンが `3.10-3.50` の間であれば、2つのフィールドの両方に `HEAP_CREATE_ALIGN_16 (0x10000)` が設定されます。バージョンが `3.10` より低ければ、そのプログラムファイルはそもそも実行されません。
 
-如果某操作将`Flags`和`ForgeFlags`字段的值分别设为`2`和`0`, 但是却未对`subsystem`版本进行检查, 那么就可以表明该动作是为了隐藏调试器而进行的. 
+ある処理が `Flags` と `ForgeFlags` フィールドの値をそれぞれ `2` と `0` に設定しているのに、`subsystem` のバージョンを確認していなければ、その動作はデバッガを隠すために行われていると判断できます。
 
-当调试器存在时, 在`Windows NT`, `Windows 2000`和32位`Windows XP`系统下, `Flags`字段会设置以下标志:
+デバッガが存在するとき、`Windows NT`、`Windows 2000`、32ビットの `Windows XP` では、`Flags` フィールドに次のフラグが設定されます。
 
 ``` c
 HEAP_GROWABLE (2)
@@ -25,7 +25,7 @@ HEAP_SKIP_VALIDATION_CHECKS (0x10000000)
 HEAP_VALIDATE_PARAMETERS_ENABLED (0x40000000)
 ```
 
-在64位`Windows XP`系统, `Windows Vista`及更新的系统版本, `Flags`字段则会设置以下标志(少了`HEAP_SKIP_VALIDATION_CHECKS (0x10000000)`):
+64ビットの `Windows XP` と、`Windows Vista` 以降のバージョンでは、`Flags` フィールドに次のフラグが設定されます(`HEAP_SKIP_VALIDATION_CHECKS (0x10000000)` がありません)。
 
 ``` c
 HEAP_GROWABLE (2)
@@ -34,7 +34,7 @@ HEAP_FREE_CHECKING_ENABLED (0x40)
 HEAP_VALIDATE_PARAMETERS_ENABLED (0x40000000)
 ```
 
-而对于`ForgeFlags`字段, 正常情况则会设置以下标志:
+`ForgeFlags` フィールドには、通常、次のフラグが設定されます。
 
 ``` c
 HEAP_TAIL_CHECKING_ENABLED (0x20)
@@ -42,24 +42,24 @@ HEAP_FREE_CHECKING_ENABLED (0x40)
 HEAP_VALIDATE_PARAMETERS_ENABLED (0x40000000)
 ```
 
-因为`NtGlobalFlag`标志的关系, `heap`也会设置一些标志位
+`NtGlobalFlag` フラグの関係で、`heap` にもいくつかのフラグが設定されます。
 
-* 如果在`NtGlobalFlag`字段中有设置`FLG_HEAP_ENABLE_TAIL_CHECK`标志, 那么在`heap`字段中就会设置`HEAP_TAIL_CHECKING_ENABLED`标志. 
-* 如果在`NtGlobalFlag`字段中有设置`FLG_HEAP_ENABLE_FREE_CHECK`标志, 那么在`heap`字段中就会设置`FLG_HEAP_ENABLE_FREE_CHECK`标志.
-* 如果在`NtGlobalFlag`字段中有设置`FLG_HEAP_VALIDATE_PARAMETERS`标志, 那么在`heap`字段中就会设置`HEAP_VALIDATE_PARAMETERS_ENABLED`标志(在`Windows NT`和`Windows 2000`中还会设置`HEAP_CREATE_ALIGN_16 (0x10000)`标志).
+* `NtGlobalFlag` フィールドに `FLG_HEAP_ENABLE_TAIL_CHECK` フラグが設定されていれば、`heap` のフィールドに `HEAP_TAIL_CHECKING_ENABLED` フラグが設定されます。
+* `NtGlobalFlag` フィールドに `FLG_HEAP_ENABLE_FREE_CHECK` フラグが設定されていれば、`heap` のフィールドに `FLG_HEAP_ENABLE_FREE_CHECK` フラグが設定されます。
+* `NtGlobalFlag` フィールドに `FLG_HEAP_VALIDATE_PARAMETERS` フラグが設定されていれば、`heap` のフィールドに `HEAP_VALIDATE_PARAMETERS_ENABLED` フラグが設定されます(`Windows NT` と `Windows 2000` では `HEAP_CREATE_ALIGN_16 (0x10000)` フラグも設定されます)。
 
-`heap flags`同样也如上节的`NtGlobalFlag`那样, 不过它受到注册表`HKLM\Software\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\<filename>`位置的`PageHeapFlags"`键的控制. 
+`heap flags` も、前の節の `NtGlobalFlag` と同様ですが、レジストリの `HKLM\Software\Microsoft\Windows NT\CurrentVersion\Image File Execution Options\<filename>` にある `PageHeapFlags"` キーによって制御されます。
 
-## 获取heap位置
+## heap の位置を取得する
 
-有多种方法能获知`heap`的位置, 方法之一就是`kernel32`的`GetProcessHeap()`函数, 当然也可以用以下的32位汇编代码来检测32位环境(实际上就有一些壳避免使用该api函数, 直接查询PEB):
+`heap` の位置を知る方法は複数あります。その1つは `kernel32` の `GetProcessHeap()` 関数です。もちろん、32ビット環境では次の32ビットのアセンブリコードでも検出できます(実際、この API 関数を使わず、PEB を直接参照するパッカーもあります)。
 
 ``` asm
 mov eax, fs:[30h] ;Process Environment Block
 mov eax, [eax+18h] ;get process heap base
 ```
 
-或使用以下64位代码来检测64位环境
+64ビット環境では、次の64ビットコードで検出できます。
 
 ``` asm
 push 60h
@@ -68,7 +68,7 @@ gs:lodsq ;Process Environment Block
 mov eax, [rax+30h] ;get process heap base
 ```
 
-或使用以下32位代码检测64位环境
+64ビット環境を32ビットコードで検出する場合は、次のようにします。
 
 ``` asm
 mov eax, fs:[30h] ;Process Environment Block
@@ -77,11 +77,11 @@ mov eax, fs:[30h] ;Process Environment Block
 mov eax, [eax+1030h] ;get process heap base
 ```
 
-另外一种方法则是使用`kernel32`的`GetProcessHeaps()`函数, 其实它只是简单的转给了`ntdll`的`RtlGetProcessHeaps()`函数, 这个函数会返回属于当前进程的堆的数组, 而数组的第一个堆, 就跟`kernel32`的`GetProcessHeap()`函数所返回的是一样的.
+もう1つの方法は、`kernel32` の `GetProcessHeaps()` 関数を使うことです。この関数は実際には `ntdll` の `RtlGetProcessHeaps()` 関数に処理を渡しているだけで、現在のプロセスに属するヒープの配列を返します。配列の最初のヒープは、`kernel32` の `GetProcessHeap()` 関数が返すものと同じです。
 
 
 
-这个过程可以用32位代码检测32位windows环境来实现:
+この処理は、32ビットの Windows 環境では32ビットコードで次のように実現できます。
 
 ``` asm
 push 30h
@@ -92,7 +92,7 @@ mov esi, [esi+eax+5ch]
 lodsd
 ```
 
-同上, 用64位代码检测64位windows环境的代码是:
+同様に、64ビットの Windows 環境で64ビットコードを使う場合は次のとおりです。
 
 ``` asm
 push 60h
@@ -103,7 +103,7 @@ mov esi, [rsi*2+rax+20h]
 lodsd
 ```
 
-或使用32位代码检测64位window环境:
+64ビットの Windows 環境を32ビットコードで検出する場合は次のとおりです。
 
 ``` asm
 mov eax, fs:[30h] ;Process Environment Block
@@ -113,11 +113,11 @@ mov esi, [eax+10f0h] ;get process heaps list base
 lodsd
 ```
 
-## 检测Flags字段
+## Flags フィールドの検出
 
-那么显然, 检测调试器我们就可以从检测那几个`Flags`和`ForgeFlags`的标志位入手. 
+そうすると、デバッガの検出は、`Flags` と `ForgeFlags` のいくつかのフラグビットを調べることから始められるのは明らかです。
 
-先看`Flags`字段的检测代码, 用32位代码检测32位windows环境, 且`subsystem`版本在`3.10-3.50`之间:
+まず `Flags` フィールドの検出コードです。32ビットの Windows 環境を32ビットコードで検出し、`subsystem` のバージョンが `3.10-3.50` の間にある場合です。
 
 ``` asm
 call GetVersion
@@ -139,7 +139,7 @@ cmp eax, 40000062h
 je being_debugged
 ```
 
-32位代码检测32位windows环境, 且`subsystem`为`3.51`及更高版本:
+32ビットの Windows 環境を32ビットコードで検出し、`subsystem` が `3.51` 以降のバージョンである場合です。
 
 ``` asm
 call GetVersion
@@ -162,7 +162,7 @@ cmp eax, 62000040h
 je being_debugged
 ```
 
-64位代码检测64位windows环境(64位进程不必受`subsystem`版本困扰):
+64ビットの Windows 環境を64ビットコードで検出する場合です(64ビットのプロセスは `subsystem` のバージョンに悩まされません)。
 
 ``` asm
 push 60h
@@ -181,7 +181,7 @@ cmp d [rbx+rax+70h], 40000062h ;Flags
 je being_debugged
 ```
 
-用32位代码检测64位windows环境:
+64ビットの Windows 環境を32ビットコードで検出する場合です。
 
 ``` asm
 push 30h
@@ -204,12 +204,12 @@ cmp [ebx+eax+70h], 40000062h
 je being_debugged
 ```
 
-如果是直接通过`KUSER_SHARED_DATA`结构的`NtMajorVersion`字段(位于2G用户空间的`0x7ffe026c`偏移处)获取该值(在所有32位/64位版本的Windows都可以获取该值), 可以进一步混淆`kernel32`的`GetVersion()`函数调用操作.
+`KUSER_SHARED_DATA` 構造体の `NtMajorVersion` フィールド(2G のユーザー空間にあるオフセット `0x7ffe026c`)から直接この値を取得すれば(32ビット・64ビットのどのバージョンの Windows でも取得できます)、`kernel32` の `GetVersion()` 関数を呼び出す処理をさらに難読化できます。
 
 
-## 检测ForgeFlags字段
+## ForgeFlags フィールドの検出
 
-当然另一个方法就是检测`ForgeFlags`字段, 以下是32位代码检测32位Windows环境, `subsystem`版本在`3.10-3.50`之间:
+もちろん、もう1つの方法は `ForgeFlags` フィールドを検出することです。以下は、32ビットの Windows 環境を32ビットコードで検出し、`subsystem` のバージョンが `3.10-3.50` の間にある場合です。
 
 ``` asm
 call GetVersion
@@ -229,7 +229,7 @@ cmp eax, 40000060h
 je being_debugged
 ```
 
-32位代码检测32位windows环境, 且`subsystem`为`3.51`及更高版本:
+32ビットの Windows 環境を32ビットコードで検出し、`subsystem` が `3.51` 以降のバージョンである場合です。
 
 ``` asm
 call GetVersion
@@ -247,7 +247,7 @@ cmp [eax+ebx+10h], 40000060h
 je being_debugged
 ```
 
-64位代码检测64位windows环境(64位进程不必受`subsystem`版本困扰):
+64ビットの Windows 環境を64ビットコードで検出する場合です(64ビットのプロセスは `subsystem` のバージョンに悩まされません)。
 
 ``` asm
 push 60h
@@ -265,7 +265,7 @@ and al, 0a4h
 cmp d [rbx+rax+74h], 40000060h
 je being_debugged
 ```
-用32位代码检测64位windows环境:
+64ビットの Windows 環境を32ビットコードで検出する場合です。
 
 ``` asm
 call GetVersion
@@ -287,6 +287,6 @@ cmp [ebx+eax+74h], 40000060h
 je being_debugged
 ```
 
-## 参考链接
+## 参考リンク
 
 * [The "Ultimate" Anti-Debugging Reference](http://anti-reversing.com/Downloads/Anti-Reversing/The_Ultimate_Anti-Reversing_Reference.pdf)

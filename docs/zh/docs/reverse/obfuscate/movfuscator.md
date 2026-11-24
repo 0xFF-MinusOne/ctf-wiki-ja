@@ -1,11 +1,11 @@
 # movofuscator
 
-## 简介
+## はじめに
 
-[movfuscator](https://github.com/xoreaxeaxeax/movfuscator) 是一个通过**将常规 x86 指令替换为等价的 mov 指令**来完成代码混淆的混淆器，得益于 `mov` 指令满足图灵完备性质，所有的指令都可以通过由 `mov` 指令组成的代码片段进行等价代换，同时保持程序逻辑不变。
+[movfuscator](https://github.com/xoreaxeaxeax/movfuscator) は、**通常の x86 命令を等価な mov 命令に置き換える**ことでコードを難読化するオブファスケータです。`mov` 命令はチューリング完全であるため、すべての命令を `mov` 命令からなるコード片で等価に置き換えることができ、プログラムのロジックは変わりません。
 
-由于 mov 混淆的特殊性，目前暂时没有较为高效的反混淆手段，现阶段如 [demovfuscator](https://github.com/leetonidas/demovfuscator) 等反混淆器可以完成初步的去混淆工作。
+mov 難読化は特殊であるため、現時点では効率的な難読化解除の手段はまだありません。現段階では [demovfuscator](https://github.com/leetonidas/demovfuscator) などの難読化解除ツールで、初歩的な解除作業を行える程度です。
 
-## 例题：强网拟态 2023 决赛 - movemove
+## 例題: 強網擬態 2023 決勝 - movemove
 
-> 待施工。
+> 作成中。

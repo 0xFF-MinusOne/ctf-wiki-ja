@@ -1,61 +1,61 @@
-# 迷宫问题
+# 迷路問題
 
-迷宫问题有以下特点: 
+迷路問題には次のような特徴があります。
 
-* 在内存中布置一张"地图"
-* 将用户输入限制在少数几个字符范围内. 
-* 一般只有一个迷宫入口和一个迷宫出口
+* メモリ上に「マップ」を配置する
+* ユーザー入力を少数の文字の範囲に制限する
+* 一般に、迷路の入口と出口は1つずつしかない
 
-布置的地图可以由可显字符(比如`#`和`*`)组合而成(这非常明显, 查看字符串基本就知道这是个迷宫题了.), 也可以单纯用不可显的十六进制值进行表示. 可以将地图直接组成一条非常长的字符串, 或是一行一行分开布置. 如果是一行一行分开布置的话, 因为迷宫一般都会比较大, 所以用于按行(注意, 布置并非按顺序布置, 每行都对应一个具体的行号, 你需要确定行号才能还原迷宫地图)布置迷宫的函数会明显重复多次. 
+配置されるマップは、表示可能な文字(たとえば `#` と `*`)の組み合わせでできている場合があり(これは非常にわかりやすく、文字列を見ればほぼ迷路の問題だとわかります)、表示できない16進数の値だけで表されている場合もあります。マップを非常に長い1本の文字列にしてしまうこともあれば、1行ずつ分けて配置することもあります。1行ずつ分けて配置する場合、迷路は一般に大きいため、行単位で迷路を配置する関数が明らかに何度も繰り返されます(なお、配置は順番どおりではなく、各行には具体的な行番号が対応しており、迷路のマップを復元するにはその行番号を確かめる必要があります)。
 
-而被限制的字符通常会是一些方便记忆的组合(不是也没办法), 比如`w/s/a/d`, `h/j/k/l`, `l/r/u/d`这样的类似组合. 当然各个键具体的操作需要经过分析判断(像那种只用一条字符串表示迷宫的, 就可以用`t`键表示向右移动`12`个字符这样). 对于二维的地图, 一般作者都会设置一个`X坐标`和一个`Y坐标`用于保存当前位置. 我们也可以根据这个特点来入手分析.
+制限される文字は、たいてい覚えやすい組み合わせです(そうでない場合は仕方ありません)。たとえば `w/s/a/d`、`h/j/k/l`、`l/r/u/d` のような組み合わせです。もちろん、各キーの具体的な動作は解析して判断する必要があります(迷路を1本の文字列だけで表しているものなら、`t` キーで右に `12` 文字進む、といった具合です)。2次元のマップでは、作者は通常、現在位置を保存するための `X座標` と `Y座標` を用意します。この特徴を手がかりに解析を始めることもできます。
 
-一般情况下, 迷宫是只有1个入口和1个出口, 像入口在最左上角`(0, 0)`位置, 而出口在最右下角`(max_X, max_Y)`处. 但也有可能是出口在迷宫的正中心, 用一个`Y`字符表示等等. 解答迷宫题的条件也是需要根据具体情况判断的.  
+通常、迷路の入口と出口は1つずつで、たとえば入口が左上端の `(0, 0)` の位置、出口が右下端の `(max_X, max_Y)` にあります。しかし、出口が迷路のちょうど中心にあり、`Y` という文字で表されている、といったこともあります。迷路の問題を解く条件も、具体的な状況に応じて判断する必要があります。
 
-当然迷宫的走法可能不止1条, 也有情况是有多条走法, 但是要求某一个走法比如说代价最小. 那么这就可以变相为一个算法问题. 
+もちろん、迷路の進み方は1通りとは限らず、複数の進み方があって、そのうち特定のもの、たとえばコストが最小のものを求められる場合もあります。その場合は、アルゴリズムの問題に置き換えられます。
 
 ## Volga Quals CTF 2014: Reverse 100
 
-接下来我们以这道题进行示例, 这是一道简单的迷宫题. 该题对地图按行乱序布置, 使用的字符是`#`和`*`. 
+ここでは、この問題を例に説明します。これは簡単な迷路の問題です。この問題ではマップが行単位でばらばらの順序に配置されており、使われている文字は `#` と `*` です。
 
-对应的`crackme`可以点击此处下载: [rev100](https://github.com/ctf-wiki/ctf-challenges/blob/master/reverse/maze/2014_volga_quals/rev100)
+対応する `crackme` はこちらからダウンロードできます: [rev100](https://github.com/ctf-wiki/ctf-challenges/blob/master/reverse/maze/2014_volga_quals/rev100)
 
-对应的`idb`可以点击此处下载: [rev100.i64](https://github.com/ctf-wiki/ctf-challenges/blob/master/reverse/maze/2014_volga_quals/rev100.i64)
+対応する `idb` はこちらからダウンロードできます: [rev100.i64](https://github.com/ctf-wiki/ctf-challenges/blob/master/reverse/maze/2014_volga_quals/rev100.i64)
 
 ![setmaze.png](./figure/setmaze.png)
 
-我们可以到`.rodata`段用光标选择所有的地图字符串, 按下`shift+E`提取所有的地图数据. 
+`.rodata` セグメントでカーソルを使ってマップの文字列をすべて選択し、`shift+E` を押すと、マップのデータをすべて取り出せます。
 
 ![extract_maze.png](./figure/extract_maze.png)
 
-但是目前提取到的地图字符串, 从上往下并非是按顺序的, 因此我们需要回到IDA生成的伪C代码, 获取行号并重新排序组合起来. 
+しかし、この時点で取り出したマップの文字列は、上から下へ順番に並んでいません。そのため、IDA が生成した疑似 C コードに戻って行番号を取得し、並べ替えて組み合わせる必要があります。
 
-最后得到的完整地图如下:
+最終的に得られた完全なマップは次のとおりです。
 
-对应的`迷宫地图文件`可以点击此处下载: [maze_array.txt](https://github.com/ctf-wiki/ctf-challenges/blob/master/reverse/maze/2014_volga_quals/maze_array.txt)
+対応する `迷路のマップファイル` はこちらからダウンロードできます: [maze_array.txt](https://github.com/ctf-wiki/ctf-challenges/blob/master/reverse/maze/2014_volga_quals/maze_array.txt)
 
 ![maze_origin.png](./figure/maze_origin.png)
 
-再来看迷宫移动所需要的字符:
+次に、迷路の移動に必要な文字を見てみます。
 
 ![choice.png](./figure/choice.png)
 
-这里我们知道, 可以使用的字符有`L/R/U/D`, 分别对应于`左/右/上/下`.  
+ここから、使える文字は `L/R/U/D` で、それぞれ `左/右/上/下` に対応するとわかります。
 
-再往下看
+さらに下を見てみます。
 
 ![check.png](./figure/check.png)
 
-通过调试是可以知道, 这里其实是每次在用户输入`L/R/U/D`后, 先打印一次你的输入, 然后打印对应的`X/Y坐标`. 而最后的判定成功的条件, 就是当`pos_x == 89 && pos_y == 28`. 那么我们就可以根据上述信息, 获得走出迷宫的路径. 
+デバッグすると、ここでは、ユーザーが `L/R/U/D` を入力するたびに、まず入力内容を一度出力し、続いて対応する `X/Y座標` を出力していることがわかります。そして、最終的に成功と判定される条件は `pos_x == 89 && pos_y == 28` のときです。以上の情報から、迷路を抜ける経路を得られます。
 
 ![maze.jpg](./figure/maze.jpg)
 
-最后得到的迷宫路径就是
+最終的に得られた迷路の経路は次のとおりです。
 
 ```
 RDDRRRRRRRRRRRRRRRRRRDDDDDDDDDDRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRUUUUUULLLLLLLLLDDRRRRRRDDLLLLLLLLLLLLLUURRRUUUUURRRRRRRRRRRRRRRRRRRRRRRRRRDDDDDDDDDDDDDDDRRRRRRRRRRRRRRRRUUUUUUUUUUUUULLLLLLLUUUURRRRRRRRRRRRDDDDDDDDDDDDDDDDDDDLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLUUUURRRRRRRRRRRRRRRRRRRRRDRRRRRRRRRRRRRRUUULLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLDDDDDRRRRRUUURRRRDDDDDLLLLLLLLLDDDDRRRRRRRRRRUUURRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRDDDDDDRRRRRRRRRRRRRRRRRRRRRRRRRRRR
 ```
 
-## 参考链接
+## 参考リンク
 
 * [[VolgaCTF Quals 2014 writeup - Reverse-100](https://singularityctf.blogspot.com/2014/03/volgactf-quals-2014-writeup-reverse-100.html)]

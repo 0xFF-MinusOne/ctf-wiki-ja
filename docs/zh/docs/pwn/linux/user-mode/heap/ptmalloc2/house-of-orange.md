@@ -1,22 +1,22 @@
 # House of Orange
 
 
-## 介绍
+## はじめに
 
-House of Orange与其他的House of XX利用方法不同，这种利用方法来自于Hitcon CTF 2016中的一道同名题目。由于这种利用方法在此前的CTF题目中没有出现过，因此之后出现的一系列衍生题目的利用方法我们称之为House of Orange。
+House of Orange は、ほかの House of XX 系の攻撃手法とは異なり、Hitcon CTF 2016 の同名の問題に由来します。この手法はそれ以前の CTF の問題には登場していなかったため、その後に現れた一連の派生問題の攻略手法を House of Orange と呼んでいます。
 
-## 概述
+## 概要
 
-House of Orange的利用比较特殊，首先需要目标漏洞是堆上的漏洞但是特殊之处在于题目中不存在free函数或其他释放堆块的函数。我们知道一般想要利用堆漏洞，需要对堆块进行malloc和free操作，但是在House of Orange利用中无法使用free函数，因此House of Orange核心就是通过漏洞利用获得free的效果。
+House of Orange の利用は少し特殊です。まず、対象の脆弱性はヒープ上の脆弱性であることが必要ですが、特殊なのは、問題中に free 関数やその他のヒープチャンクを解放する関数が存在しないことです。一般にヒープの脆弱性を悪用するには、ヒープチャンクに対する malloc と free の操作が必要ですが、House of Orange では free 関数を使えません。そのため House of Orange の核心は、脆弱性を利用して free と同じ効果を得ることにあります。
 
 
 ## 原理
 
-如我们前面所述，House of Orange的核心在于在没有free函数的情况下得到一个释放的堆块(unsorted bin)。
-这种操作的原理简单来说是当前堆的top chunk尺寸不足以满足申请分配的大小的时候，原来的top chunk会被释放并被置入unsorted bin中，通过这一点可以在没有free函数情况下获取到unsorted bins。
+前述のとおり、House of Orange の核心は、free 関数がない状況で解放済みのヒープチャンク(unsorted bin)を得ることです。
+この操作の原理を簡単に言うと、現在のヒープの top chunk のサイズが要求された確保サイズを満たせないとき、元の top chunk が解放されて unsorted bin に入れられるため、これを利用すれば free 関数なしで unsorted bin を得られるというものです。
 
-我们来看一下这个过程的详细情况，我们假设目前的top chunk已经不满足malloc的分配需求。
-首先我们在程序中的`malloc`调用会执行到libc.so的`_int_malloc`函数中，在`_int_malloc`函数中，会依次检验fastbin、small bins、unsorted bin、large bins是否可以满足分配要求，因为尺寸问题这些都不符合。接下来`_int_malloc`函数会试图使用top chunk，在这里top chunk也不能满足分配的要求，因此会执行如下分支。
+この過程を詳しく見てみましょう。現在の top chunk がすでに malloc の確保要求を満たせないとします。
+まず、プログラム中の `malloc` 呼び出しは libc.so の `_int_malloc` 関数に到達します。`_int_malloc` 関数では、fastbin、small bins、unsorted bin、large bins の順に確保要求を満たせるかを調べますが、サイズの問題でどれも該当しません。次に `_int_malloc` 関数は top chunk を使おうとしますが、ここでも top chunk は確保要求を満たせないため、次の分岐が実行されます。
 
 ```
 /*
@@ -30,19 +30,19 @@ else {
 }
 ```
 
-此时ptmalloc已经不能满足用户申请堆内存的操作，需要执行sysmalloc来向系统申请更多的空间。
-但是对于堆来说有mmap和brk两种分配方式，我们需要让堆以brk的形式拓展，之后原有的top chunk会被置于unsorted bin中。
+この時点で ptmalloc はユーザーのヒープメモリ要求を満たせなくなっており、sysmalloc を実行してシステムからさらに領域を要求する必要があります。
+ただし、ヒープには mmap と brk の 2 つの確保方式があり、ヒープが brk の形で拡張されるようにする必要があります。その後、元の top chunk は unsorted bin に置かれます。
 
-综上，我们要实现brk拓展top chunk，但是要实现这个目的需要绕过一些libc中的check。
-首先，malloc的尺寸不能大于`mp_.mmap_threshold` ：
+まとめると、brk で top chunk を拡張させたいのですが、そのためには libc のいくつかの検査を回避する必要があります。
+まず、malloc のサイズは `mp_.mmap_threshold` より大きくてはいけません。
 
 ```
 if ((unsigned long)(nb) >= (unsigned long)(mp_.mmap_threshold) && (mp_.n_mmaps < mp_.n_mmaps_max))
 ```
 
-如果所需分配的 chunk 大小大于 mmap 分配阈值，默认为 128K，并且当前进程使用 mmap()分配的内存块小于设定的最大值，将使用 mmap()系统调用直接向操作系统申请内存。
+確保しようとする chunk のサイズが mmap による確保のしきい値(デフォルトは 128K)より大きく、かつ現在のプロセスが mmap() で確保したメモリブロックの数が設定された最大値より少ない場合は、mmap() システムコールを使って OS から直接メモリを要求します。
 
-在sysmalloc函数中存在对top chunk size的check，如下
+sysmalloc 関数には、次のような top chunk の size に対する検査があります。
 
 ```
 assert((old_top == initial_top(av) && old_size == 0) ||
@@ -50,22 +50,22 @@ assert((old_top == initial_top(av) && old_size == 0) ||
 	  prev_inuse(old_top) &&
 	  ((unsigned long)old_end & pagemask) == 0));
 ```
-这里检查了 top chunk 的合法性，如果第一次调用本函数，top chunk 可能没有初始化，所以可能 old_size 为 0。
-如果 top chunk 已经初始化了，那么 top chunk 的大小必须大于等于 MINSIZE，因为 top chunk 中包含了 fencepost，所以 top chunk 的大小必须要大于等于 MINSIZE。其次 top chunk 必须标识前一个 chunk 处于 inuse 状态，并且 top chunk 的结束地址必定是页对齐的。此外 top chunk 除去 fencepost 的大小必定要小于所需 chunk 的大小，否则在 _int_malloc() 函数中会使用 top chunk 分割出 chunk。
+ここでは top chunk の正当性を検査しています。この関数が初めて呼ばれる場合、top chunk は初期化されていない可能性があり、old_size が 0 になることがあります。
+top chunk がすでに初期化されている場合、top chunk のサイズは MINSIZE 以上でなければなりません。top chunk には fencepost が含まれているため、top chunk のサイズは MINSIZE 以上である必要があるのです。次に、top chunk は直前の chunk が inuse 状態であることを示していなければならず、top chunk の終端アドレスは必ずページにアラインされていなければなりません。さらに、top chunk から fencepost を除いたサイズは、要求された chunk のサイズより必ず小さくなければなりません。そうでなければ、_int_malloc() 関数で top chunk から chunk が切り出されてしまいます。
 
-我们总结一下伪造的top chunk size的要求
+偽造する top chunk の size に対する要件をまとめます。
 
-1. 伪造的 size 必须要对齐到内存页
-2. size 要大于 MINSIZE(32 位下通常是 0x10，64 位下通常是 0x20)
-3. size 要小于之后申请的 chunk size + MINSIZE(0x10)
-4. size 的 prev inuse 位必须为 1
+1. 偽造する size はメモリページにアラインされていなければならない
+2. size は MINSIZE(32 ビットでは通常 0x10、64 ビットでは通常 0x20)より大きい
+3. size は、その後に要求する chunk のサイズ + MINSIZE(0x10) より小さい
+4. size の prev inuse ビットは 1 でなければならない
 
-之后原有的top chunk就会执行`_int_free`从而顺利进入unsorted bin中。
+その後、元の top chunk は `_int_free` を実行され、無事に unsorted bin に入ります。
 
 
-## 示例
+## 例
 
-这里给出了一个示例程序，程序模拟了一个溢出覆盖到top chunk的size域。我们试图把size改小从而实现brk扩展，并把原有的top chunk放入unsorted bin中。
+ここでは、top chunk の size フィールドにオーバーフローで上書きが及ぶ状況を模したサンプルプログラムを示します。size を小さくして brk による拡張を実現し、元の top chunk を unsorted bin に入れることを試みます。
 
 ```
 #include <stdlib.h>
@@ -85,8 +85,8 @@ int main(void)
     malloc(0x60);
 }
 ```
-这里我们把top chunk的size覆盖为0x41。之后申请大于这个尺寸的堆块，即0x60。
-但是当我们执行这个示例时会发现，这个程序并不能利用成功，原因在于assert并没有被满足从而抛出了异常。
+ここでは top chunk の size を 0x41 で上書きしています。その後、このサイズより大きいヒープチャンク、つまり 0x60 を要求します。
+しかしこの例を実行すると、assert が満たされず例外が投げられるため、攻撃が成功しないことがわかります。
 
 ```
 [#0] 0x7ffff7a42428 → Name: __GI_raise(sig=0x6)
@@ -96,15 +96,15 @@ int main(void)
 ```
 
 
-## 正确的示例
+## 正しい例
 
-我们回头来看一下assert的条件，可以发现之前列出的条目都被满足了除了第一条。
+assert の条件を振り返ると、先に挙げた項目は最初の 1 つを除いてすべて満たされていることがわかります。
 
 ```
 1.伪造的size必须要对齐到内存页
 ```
 
-什么是对齐到内存页呢？我们知道现代操作系统都是以内存页为单位进行内存管理的，一般内存页的大小是4kb。那么我们伪造的size就必须要对齐到这个尺寸。在覆盖之前top chunk的size大小是20fe1，通过计算得知0x602020+0x20fe0=0x623000是对于0x1000（4kb）对齐的。
+メモリページにアラインされているとはどういうことでしょうか。現代の OS はメモリページを単位としてメモリを管理しており、一般的なメモリページのサイズは 4kb です。したがって、偽造する size もこの大きさにアラインされていなければなりません。上書き前の top chunk の size は 20fe1 で、計算すると 0x602020+0x20fe0=0x623000 は 0x1000(4kb) にアラインされています。
 
 ```
 0x602000:	0x0000000000000000	0x0000000000000021
@@ -112,7 +112,7 @@ int main(void)
 0x602020:	0x0000000000000000	0x0000000000020fe1 <== top chunk
 0x602030:	0x0000000000000000	0x0000000000000000
 ```
-因此我们伪造的fake_size可以是0x0fe1、0x1fe1、0x2fe1、0x3fe1等对4kb对齐的size。而0x40不满足对齐，因此不能实现利用。
+したがって、偽造する fake_size は 0x0fe1、0x1fe1、0x2fe1、0x3fe1 など、4kb にアラインされた size であればかまいません。一方、0x40 はアラインされていないため、攻撃は成立しません。
 
 ```
 #include <stdlib.h>
@@ -133,24 +133,24 @@ int main(void)
 }
 ```
 
-进行分配之后我们可以观察到原来的堆经过了brk扩展
+確保を行うと、元のヒープが brk によって拡張されたことが観察できます。
 
 ```
-//原有的堆
+//元のヒープ
 0x0000000000602000 0x0000000000623000 0x0000000000000000 rw- [heap]
 
-//经过扩展的堆
+//拡張されたヒープ
 0x0000000000602000 0x0000000000646000 0x0000000000000000 rw- [heap]
 ```
 
-我们的申请被分配到0x623010的位置，同时原有的堆被置入unsorted bin
+要求は 0x623010 の位置に割り当てられ、同時に元のヒープは unsorted bin に入れられます。
 
 ```
 [+] unsorted_bins[0]: fw=0x602020, bk=0x602020
  →   Chunk(addr=0x602030, size=0x1fc0, flags=PREV_INUSE)
 ```
 
-因为unsorted bin中存在块，所以我们下次的分配会切割这个块
+unsorted bin にチャンクが存在するため、次の確保ではこのチャンクが切り出されます。
 
 ```
  malloc(0x60);
@@ -160,7 +160,7 @@ int main(void)
  →   Chunk(addr=0x6020a0, size=0x1f50, flags=PREV_INUSE)
 ```
 
-可以看到分配的内存是从unsorted bin中切割的，内存布局如下
+確保されたメモリが unsorted bin から切り出されたことがわかります。メモリレイアウトは次のとおりです。
 
 ```
 0x602030:	0x00007ffff7dd2208	0x00007ffff7dd2208 <== 未被清零的unsorted bin链表
@@ -176,5 +176,4 @@ int main(void)
 ```
 
 
-其实house of orange的要点正在于此，之后的利用因为涉及到_IO_FILE的知识，放到IO_FILE独立章节分享。
-
+実は house of orange の要点はここにあり、その後の攻撃は _IO_FILE の知識に関わるため、IO_FILE の独立した章で紹介します。

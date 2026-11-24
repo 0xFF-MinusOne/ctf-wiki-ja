@@ -1,3 +1,3 @@
-# 环境搭建 
+# 環境構築
 
-参见 [ctf-tools](https://ctf-wiki.github.io/ctf-tools/binary_core_tools/virtualization/qemu/qemu-introduction/)
+[ctf-tools](https://ctf-wiki.github.io/ctf-tools/binary_core_tools/virtualization/qemu/qemu-introduction/) を参照してください。

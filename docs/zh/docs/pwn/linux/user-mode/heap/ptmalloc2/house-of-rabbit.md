@@ -1,19 +1,19 @@
 # House of Rabbit
 
-## 介绍
-House of rabbit是一种伪造堆块的技术，早在2017年已经提出，但在最近两个月才在CTF比赛中出现。我们一般运用在fastbin attack中，因为unsorted bin等其它的bin有更好的利用手段。
+## はじめに
+House of rabbit はヒープチャンクを偽造する手法で、早くも 2017 年に提唱されましたが、CTF の大会に現れたのはここ 2 か月ほどのことです。ほかの unsorted bin などの bin にはより優れた攻撃手段があるため、一般には fastbin attack で用います。
 
 ## 原理
-我们知道，fastbin中会把相同的size的被释放的堆块用一个单向链表管理，分配的时候会检查size是否合理，如果不合理程序就会异常退出。而house of rabbit就利用了在malloc consolidate的时候fastbin中的堆块进行合并时size没有进行检查从而伪造一个假的堆块，为进一步的利用做准备。
+fastbin では、解放された同じ size のチャンクが単方向リストで管理されており、確保のときに size が妥当かどうかが検査され、妥当でなければプログラムは異常終了します。house of rabbit は、malloc consolidate の際に fastbin のチャンクを統合するときに size が検査されないことを利用して、偽のチャンクを偽造し、さらなる攻撃の準備をします。
 
-由于原作者的[POC](https://github.com/shift-crops/House_of_Rabbit)需要的条件较多，这里我直接介绍这个攻击的本质即可。
+原作者の [POC](https://github.com/shift-crops/House_of_Rabbit) は必要な条件が多いため、ここでは直接この攻撃の本質を紹介します。
 
 `前提条件`:
-1. 可以修改fastbin的fd指针或size
-2. 可以触发malloc consolidate(merge top或malloc big chunk等等)
+1. fastbin の fd ポインタまたは size を書き換えられる
+2. malloc consolidate を発動できる(top との統合や、大きな chunk の malloc など)
 
 
-下面来看一下POC
+POC を見てみましょう。
 `POC 1`: modify the size of fastbin chunk
 ```cpp
 unsigned long* chunk1=malloc(0x40); //0x602000
@@ -129,19 +129,11 @@ gdb-peda$ heapinfo
 */
 ```
 
-原理很简单，就是通过修改fastbin chunk的size(如上面的POC 1所示)直接构造overlap chunk，或者修改fd(如面的POC 2所示)，让它指向一个fake chunk，触发malloc consolidate之后让这个fake chunk成为一个合法的chunk。
+原理は単純で、fastbin chunk の size を書き換えて(上の POC 1 のとおり)直接 overlap chunk を構築するか、fd を書き換えて(下の POC 2 のとおり)fake chunk を指すようにし、malloc consolidate を発動させた後に、その fake chunk を正当な chunk にするというものです。
 
-## 总结
-House of rabbit的优点是容易构造overlap chunk，由于可以基于fastbin attack，甚至不需要leak就可以完成攻击。大家可以通过例题的练习加深对这个攻击的理解。
+## まとめ
+House of rabbit の利点は overlap chunk を構築しやすいことで、fastbin attack をベースにできるため、リークなしでも攻撃を完了できることさえあります。例題で練習して、この攻撃への理解を深めてください。
 
-## 例题
+## 例題
 1. HITB-GSEC-XCTF 2018 mutepig
-2. 待补充
-
-
-
-
-
-
-
-
+2. 追加予定

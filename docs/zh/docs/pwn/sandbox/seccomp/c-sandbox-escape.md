@@ -1,9 +1,9 @@
-# C 沙盒逃逸
+# C サンドボックス脱出
 ## orw
 
-有些时候 pwn 题目中为了增加难度，会使用类似 [seccomp](https://en.wikipedia.org/wiki/Seccomp) 的函数来禁用一部分系统调用，往往会把 execve 这种系统调用禁用掉，基本上拿 shell 是不可能了，但是我们 pwn 题是面向 flag 的，所以还是可以通过 orw（ open-read-write ）的方法来读出 flag 的。在栈上的 orw 和 普通 rop 其实没有什么特别大的区别，这里主要谈一谈堆利用中的白名单绕过。
+pwn の問題では、難易度を上げるために、[seccomp](https://en.wikipedia.org/wiki/Seccomp) のような関数でシステムコールの一部を禁止することがあります。多くの場合 execve などのシステムコールが禁止されるため、shell の取得はほぼ不可能です。しかし pwn の問題の目的は flag なので、orw(open-read-write)の方法で flag を読み出すことができます。スタック上の orw は通常の ROP とほとんど違いがないため、ここでは主にヒープ利用におけるホワイトリストの回避について述べます。
 
-一般来说，开启了白名单的堆利用类题，我们会在劫持了某钩子函数如 __free_hook 或 got 表之后考虑实现 orw，这个时候我们只可以注入一个 gadget，一般来说我们希望这个 gadget 能够实现栈迁移，一种比较通用的做法是利用 setcontext 函数，其在 libc-2.29 中实现为
+一般に、ホワイトリストが有効なヒープ利用系の問題では、__free_hook などのフック関数や GOT をハイジャックした後に orw を実現することを考えます。このとき注入できる gadget は 1 つだけなので、その gadget でスタックピボット(栈迁移)を実現したいところです。比較的汎用的な方法として setcontext 関数を利用する手があり、libc-2.29 では次のように実装されています。
 
 ```
 .text:0000000000055E00 ; __unwind {
@@ -38,22 +38,22 @@
 .text:0000000000055E76 ; } // starts at 55E00
 ```
 
-当然其他版本也大同小异，可见在这个函数中有对 rsp 的赋值，如果我们可以控制 rdx，就可以控制 rsp 实现栈迁移了。
+もちろん他のバージョンでも大同小異で、この関数の中に rsp への代入があることがわかります。rdx を制御できれば rsp を制御でき、スタックピボットを実現できます。
 
-### 例题
+### 例題
 #### Balsn_CTF_2019-PlainText
 ##### 分析
-在 orw 之前的利用这里不再赘述，请见《Glibc Heap 利用》目录下的《堆中的 Off-By-One》中对此题的分析
+orw より前の部分の攻略はここでは省略します。この問題の分析は、「Glibc Heap 利用」ディレクトリの「ヒープにおける Off-By-One」を参照してください。
 
-比较讨厌的是，在 libc-2.29 下，free 函数不会再将 rdi 赋值给 rdx，我们无法直接控制 rdx，仅能控制 rdi，幸好比较巧合的，在本题的 libc 中有这样一个 gadget
+厄介なことに、libc-2.29 では free 関数が rdi を rdx に代入しなくなったため、rdx を直接制御できず、制御できるのは rdi だけです。幸い、偶然にも本問の libc には次のような gadget があります。
 
 ```
 0x12be97: mov rdx, qword ptr [rdi + 8]; mov rax, qword ptr [rdi]; mov rdi, rdx; jmp rax;
 ```
 
-通过使用这个 gadget 之后改变 rdx，ret 到 setcontext 之后就可以 rop 了（这个 chunk 无法通过 ROPgadget 找出，需要使用 ropper）。
+この gadget で rdx を変更してから setcontext に ret すれば、ROP を実行できます(この gadget は ROPgadget では見つからないため、ropper を使う必要があります)。
 ##### exploit
-这里只给出 payload
+ここでは payload のみを示します。
 ```python
 ## alloc to __free_hook ##
 magic_gadget = libc_base + 0x12be97

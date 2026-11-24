@@ -1,8 +1,8 @@
 # ZwSetInformationThread
 
-## 关于ZwSetInformationThread
+## ZwSetInformationThread について
 
-ZwSetInformationThread 等同于 NtSetInformationThread，通过为线程设置 ThreadHideFromDebugger，可以禁止线程产生调试事件，代码如下  
+ZwSetInformationThread は NtSetInformationThread と同等で、スレッドに ThreadHideFromDebugger を設定することで、そのスレッドがデバッグイベントを生成するのを禁止できます。コードは次のとおりです。  
 ```c
 #include <Windows.h>
 #include <stdio.h>
@@ -27,8 +27,8 @@ int main()
 }
 ```
 
-关键代码为`ZwSetInformationThread(GetCurrentThread(), ThreadHideFromDebugger, 0, 0);`，如果处于调试状态，执行完该行代码，程序就会退出  
+重要なコードは `ZwSetInformationThread(GetCurrentThread(), ThreadHideFromDebugger, 0, 0);` です。デバッグ状態にある場合、この行を実行し終えると、プログラムは終了します。  
 
-## 如何绕过
+## 回避の方法
 
-注意到该处 ZwSetInformationThread 函数的第 2 个参数为 ThreadHideFromDebugger，其值为 0x11。调试执行到该函数时，若发现第 2 个参数值为 0x11，跳过或者将 0x11 修改为其他值即可  
+ここでの ZwSetInformationThread 関数の第 2 引数は ThreadHideFromDebugger で、その値は 0x11 であることに注意します。デバッグしながらこの関数まで実行したとき、第 2 引数の値が 0x11 であるのを見つけたら、その呼び出しをスキップするか、0x11 を別の値に書き換えればよいのです。  

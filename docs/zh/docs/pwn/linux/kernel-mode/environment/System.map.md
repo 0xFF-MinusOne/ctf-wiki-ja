@@ -1,11 +1,11 @@
 # System.map
 
-`System.map` 文件是Linux内核编译过程中生成的一个重要文件。它包含了内核符号和它们对应的内存地址。这些符号包括内核函数、变量以及其他在内核中定义的重要符号。当我们获得的vmlinux是stripped时就需要System.map来帮助我们调试。
-`System.map` 文件是一个纯文本文件，每一行包含三个字段：
+`System.map` ファイルは、Linux カーネルのコンパイル過程で生成される重要なファイルです。カーネルシンボルと、それに対応するメモリアドレスが含まれています。これらのシンボルには、カーネル関数、変数、そのほかカーネル内で定義された重要なシンボルが含まれます。入手した vmlinux が stripped の場合、デバッグの助けとして System.map が必要になります。
+`System.map` ファイルはプレーンテキストファイルで、各行に 3 つのフィールドがあります。
 
-符号地址（内存地址）
-符号类型（例如：函数、变量）如果为小写，则符号为本地符号;如果大写，符号为全局（外部）。
-符号名（标识符）
+シンボルのアドレス(メモリアドレス)
+シンボルの種類(例:関数、変数)。小文字ならローカルシンボル、大文字ならグローバル(外部)シンボルです。
+シンボル名(識別子)
 ```
 └─$ head System.map                 
 0000000000000000 A VDSO32_PRELINK
@@ -20,9 +20,9 @@
 0000000000000410 A VDSO32_rt_sigreturn
 ```
 
-## 在ida中为stripped的vmlinux添加System.map
+## IDA で stripped の vmlinux に System.map を追加する
 
-加载以下脚本，然后选择对应的System.map文件
+次のスクリプトをロードし、対応する System.map ファイルを選択します。
 ```python
 import idaapi
 
@@ -37,7 +37,7 @@ def load_system_map(file_path):
             symbol_type = parts[1]
             symbol_name = parts[2]
             
-            # if symbol_type in ['T', 't', 'D', 'd', 'B', 'b']:     #如果符号表太大，可以针对性添加
+            # if symbol_type in ['T', 't', 'D', 'd', 'B', 'b']:     #シンボルテーブルが大きすぎる場合は、必要に応じて絞り込めます
             if not idaapi.add_entry(addr, addr, symbol_name, 0):
                 print(f"Failed to add symbol: {symbol_name} at {hex(addr)}")
             else:
@@ -51,13 +51,13 @@ else:
 
 ```
 
-加载前后对比
+ロード前後の比較
 ![System.map-load-diff](figure/System.map-load-diff.png)
 
 
-## 直接修复vmlinux
+## vmlinux を直接修復する
 
-如果你想直接修复vmlinux，可以参考https://github.com/marin-m/vmlinux-to-elf
+vmlinux を直接修復したい場合は、https://github.com/marin-m/vmlinux-to-elf を参照してください。
 
-## 参考
+## 参考文献
 https://linux.die.net/man/1/nm

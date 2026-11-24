@@ -2,25 +2,25 @@
 
 ## 基本原理
 
-链接器在处理目标文件时，需要对目标文件中的某些位置进行重定位，即将符号指向恰当的位置，确保程序正常执行。例如，当程序调用了一个函数时，相关的调用指令必须把控制流交给适当的目标执行地址。
+リンカはオブジェクトファイルを処理するとき、オブジェクトファイル内のいくつかの位置をリロケーションする必要があります。つまり、シンボルを適切な位置に向けて、プログラムが正常に実行されるようにします。たとえば、プログラムが関数を呼び出すとき、関連する呼び出し命令は、制御フローを適切な実行先アドレスに渡さなければなりません。
 
-在 ELF 文件中，对于每一个需要重定位的 ELF 节都有对应的重定位表，比如说 `.text` 节如果需要重定位，那么其对应的重定位表通常为 `.rel.text` 。
+ELF ファイルでは、リロケーションが必要な ELF セクションごとに、対応するリロケーションテーブルがあります。たとえば `.text` セクションにリロケーションが必要なら、対応するリロケーションテーブルは通常 `.rel.text` です。
 
-举个例子，当一个程序导入某个函数时，.dynstr 就会包含对应函数名称的字符串，.dynsym 中就会包含一个具有相应名称的符号（Elf_Sym），在 .rel.plt 中就会包含一个指向这个符号的的重定位表项。即，这几者之间的引用关系是
+例を挙げると、プログラムがある関数をインポートするとき、.dynstr には対応する関数名の文字列が入り、.dynsym にはその名前を持つシンボル(Elf_Sym)が入り、.rel.plt にはこのシンボルを指すリロケーションテーブルエントリが入ります。つまり、これらの間の参照関係は次のとおりです。
 
 ![image-20201029230806649](figure/image-20201029230806649-7093160.png)
 
-总的来说，plt 表项主要进行了如下的函数调用来解析目标函数
+全体として、plt のエントリは主に次の関数呼び出しを行って、対象の関数を解決します。
 
 ```c
 _dl_runtime_resolve(link_map_obj, reloc_index)
 ```
 
-## 具体操作
+## 具体的な動作
 
 ### _dl_runtime_resolve
 
-32 位和 64 位具有不同的 _dl_runtime_resolve 函数，32 位的版本如下
+32 ビット版と 64 ビット版では _dl_runtime_resolve 関数が異なります。32 ビット版は次のとおりです。
 
 ```assembly
         .text
@@ -50,14 +50,14 @@ _dl_runtime_resolve:
         .size _dl_runtime_resolve, .-_dl_runtime_resolve
 ```
 
-其中
+このうち、
 
-- 以 cfi 开头的都是一些提示性信息，可以不用管。可参考
+- cfi で始まるものはどれもヒント的な情報で、気にしなくてかまいません。次を参照してください。
     - https://stackoverflow.com/questions/51962243/what-is-cfi-adjust-cfa-offset-and-cfi-rel-offset
     - https://sourceware.org/binutils/docs/as/CFI-directives.html
-- _CET_ENDBR  则与 Intel 的 CET 相关，`ENDBR32`/`ENDBR64` 是 Intel CET-IBT 的合法间接分支目标标记。间接 `CALL` 或 `JMP` 执行后，处理器期望目标位置以相应 ENDBR 开始；该指令在不支持 CET 的旧处理器上按兼容 NOP 处理。
+- _CET_ENDBR  は Intel の CET に関係します。`ENDBR32`/`ENDBR64` は、Intel CET-IBT における正当な間接分岐先のマーカーです。間接 `CALL` や `JMP` を実行したあと、プロセッサは、分岐先が対応する ENDBR で始まっていることを期待します。この命令は、CET をサポートしない古いプロセッサでは、互換の NOP として扱われます。
 
-因此这部分代码可以简化为
+したがって、この部分のコードは次のように簡略化できます。
 
 ```assembly
         .text
@@ -79,23 +79,23 @@ _dl_runtime_resolve:
         .size _dl_runtime_resolve, .-_dl_runtime_resolve
 ```
 
-即，`_dl_runtime_resolve` 保存了 eax，ecx，edx 三个寄存器后，然后把 link_map 的地址放到 eax 中，把待解析的符号的偏移放到 edx 中。然后就去执行 `_dl_fixup` 函数。在函数执行返回后，会按照如下的顺序执行
+つまり、`_dl_runtime_resolve` は eax、ecx、edx の 3 つのレジスタを保存したあと、link_map のアドレスを eax に、解決待ちのシンボルのオフセットを edx に入れます。そのあと `_dl_fixup` 関数を実行します。関数の実行が戻ってきたあと、次の順序で実行されます。
 
-- 先恢复 edx 寄存器的值
-- 然后 恢复 ecx 的值
-- 然后把  `_dl_fixup` 函数的返回值放到当前的栈上
-- 然后恢复 eax 的值
-- 执行 ret $12，此时栈上为
-    - 待解析的函数的地址
+- まず edx レジスタの値を復元する
+- 次に ecx の値を復元する
+- 次に `_dl_fixup` 関数の戻り値を現在のスタックに置く
+- 次に eax の値を復元する
+- ret $12 を実行する。このときスタックは次のようになっている
+    - 解決された関数のアドレス
     - original eax
     - `link_map` 的地址
     - reloc_offset
 
-64 位下的 _dl_runtime_resolve 与 32 位下类似，有几点主要的区别
+64 ビット版の _dl_runtime_resolve は 32 ビット版に似ていますが、主な違いがいくつかあります。
 
-- 在刚进入函数时，会保存更多的信息
-- _dl_fixup 会使用 rdi 和 rsi 传参
-- 最后执行目标函数时使用的是 jmp 指令
+- 関数に入った直後に、より多くの情報を保存する
+- _dl_fixup は rdi と rsi で引数を渡す
+- 最後に対象の関数を実行するときには jmp 命令を使う
 
 ```assembly
         .globl _dl_runtime_resolve
@@ -200,7 +200,7 @@ _dl_runtime_resolve:
 
 ### _dl_fixup
 
-_dl_runtime_resolve 中执行的最核心的函数就是 _dl_fixup 了，如下（这里也给出了一些相关的宏），需要注意的是，64 位下的 reloc_arg 就是 reloc_index。 
+_dl_runtime_resolve で実行される最も中心的な関数が _dl_fixup で、次のとおりです(関連するマクロもいくつか示します)。なお、64 ビットでは reloc_arg がそのまま reloc_index です。
 
 ```c
 /* We use this macro to refer to ELF types independent of the native wordsize.
@@ -268,29 +268,29 @@ _dl_fixup(
 #endif
     struct link_map *l, ElfW(Word) reloc_arg)
 {
-    // 获取目标文件的动态符号表
+    // 対象ファイルの動的シンボルテーブルを取得する
     const ElfW(Sym) *const symtab = (const void *)D_PTR(l, l_info[DT_SYMTAB]);
-    // 获取目标文件的动态字符串表
+    // 対象ファイルの動的文字列テーブルを取得する
     const char *strtab = (const void *)D_PTR(l, l_info[DT_STRTAB]);
-    // 根据给定的偏移获取待重定位的表项
+    // 指定されたオフセットから、リロケーション対象のエントリを取得する
     const PLTREL *const reloc = (const void *)(D_PTR(l, l_info[DT_JMPREL]) + reloc_offset);
-    // 依据得到的重定位表项获取待解析符号的符号信息
+    // 得られたリロケーションエントリから、解決対象シンボルのシンボル情報を取得する
     const ElfW(Sym) *sym = &symtab[ELFW(R_SYM)(reloc->r_info)];
     const ElfW(Sym) *refsym = sym;
-    // rel_addr 中最终存储着要解析的符号的地址
-    // 即 *rel_addr = addr_of_symbol_to_be_resolved
+    // rel_addr には最終的に、解決するシンボルのアドレスが格納される
+    // つまり *rel_addr = addr_of_symbol_to_be_resolved
     void *const rel_addr = (void *)(l->l_addr + reloc->r_offset);
     lookup_t result;
     DL_FIXUP_VALUE_TYPE value;
     /* Sanity check that we're really looking at a PLT relocation.  */
-    // 确保待重定位表项的类型为 ELF_MACHINE_JMP_SLOT
+    // リロケーション対象エントリの型が ELF_MACHINE_JMP_SLOT であることを確認する
     assert(ELFW(R_TYPE)(reloc->r_info) == ELF_MACHINE_JMP_SLOT);
     /* Look up the target symbol.  If the normal lookup rules are not
       used don't look in the global scope.  */
-    // 判断符号的可见性
+    // シンボルの可視性を判定する
     if (__builtin_expect(ELFW(ST_VISIBILITY)(sym->st_other), 0) == 0)
     {
-        // 获取符号的版本信息
+        // シンボルのバージョン情報を取得する
         const struct r_found_version *version = NULL;
         if (l->l_info[VERSYMIDX(DT_VERSYM)] != NULL)
         {
@@ -312,7 +312,7 @@ _dl_fixup(
 #ifdef RTLD_ENABLE_FOREIGN_CALL
         RTLD_ENABLE_FOREIGN_CALL;
 #endif
-        // 查询待解析符号所在的目标文件的 link_map
+        // 解決対象シンボルがあるオブジェクトファイルの link_map を検索する
         result = _dl_lookup_symbol_x(strtab + sym->st_name, l, &sym, l->l_scope,
                                      version, ELF_RTYPE_CLASS_PLT, flags, NULL);
         /* We are done with the global scope.  */
@@ -324,8 +324,8 @@ _dl_fixup(
         /* Currently result contains the base load address (or link map)
          of the object that defines sym.  Now add in the symbol
          offset.  */
-        // 基于查询到的 link_map 计算符号的绝对地址: result->l_addr + sym->st_value
-        // l_addr 为待解析函数所在文件的基地址
+        // 検索で得た link_map から、シンボルの絶対アドレスを計算する: result->l_addr + sym->st_value
+        // l_addr は、解決対象の関数があるファイルのベースアドレス
         value = DL_FIXUP_MAKE_VALUE(result,
                                     SYMBOL_ADDRESS(result, sym, false));
     }
@@ -341,7 +341,7 @@ _dl_fixup(
     if (sym != NULL && __builtin_expect(ELFW(ST_TYPE)(sym->st_info) == STT_GNU_IFUNC, 0))
         value = elf_ifunc_invoke(DL_FIXUP_VALUE_ADDR(value));
     /* Finally, fix up the plt itself.  */
-    // 修复 plt 表
+    // plt テーブルを修正する
     if (__glibc_unlikely(GLRO(dl_bind_not)))
         return value;
     return elf_machine_fixup_plt(l, result, refsym, sym, reloc, rel_addr, value);
@@ -365,7 +365,7 @@ elf_machine_plt_value (struct link_map *map, const ElfW(Rela) *reloc,
 }
 ```
 
-## 参考
+## 参考資料
 
 - https://code.woboq.org/userspace/glibc/sysdeps/x86_64/dl-trampoline.h.html#60
 - https://stackoverflow.com/questions/46374907/what-does-the-f-prefix-of-some-gcc-command-line-options-mean

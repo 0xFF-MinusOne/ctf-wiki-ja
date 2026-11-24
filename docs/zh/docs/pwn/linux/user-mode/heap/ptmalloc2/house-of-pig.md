@@ -1,47 +1,47 @@
 # House of Pig
 
-## 介绍
+## はじめに
 
-House of Pig 这种利用方法来自 XCTF-FINAL 2021 的同名题目。
+House of Pig は、XCTF-FINAL 2021 の同名の問題に由来する攻撃手法です。
 
-## 概括
+## 概要
 
-House of Pig 是一个将 Tcache Stash Unlink+ Attack 和 FSOP 结合的攻击，同时使用到了 Largebin Attack 进行辅助。主要适用于 libc 2.31及以后的新版本 libc 并且程序中仅有 calloc 时。
+House of Pig は、Tcache Stash Unlink+ Attack と FSOP を組み合わせた攻撃で、補助として Largebin Attack も使います。主に libc 2.31 以降の新しいバージョンの libc で、かつプログラム中に calloc しかない場合に適用されます。
 
-利用条件为
+攻撃の条件は次のとおりです。
 
-* 存在 UAF
-* 能执行abort流程或程序显式调用 exit 或程序能通过主函数返回。
+* UAF が存在する
+* abort の処理を実行できる、またはプログラムが明示的に exit を呼ぶ、またはプログラムがメイン関数から return できる。
 
-主要利用的函数为 `_IO_str_overflow`，可以参考 [glibc 2.24下 IO_FILE 的利用](https://ctf-wiki.org/pwn/linux/io_file/exploit-in-libc2.24/#_io_str_jumps-overflow)。
+主に利用する関数は `_IO_str_overflow` です。[glibc 2.24 における IO_FILE の利用](https://ctf-wiki.org/pwn/linux/io_file/exploit-in-libc2.24/#_io_str_jumps-overflow)を参照してください。
 
-利用流程为
+攻撃の流れは次のとおりです。
 
-1. 进行一个 Tcache Stash Unlink+ 攻击，把地址 `__free_hook - 0x10` 写入 tcache_pthread_struct。由于该攻击要求 `__free_hook - 0x8` 处存储一个指向可写内存的指针，所以在此之前需要进行一次 large bin attack。
-2. 再进行一个 large bin attack，修改 `_IO_list_all` 为一个堆地址，然后在该处伪造 `_IO_FILE` 结构体。
-3. 通过伪造的结构体触发 `_IO_str_overflow` getshell。
+1. Tcache Stash Unlink+ 攻撃を行い、アドレス `__free_hook - 0x10` を tcache_pthread_struct に書き込む。この攻撃は `__free_hook - 0x8` に書き込み可能なメモリを指すポインタが格納されていることを要求するため、その前に large bin attack を 1 回行う必要がある。
+2. もう 1 回 large bin attack を行い、`_IO_list_all` をヒープのアドレスに書き換え、そこに `_IO_FILE` 構造体を偽造する。
+3. 偽造した構造体によって `_IO_str_overflow` を発動させ、getshell する。
 
-注意在 2.31 下的 largbin attack 和老版本有一定区别，可以参考 [Large Bin Attack](https://ctf-wiki.org/pwn/linux/glibc-heap/large_bin_attack/) 这一章。
+2.31 における largbin attack は古いバージョンとは少し異なる点に注意してください。[Large Bin Attack](https://ctf-wiki.org/pwn/linux/glibc-heap/large_bin_attack/) の章を参照できます。
 
-## 例题
+## 例題
 
 ### XCTF-FINAL-2021 house of pig
 
-#### 跳表修复
+#### ジャンプテーブルの修復
 
-拿到题目，直接 F5 的话可能会出现 `__asm{ jmp rax }` 这样的指令
+問題を入手して直接 F5 を押すと、`__asm{ jmp rax }` のような命令が出ることがあります。
 
 ![](./figure/jmp-rax.png)
 
-这是 switch 的跳表结构未被 IDA 识别造成的，导致了大量代码丢失，通过 IDA 的 Edit->Other 中的 Specify switch idiom 功能可以实现修复，对于此程序应该使用的参数为
+これは switch のジャンプテーブル構造が IDA に認識されていないために起こり、大量のコードが失われています。IDA の Edit->Other にある Specify switch idiom 機能で修復できます。このプログラムで使うべきパラメータは次のとおりです。
 
 ![](./figure/switch-fix.png)
 
-然后就可以识别出 switch 了。
+これで switch が認識されます。
 
-#### 流程分析
+#### 処理の流れの分析
 
-首先，经过大胆猜测可以分析出每只猪的结构体结构
+まず、思い切った推測により、各ブタの構造体の構造を分析できます。
 
 ```cpp
 struct PIG
@@ -53,7 +53,7 @@ struct PIG
 };
 ```
 
-和 qword_9070 指向的结构体结构
+また、qword_9070 が指す構造体の構造は次のとおりです。
 
 ```cpp
 struct ALL_PIGS
@@ -80,17 +80,17 @@ struct ALL_PIGS
 };
 ```
 
-把这两个结构体补全后，程序的流程就会容易分析许多，可以发现主要的漏洞是在改变猪猪的时候，备份和更新结构体时未对 des_exist_sign[24] 数组更新
+この 2 つの構造体を補完すると、プログラムの流れはずっと分析しやすくなります。主な脆弱性は、ブタを切り替えるときの、構造体のバックアップと更新の際に des_exist_sign[24] 配列が更新されないことだとわかります。
 
 ![](./figure/backup-operation.png)
 
 ![](./figure/copy-operation.png)
 
-要触发这个未更新的漏洞需要更改角色，要通过一个 check_password 的操作。
+この更新漏れの脆弱性を発動させるにはロール(役割)を変更する必要があり、そのためには check_password の処理を通過する必要があります。
 
 ![](./figure/checkpassword-operation.png)
 
-也就是需要输入三个 md5 值之一的原值，注意到最后一个 md5 被 '\x00' 截断了，所以只要前两位相同即可，可以尝试使用爆破等方法通过此处的检测，下面是一种方法。
+つまり、3 つの md5 値のいずれかの元の値を入力する必要があります。最後の md5 は '\x00' で切り詰められているため、先頭の 2 バイトが同じであれば十分で、ブルートフォースなどの方法でここの検査を通過できます。次はその一例です。
 
 ```python
 def change_rol(role):
@@ -103,9 +103,9 @@ def change_rol(role):
         sh.sendlineafter("user:\n","C\x01\xf7\x3c\x32")
 ```
 
-总结一下，程序主要的漏洞点是有 UAF，可以 show，可以 edit，分别有 2 和 8 次机会。最大可以申请 0x440 大小的空间，即可以使 chunk 进入 unsorted bin 和 large bin。整个程序中不存在 malloc 函数，全部是 calloc，由此函数的不从 tcache 中取出 chunk 的性质，且不可以申请 fastbin 范围中的 chunk，导致利用比较困难。
+まとめると、プログラムの主な脆弱性は UAF があることで、show と edit ができ、それぞれ 2 回と 8 回の機会があります。最大で 0x440 サイズの領域を確保でき、chunk を unsorted bin や large bin に入れることができます。プログラム全体に malloc 関数は存在せず、すべて calloc です。この関数は tcache から chunk を取り出さないという性質を持ち、さらに fastbin の範囲の chunk を確保できないため、攻撃はやや困難になっています。
 
-#### 通过 House of Pig 实现利用
+#### House of Pig による攻撃
 ```python
 #!/usr/bin/env python
 # coding=utf-8

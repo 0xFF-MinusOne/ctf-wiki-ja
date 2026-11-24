@@ -1,24 +1,24 @@
-# 一步到达 OEP 法
+# 一気に OEP へ到達する方法
 
-所谓的一步到达OEP的脱壳方法, 是根据所脱壳的特征, 寻找其距离OEP最近的一处汇编指令, 然后下int3断点, 在程序走到OEP的时候dump程序.
+一気に OEP へ到達するアンパック方法とは、アンパックする対象の特徴に基づいて、OEP に最も近いアセンブリ命令を探し、そこに int3 ブレークポイントを置いて、プログラムが OEP に到達したときにプログラムをダンプする方法です。
 
-如一些压缩壳往往popad指令距离OEP或者大jmp特别近, 因此使用Ollydbg的搜索功能, 可以搜索壳的特征汇编代码, 达到一步断点到达OEP的效果.
+たとえば、一部の圧縮パッカーでは popad 命令や大きな jmp が OEP のすぐ近くにあることが多いので、Ollydbg の検索機能でパッカーに特徴的なアセンブリコードを検索すれば、一気にブレークして OEP に到達できます。
 
 ## 要点
 
-1. ctrl+f 查找popad
-2. ctrl+l 跳转到下一个匹配处
-3. 找到匹配处, 确认是壳解压完毕即将跳转到OEP部分, 则设下断点运行到该处
-4. 只适用于极少数压缩壳
+1. ctrl+f で popad を検索する
+2. ctrl+l で次の一致箇所へジャンプする
+3. 一致箇所を見つけたら、パッカーの展開が終わって OEP へジャンプする直前の部分であることを確認し、その位置にブレークポイントを設定して実行する
+4. ごく一部の圧縮パッカーにしか使えない
 
-## 示例
+## 例
 
-示例程序可以点击此处下载: [3_direct2oep.zip](https://github.com/ctf-wiki/ctf-challenges/blob/master/reverse/unpack/3_direct2oep.zip)
+サンプルプログラムはこちらからダウンロードできます: [3_direct2oep.zip](https://github.com/ctf-wiki/ctf-challenges/blob/master/reverse/unpack/3_direct2oep.zip)
 
-还是用的原先的notepad.exe来示例, 用`Ollydbg`打开后, 我们按下`ctrl+f`来查找指定的字符串, 像`popad`是典型的一个特征, 有部分壳它就常用`popad`来恢复状态, 所以如下图所示来搜索`popad`.
+引き続き元の notepad.exe を例にします。`Ollydbg` で開いたら、`ctrl+f` を押して指定した文字列を検索します。`popad` は典型的な特徴の1つで、状態の復元に `popad` をよく使うパッカーがあるため、下図のように `popad` を検索します。
 
 ![direct2oep_01.png](./figure/direct2oep_01.png)
 
-在本例中, 当搜索到的`popad`不符合我们的要求时, 可以按下`ctrl+l`来搜索下一个匹配处, 大概按下个三四次, 我们找到了跳转到OEP的位置处.
+この例では、検索で見つかった `popad` が求める条件に合わないときは、`ctrl+l` を押して次の一致箇所を検索できます。3、4回ほど押すと、OEP へジャンプする位置が見つかりました。
 
 ![direct2oep_02.png](./figure/direct2oep_02.png)

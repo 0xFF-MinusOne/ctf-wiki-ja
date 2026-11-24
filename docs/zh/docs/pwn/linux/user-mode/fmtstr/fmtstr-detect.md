@@ -1,3 +1,3 @@
-# 检测
+# 検出
 
-这里推荐一个简单的工具[LazyIDA](https://github.com/L4ys/LazyIDA)。基本的检测应该没有问题。
+ここでは簡単なツール [LazyIDA](https://github.com/L4ys/LazyIDA) を紹介します。基本的な検出なら問題なく行えるはずです。

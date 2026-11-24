@@ -1,14 +1,14 @@
-# 导出表
+# エクスポートテーブル
 
-DLL 通过导出表向外界提供导出函数名称，序号以及入口地址等信息。从导入角度来看，Windows 装载器完善 IAT 时就是通过 DLL 的导出表读取从其导入的函数的地址的。导出表通常存在于大多数 DLL 中，但在少数 EXE 文件中同样存在。
+DLL はエクスポートテーブルを通じて、エクスポート関数の名前、序数(ordinal)、エントリアドレスなどの情報を外部に提供します。インポートの側から見ると、Windows ローダが IAT を完成させるときに、DLL のエクスポートテーブルから、インポートした関数のアドレスを読み取っています。エクスポートテーブルは通常ほとんどの DLL に存在しますが、ごく一部の EXE ファイルにも存在します。
 
-对于 DLL 里导出函数的调用，既可以通过函数名称，也可以通过函数在导出表的索引进行。Windows 装载器将与进程相关的 DLL 加载到虚拟地址空间后，会根据导入表中登记的与该 DLL 相关的名称或编号来遍历 DLL 的虚拟地址空间并查找导出表结构，从而确定该导出函数在虚拟地址空间中的起始地址 VA，并将该 VA 覆盖写入 IAT 对应项处。
+DLL のエクスポート関数の呼び出しは、関数名でも、エクスポートテーブル内の関数のインデックスでも行えます。Windows ローダがプロセスに関連する DLL を仮想アドレス空間にロードした後、インポートテーブルに登録されたその DLL に関連する名前または番号をもとに、DLL の仮想アドレス空間を走査してエクスポートテーブルの構造体を探し、そのエクスポート関数の仮想アドレス空間内での開始アドレス VA を確定します。そして、その VA を IAT の対応する項目に上書きします。
 
 ## EAT
 
-`DataDirectory[0]` 处保存者 EXPORT TABLE （即导出表）的 RVA。该 RVA 指向 `IMAGE_EXPORT_DIRECTORY` 结构体。PE 文件中最多只存在 1 个 `IMAGE_EXPORT_DIRECTORY` 结构体。**但 PE 文件可以有多个 `IMAGE_IMPORT_DESCRIPTOR` 结构体，因为 PE 文件可以一次导入多个库。**
+`DataDirectory[0]` には EXPORT TABLE(すなわちエクスポートテーブル)の RVA が格納されています。この RVA は `IMAGE_EXPORT_DIRECTORY` 構造体を指します。PE ファイルには `IMAGE_EXPORT_DIRECTORY` 構造体は最大で 1 つしか存在しません。**ただし、PE ファイルは一度に複数のライブラリをインポートできるため、`IMAGE_IMPORT_DESCRIPTOR` 構造体は複数持てます。**
 
-看看 `IMAGE_EXPORT_DIRECTORY` 结构体：
+`IMAGE_EXPORT_DIRECTORY` 構造体を見てみましょう。
 
 ```c
 typedef struct _IMAGE_EXPORT_DIRECTORY{
@@ -16,31 +16,31 @@ typedef struct _IMAGE_EXPORT_DIRECTORY{
   DWORD    TimeDateStamp;
   WORD     MajorVersion;
   WORD     MinorVersion;
-  DWORD    Name;                     // 库文件名称地址
-  DWORD    Base;                     // 导出函数起始序号
-  DWORD    NumberOfFunctions;        // 导出函数个数
-  DWORD    NumberOfNames;            // 导出函数的名称个数
-  DWORD    AddressOfFunctions;       // 导出函数地址数组（数组元素个数=NumberOfFunctions）
-  DWORD    AddressOfNames;           // 导出函数名称地址数组（数组元素个数=NumberOfNames）
-  DWORD    AddressOfNameOrdinals;    // 导出函数序号数组（数组元素个数=NumberOfNames）
+  DWORD    Name;                     // ライブラリファイル名のアドレス
+  DWORD    Base;                     // エクスポート関数の開始序数
+  DWORD    NumberOfFunctions;        // エクスポート関数の個数
+  DWORD    NumberOfNames;            // エクスポート関数の名前の個数
+  DWORD    AddressOfFunctions;       // エクスポート関数アドレスの配列(要素数=NumberOfFunctions)
+  DWORD    AddressOfNames;           // エクスポート関数名アドレスの配列(要素数=NumberOfNames)
+  DWORD    AddressOfNameOrdinals;    // エクスポート関数序数の配列(要素数=NumberOfNames)
 } IMAGE_EXPORT_DIRECTORY, *PIMAGE_EXPORT_DIRECTORY;
 ```
 
-接下来详细说明一下结构体中的成员：
+構造体の各メンバについて詳しく説明します。
 
-- **`Name` 双字。该成员保存的地址指向一个以 "\0" 结尾的字符串，字符串记录的是导出表所在文件的最初文件名称。**
-- **`Base` 双字。导出函数的起始序号。导出函数的编号 = Base + Ordinals。**
-- **`NumberOfFunctions` 双字。导出函数的总个数。**
-- **`NumberOfNames0` 双字。在导出表中，有些函数有定义名称，有些函数没有。该成员记录了所有定义了名称的导出函数的个数。如果该值为 0，表示所有函数都没有定义名称。`NumberOfNames**` 总是小于等于 `NumberOfFunctions`。**
-- **`AddressOfFunctions` 双字。指向导出函数地址数组的起始处。导出函数地址数组保存了数量为 `NumberOfFunctions` 的导出函数地址。**
-- **`AddressOfNames` 双字。指向导出函数名称地址数组的起始处。导出函数名称数组的每一个元素都指向了导出函数对应的名称字符串的地址。**
-- **`AddressOfNameOrdinals` 双字。指向导出函数序号地址数组的起始处。与 `AddressOfNames` 是一一对应关系。导出函数序号数组中每一个元素都指向了导出函数对应的序号值。**
+- **`Name` ダブルワード。このメンバが保持するアドレスは "\0" で終わる文字列を指し、その文字列には、エクスポートテーブルが存在するファイルの元のファイル名が記録されています。**
+- **`Base` ダブルワード。エクスポート関数の開始序数です。エクスポート関数の番号 = Base + Ordinals です。**
+- **`NumberOfFunctions` ダブルワード。エクスポート関数の総数です。**
+- **`NumberOfNames0` ダブルワード。エクスポートテーブルでは、名前が定義されている関数と、されていない関数があります。このメンバは、名前が定義されているエクスポート関数の個数を記録します。この値が 0 の場合は、すべての関数に名前が定義されていないことを表します。`NumberOfNames**` は常に `NumberOfFunctions` 以下です。**
+- **`AddressOfFunctions` ダブルワード。エクスポート関数アドレス配列の先頭を指します。エクスポート関数アドレス配列には、`NumberOfFunctions` 個のエクスポート関数のアドレスが保存されています。**
+- **`AddressOfNames` ダブルワード。エクスポート関数名アドレス配列の先頭を指します。エクスポート関数名配列の各要素は、エクスポート関数に対応する名前文字列のアドレスを指しています。**
+- **`AddressOfNameOrdinals` ダブルワード。エクスポート関数序数アドレス配列の先頭を指します。`AddressOfNames` と一対一に対応します。エクスポート関数序数配列の各要素は、エクスポート関数に対応する序数の値を指しています。**
 
-接下来通过一个简单示例来学习一下。示例选取的是 Windows 系统中的 version.dll，该文件位于 `C:\Windows\SysWOW64\` 目录下。
-首先来看一下示例文件的 `IMAGE_EXPORT_DIRECTORY` 结构体：
+簡単な例で学んでみましょう。例として Windows システムの version.dll を選びます。このファイルは `C:\Windows\SysWOW64\` ディレクトリにあります。
+まず、例のファイルの `IMAGE_EXPORT_DIRECTORY` 構造体を見てみます。
 
 ```text
-// 示例程序 IMAGE_EXPORT_DIRECTORY
+// サンプルプログラムの IMAGE_EXPORT_DIRECTORY
 RVA       Value      Description
 ----------------------------------------------------
 00003630  00000000   Characteristicss
@@ -57,7 +57,7 @@ RVA       Value      Description
 ----------------------------------------------------
 ```
 
-接着整理一下导出表中的数组：
+続いて、エクスポートテーブル内の配列を整理します。
 
 ```text
 RVA       Address   Name      Ordinal  Description
@@ -82,18 +82,18 @@ RVA       Address   Name      Ordinal  Description
 ------------------------------------------------------------------------
 ```
 
-Address 列对应着导出函数装载到内存中的实际地址，Name 列对应着导出函数名称的 RVA，Ordinal 即为导出函数的序号。
-这里再加一张导出表的字符串部分内容，即保存着库文件名称和导出函数名称的部分。通过 PEview 还能方便看出：
+Address 列はエクスポート関数がメモリにロードされたときの実際のアドレスに、Name 列はエクスポート関数名の RVA に対応し、Ordinal はエクスポート関数の序数です。
+ここで、エクスポートテーブルの文字列部分、つまりライブラリファイル名とエクスポート関数名が保存されている部分の内容も加えておきます。PEview を使うと簡単に確認できます。
 
-![导出表中的字符串](figure/pe4-eatstrings.png "图 10 - 导出表字符串部分")
+![エクスポートテーブル内の文字列](figure/pe4-eatstrings.png "図 10 - エクスポートテーブルの文字列部分")
 
-导出函数获取函数地址的过程大致如下：
+エクスポート関数のアドレスを取得する流れは、おおよそ次のとおりです。
 
-1. 首先利用 `AddressOfNames` 成员定位到导出函数名称数组；
-2. 接着通过比较字符串 (strcmp) 查找指定的函数名称，找到后将其索引作为 `name_index`；
-3. 接着利用 `AddressOfOrdinals` 成员定位到导出函数序号数组；
-4. 接着通过 `name_index` 在导出函数序号数组中定位对应的 `ordinal` 值；
-5. 接着利用 `AddressOfFunctions` 成员定位到导出函数地址数组，即 `Export Address Table(EAT)`；
-6. 最后通过 `ordinal` 作为索引在导出函数地址数组中定位到对应的项，获取指定函数的起始地址。
+1. まず `AddressOfNames` メンバを使って、エクスポート関数名の配列を特定します。
+2. 次に、文字列比較(strcmp)で指定された関数名を探し、見つかったらそのインデックスを `name_index` とします。
+3. 次に、`AddressOfOrdinals` メンバを使って、エクスポート関数序数の配列を特定します。
+4. 次に、`name_index` を使って、エクスポート関数序数配列内の対応する `ordinal` の値を特定します。
+5. 次に、`AddressOfFunctions` メンバを使って、エクスポート関数アドレス配列、すなわち `Export Address Table(EAT)` を特定します。
+6. 最後に、`ordinal` をインデックスとして、エクスポート関数アドレス配列内の対応する項目を特定し、指定された関数の開始アドレスを取得します。
 
-对于少见的没有名称的导出函数，利用 Ordinal 成员减去 Base 得到的值作为索引值，在导出函数地址数组中定位对应的函数地址。
+まれに存在する名前を持たないエクスポート関数については、Ordinal メンバから Base を引いた値をインデックスとして、エクスポート関数アドレス配列内の対応する関数アドレスを特定します。

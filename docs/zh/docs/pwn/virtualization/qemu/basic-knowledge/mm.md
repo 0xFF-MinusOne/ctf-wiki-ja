@@ -1,12 +1,12 @@
-# QEMU 内存管理
+# QEMU のメモリ管理
 
-本节讲述 QEMU 如何管理某个特定 VM 的内存。
+この節では、QEMU が特定の VM のメモリをどのように管理するかを説明します。
 
-## Guest VM 视角（GPA）
+## Guest VM の視点(GPA)
 
-### MemoryRegion：Guest 视角的一块“内存”
+### MemoryRegion:Guest の視点での 1 つの「メモリ」
 
-在 Qemu 当中使用 `MemoryRegion` 结构体类型来表示一块具体的 Guest 物理内存区域，该结构体定义于 `include/exec/memory.h` 当中：
+Qemu では、具体的な Guest 物理メモリ領域を `MemoryRegion` 構造体型で表します。この構造体は `include/exec/memory.h` で定義されています。
 
 ```c
 /** MemoryRegion:
@@ -34,9 +34,9 @@ struct MemoryRegion {
 
     const MemoryRegionOps *ops;
     void *opaque;
-    MemoryRegion *container;	// 指向父 MemoryRegion
-    Int128 size;	// 内存区域大小
-    hwaddr addr;	// 在父 MR 中的偏移量
+    MemoryRegion *container;	// 親の MemoryRegion を指す
+    Int128 size;	// メモリ領域のサイズ
+    hwaddr addr;	// 親 MR 内でのオフセット
     void (*destructor)(MemoryRegion *mr);
     uint64_t align;
     bool terminates;
@@ -44,7 +44,7 @@ struct MemoryRegion {
     bool enabled;
     bool warning_printed; /* For reservations */
     uint8_t vga_logging_count;
-    MemoryRegion *alias;	// 仅在 alias MR 中，指向实际的 MR
+    MemoryRegion *alias;	// alias MR の場合のみ、実際の MR を指す
     hwaddr alias_offset;
     int32_t priority;
     QTAILQ_HEAD(, MemoryRegion) subregions;
@@ -56,18 +56,18 @@ struct MemoryRegion {
 };
 ```
 
-根据[QEMU官方文档](https://www.qemu.org/docs/master/devel/memory.html#types-of-regions)中的描述，虽然众多的内存区域对象都声明为C结构体类型MemoryRegion，但是根据功能特性和应用场景的差异，这些内存区域在具体使用中可以分为八种类型的 MemoryRegion，这八种类型的内存区域基本满足了Guest常见的内存访问需求。这八种类型包括：
+[QEMU 公式ドキュメント](https://www.qemu.org/docs/master/devel/memory.html#types-of-regions)の記述によると、多数のメモリ領域オブジェクトはすべて C の構造体型 MemoryRegion として宣言されていますが、機能的な特性や利用場面の違いによって、これらのメモリ領域は実際の使用上 8 種類の MemoryRegion に分けられます。この 8 種類のメモリ領域で、Guest の一般的なメモリアクセスの需要はおおむね満たされます。8 種類は次のとおりです。
 
-- RAM MemoryRegion：通过 `memory_region_init_ram()` 初始化。代表一块具体的Host内存，这块内存区域被分配给Guest使用
-- ROM MemoryRegion：通过 `memory_region_init_rom()` 初始化。原理与RAM MR类似，但仅用于读取（相当于直接访问主机内存区域），并且禁止写操作。
-- MMIO MemoryRegion：通过 `memory_region_init_io()` 初始化。一段客户虚拟机内存，每次读或写最终都会调用QEMU代码中所注册的回调函数，用于模拟MMIO读写流程。
-- ROM device MemoryRegion：通过 `memory_region_init_rom_device()` 初始化。读操作的工作原理类似于RAM MR的直接访问内存区域，写操作则类似于MMIO MR的调用回调函数。
-- IOMMU MemoryRegion：通过 `memory_region_init_iommu()` 初始化。顾名思义，该MR类型仅用于IOMMU建模，而不用于简单的设备。访问该类MR中的地址时将进行地址转换，并将其转发到其他目标内存区域。
-- container MemoryRegion：通过 `memory_region_init()` 初始化。其并不实际指向一块内存区域，而只是包含其他MR，每个MR的偏移量不同。container MR用于将多个MR组合为一个单元以进行表示与管理。例如，PCI BAR可能由一个RAM MR和一个MMIO MR组成。
-- alias MemoryRegion：通过 `memory_region_init_alias()` 初始化。其作为另一个 MemoryRegion 实体的别名而存在，不指向一块实际内存。
-- reservation MemoryRegion：通过向 `memory_region_init_io()` 传递一个为`NULL`的回调参数来初始化。其主要用于调试，其占用的I/O空间不应该由QEMU本身处理。典型的用途是跟踪在启用KVM时由主机内核处理的地址空间部分。
+- RAM MemoryRegion:`memory_region_init_ram()` で初期化されます。具体的な Host メモリを表し、このメモリ領域が Guest に割り当てられて使われます
+- ROM MemoryRegion:`memory_region_init_rom()` で初期化されます。原理は RAM MR と似ていますが、読み取り専用(ホストのメモリ領域に直接アクセスするのと同じ)で、書き込み操作は禁止されます。
+- MMIO MemoryRegion:`memory_region_init_io()` で初期化されます。ゲスト仮想マシンのメモリの一区画で、読み書きのたびに最終的に QEMU コードに登録されたコールバック関数が呼び出され、MMIO の読み書きの流れをエミュレートするために使われます。
+- ROM device MemoryRegion:`memory_region_init_rom_device()` で初期化されます。読み取り操作は RAM MR の直接メモリアクセスと同様に動作し、書き込み操作は MMIO MR のコールバック関数の呼び出しと同様に動作します。
+- IOMMU MemoryRegion:`memory_region_init_iommu()` で初期化されます。名前のとおり、この MR の種類は IOMMU のモデル化にのみ使われ、単純なデバイスには使われません。この種の MR 内のアドレスにアクセスするとアドレス変換が行われ、別のターゲットメモリ領域に転送されます。
+- container MemoryRegion:`memory_region_init()` で初期化されます。実際のメモリ領域を指すのではなく、オフセットがそれぞれ異なる別の MR を包含するだけです。container MR は、複数の MR を 1 つの単位にまとめて表現・管理するために使われます。たとえば PCI BAR は、1 つの RAM MR と 1 つの MMIO MR で構成されることがあります。
+- alias MemoryRegion:`memory_region_init_alias()` で初期化されます。別の MemoryRegion の実体の別名として存在し、実際のメモリを指しません。
+- reservation MemoryRegion:`memory_region_init_io()` にコールバック引数として `NULL` を渡して初期化されます。主にデバッグ用で、その占有する I/O 空間は QEMU 自身が処理すべきではありません。典型的な用途は、KVM が有効なときにホストカーネルが処理するアドレス空間の部分を追跡することです。
 
-container MR 与其他 MR 间构成树形结构，其中container为根节点而实体为子节点，形式如下：
+container MR とほかの MR は木構造を成し、container がルートノード、実体が子ノードになります。形式は次のとおりです。
 
 ```
                             struct MemoryRegion
@@ -105,18 +105,18 @@ container MR 与其他 MR 间构成树形结构，其中container为根节点而
      +------------------------+                     +------------------------+
 ```
 
-相应地，基于 OOP 的思想，MemoryRegion 的成员函数被封装在函数表 `MemoryRegionOps` 当中：
+同様に、OOP の考え方に基づき、MemoryRegion のメンバ関数は関数テーブル `MemoryRegionOps` にまとめられています。
 
 ```c
 /*
  * Memory region callbacks
  */
 struct MemoryRegionOps {
-    /* 从内存区域上读. @addr 与 @mr 有关; @size 单位为字节. */
+    /* メモリ領域から読む。@addr は @mr に対する相対値。@size の単位はバイト。 */
     uint64_t (*read)(void *opaque,
                      hwaddr addr,
                      unsigned size);
-    /* 往内存区域上写. @addr 与 @mr 有关; @size 单位为字节. */
+    /* メモリ領域へ書く。@addr は @mr に対する相対値。@size の単位はバイト。 */
     void (*write)(void *opaque,
                   hwaddr addr,
                   uint64_t data,
@@ -134,7 +134,7 @@ struct MemoryRegionOps {
                                     MemTxAttrs attrs);
 
     enum device_endian endianness;
-    /* Guest可见约束: */
+    /* Guest から見える制約: */
     struct {
         /* 若非 0，则指定了超出机器检查范围的访问大小界限
          */
@@ -152,7 +152,7 @@ struct MemoryRegionOps {
                         unsigned size, bool is_write,
                         MemTxAttrs attrs);
     } valid;
-    /* 内部应用约束: */
+    /* 内部実装の制約: */
     struct {
         /* 若非 0，则决定了最小的实现的 size .
          * 更小的 size 将被向上回绕，且将返回部分结果.
@@ -170,15 +170,15 @@ struct MemoryRegionOps {
 };
 ```
 
-当我们的 Guest 要读写虚拟机上的内存时，在 Qemu 内部实际上会调用 `address_space_rw()`，对于一般的 RAM 内存而言则直接对 MR 对应的内存进行操作，对于 MMIO 而言则最终调用到对应的 `MR->ops->read()` 或 `MR->ops->write()`。
+Guest が仮想マシン上のメモリを読み書きするとき、Qemu 内部では実際に `address_space_rw()` が呼び出されます。通常の RAM メモリの場合は MR に対応するメモリを直接操作し、MMIO の場合は最終的に対応する `MR->ops->read()` または `MR->ops->write()` が呼び出されます。
 
-同样的，为了统一接口，在 Qemu 当中 **PMIO 的实现同样是通过 MemoryRegion 来完成的**，我们可以把一组端口理解为 QEMU 视角的一块 Guest 内存。
+同様に、インターフェースを統一するため、Qemu では **PMIO の実装も MemoryRegion によって行われます**。ポートの集まりを、QEMU の視点での Guest メモリの一区画と理解できます。
 
-> 几乎所有的 CTF QEMU Pwn 题都是自定义一个设备并定义相应的 MMIO/PMIO 操作。
+> ほぼすべての CTF の QEMU Pwn 問題は、デバイスを独自に定義し、対応する MMIO/PMIO 操作を定義しています。
 
-### FlatView：MR 树对应的 Guest 视角物理地址空间
+### FlatView:MR ツリーに対応する Guest 視点の物理アドレス空間
 
-QEMU通过树状结构的MemoryRegion管理Guest的物理地址空间，支持动态调整（如热插拔设备）。但这种嵌套、重叠的复杂结构不适合直接与KVM等内核模块交互。因此QEMU使用 `FlatView` 用来表示**一棵 MemoryRegion 树所表示的线性的 Guest 地址空间**，其将树状结构“展平”为列表，每个条目记录连续内存区域的起始地址（GPA）、大小、属性（如RAM/MMIO），消除嵌套关系，简化内核处理。例如，KVM需要明确的物理内存布局来配置EPT（Extended Page Table），`FlatView` 提供可直接映射的平坦内存描述，避免内核解析复杂树结构。`FlatView`使用一个 `FlatRange` 结构体指针数组来存储不同 `MemoryRegion` 对应的地址信息，每个 `FlatRange` 表示单个 `MemoryRegion` 的 **Guest 视角的一块线性的物理地址空间**以及是否只读等特性信息， `FlatRange` 之间所表示的地址范围不会重叠。
+QEMU は木構造の MemoryRegion で Guest の物理アドレス空間を管理しており、動的な調整(デバイスのホットプラグなど)をサポートします。しかし、このような入れ子や重なりのある複雑な構造は、KVM などのカーネルモジュールと直接やり取りするのに向きません。そのため QEMU は `FlatView` を使って、**1 本の MemoryRegion ツリーが表す線形の Guest アドレス空間**を表します。これは木構造をリストに「平坦化」し、各エントリが連続したメモリ領域の開始アドレス(GPA)、サイズ、属性(RAM/MMIO など)を記録することで、入れ子関係をなくし、カーネルの処理を簡単にします。たとえば KVM は EPT(Extended Page Table)を設定するために明確な物理メモリレイアウトを必要とするので、`FlatView` は直接マッピングできる平坦なメモリ記述を提供し、カーネルが複雑な木構造を解析することを避けられます。`FlatView` は `FlatRange` 構造体のポインタ配列を使って、異なる `MemoryRegion` に対応するアドレス情報を格納します。各 `FlatRange` は、単一の `MemoryRegion` の **Guest 視点での 1 つの線形な物理アドレス空間**と、読み取り専用かどうかなどの特性情報を表し、`FlatRange` 同士が表すアドレス範囲は重なりません。
 
 ```c
 /* Range of memory in the global map.  Addresses are absolute. */
@@ -208,11 +208,11 @@ struct FlatView {
 };
 ```
 
-### AddressSpace：不同类型的 Guest 地址空间
+### AddressSpace:種類の異なる Guest アドレス空間
 
-`AddressSpace` 结构体用以表示 **Guest 视角不同类型的地址空间**，在 x86 下其实就只有两种：`address_space_memory` 与 `address_space_io`。
+`AddressSpace` 構造体は、**Guest の視点での種類の異なるアドレス空間**を表します。x86 では実際には `address_space_memory` と `address_space_io` の 2 種類しかありません。
 
-单个 `AddressSpace` 结构体与一棵 MemoryRegion 树的根节点相关联，并使用一个 `FlatView` 结构体建立该树的平坦化内存空间。
+1 つの `AddressSpace` 構造体は 1 本の MemoryRegion ツリーのルートノードと関連付けられ、`FlatView` 構造体を使ってそのツリーの平坦化されたメモリ空間を構築します。
 
 ```c
 /**
@@ -234,20 +234,20 @@ struct AddressSpace {
 };
 ```
 
-最终我们可以得到如下总览图：
+最終的に、次のような全体図が得られます。
 
 ![](./figure/qemu_mm.png)
 
-## host VMM 视角（HVA）
+## host VMM の視点(HVA)
 
-### RAMBlock：MR 对应的 Host 虚拟内存
+### RAMBlock:MR に対応する Host 仮想メモリ
 
-`RAMBlock` 结构体用来表示**单个实体 MemoryRegion 所占用的 Host 虚拟内存信息**，多个 `RAMBlock` 结构体之间构成单向链表。
+`RAMBlock` 構造体は、**単一の実体 MemoryRegion が占有する Host 仮想メモリの情報**を表し、複数の `RAMBlock` 構造体は単方向リストを成します。
 
-比较重要的成员如下：
+比較的重要なメンバは次のとおりです。
 
-- `mr`：该 RAMBlock 对应的 MemoryRegion（即 HVA → GPA）
-- `host`：GVA 对应的 HVA，通常由 QEMU 通过 `mmap()` 获得（如果未使用 KVM）
+- `mr`:この RAMBlock に対応する MemoryRegion(つまり HVA → GPA)
+- `host`:GVA に対応する HVA。通常は QEMU が `mmap()` で取得する(KVM を使っていない場合)
 
 ```c
 struct RAMBlock {
@@ -303,7 +303,7 @@ struct RAMBlock {
 };
 ```
 
-对应关系如下图所示：
+対応関係は下図のとおりです。
 
 ![](./figure/mr_ramblock_subregion.png)
 

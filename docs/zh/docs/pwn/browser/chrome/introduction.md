@@ -1,52 +1,52 @@
 # Chromium
 
-## 概述
+## 概要
 
-[Chromium](https://www.chromium.org/Home/) 是 [The Chromium Projects](https://www.chromium.org/chromium-projects/) 下属的开源浏览器项目，其使用包括 BSD 3-clause 在内的多重许可证，主要编写语言是 C++ ，源代码可以从 [https://chromium.googlesource.com/chromium/src/+/HEAD/docs/get_the_code.md](https://chromium.googlesource.com/chromium/src/+/HEAD/docs/get_the_code.md) 获取。
+[Chromium](https://www.chromium.org/Home/) は [The Chromium Projects](https://www.chromium.org/chromium-projects/) 配下のオープンソースのブラウザプロジェクトです。BSD 3-clause を含む複数のライセンスを使用しており、主な記述言語は C++ で、ソースコードは [https://chromium.googlesource.com/chromium/src/+/HEAD/docs/get_the_code.md](https://chromium.googlesource.com/chromium/src/+/HEAD/docs/get_the_code.md) から入手できます。
 
-[Google Chrome](https://www.google.com/chrome/) 则是 Google 基于 Chromium 开发的浏览器，Google 的开发者在其中加入了属于 Google 的专有代码（Google 账户、标签同步、媒体解码器等功能），使其成为 Google 的专有项目。
+[Google Chrome](https://www.google.com/chrome/) は、Google が Chromium をもとに開発したブラウザです。Google の開発者は、Google 独自のコード(Google アカウント、タブの同期、メディアデコーダなどの機能)を追加し、Google の独自プロジェクトにしています。
 
-目前世界上绝大部分仍在活跃的浏览器都基于 Chromium 进行开发（以 chromium 作为内核），包括放弃了自有浏览器内核的 [Microsoft Edge](https://www.microsoft.com/en-us/edge/) ， 仅有 [Firefox](https://www.mozilla.org/en-US/firefox/new/) 与 [Safari](https://www.apple.com/safari/) 仍在坚持使用其他的内核。
+現在、世界で活発に使われているブラウザのほとんどは Chromium をもとに開発されており(chromium をエンジンとして使用)、独自のブラウザエンジンを手放した [Microsoft Edge](https://www.microsoft.com/en-us/edge/) もその 1 つです。他のエンジンを使い続けているのは [Firefox](https://www.mozilla.org/en-US/firefox/new/) と [Safari](https://www.apple.com/safari/) だけです。
 
 ![](https://s2.loli.net/2025/03/08/3u7rOs6j4gQJzRa.png)
 
-——但事实上浏览器并不是这么三言两语就能概括掉的东西，Chromium 本身是一个完整的浏览器项目，其渲染引擎是 [Blink](https://www.chromium.org/blink/)，这也是微软主要依赖于 Chromium 的东西（因为他自有的那套衍生自 IE 时代的 Trident 引擎的 EdgeHTML 引擎实在是差点意思），相对应的 Safari 的渲染引擎是 [开源的 WebKit](https://webkit.org/)、Firefox 的渲染引擎是 [开源的 Gecko](https://firefox-source-docs.mozilla.org/overview/gecko.html) ，但在此之外的 JavaScript 引擎微软使用的是自研的 [开源的 Chakra](https://github.com/chakra-core/ChakraCore) （ ~~啊我草二次元怎么这么多~~ ）而非 Chromium 的 [V8](https://v8.dev/) ，相应地 Safari 的 JS 引擎是自己的 [Nitro]() 、Firefox 的 JS 引擎是自研的 [开源的 SpiderMonkey](https://spidermonkey.dev/) ......
+――しかし実際には、ブラウザはこのように一言二言でまとめられるものではありません。Chromium 自体は完全なブラウザプロジェクトで、そのレンダリングエンジンは [Blink](https://www.chromium.org/blink/) です。これは Microsoft が主に Chromium に頼っている部分でもあります(IE 時代の Trident エンジンから派生した独自の EdgeHTML エンジンは、正直いまひとつだったためです)。対応して、Safari のレンダリングエンジンは[オープンソースの WebKit](https://webkit.org/)、Firefox のレンダリングエンジンは[オープンソースの Gecko](https://firefox-source-docs.mozilla.org/overview/gecko.html) です。ただし、これ以外の JavaScript エンジンについては、Microsoft は Chromium の [V8](https://v8.dev/) ではなく、自社開発の[オープンソースの Chakra](https://github.com/chakra-core/ChakraCore) を使っていました( ~~うわ、二次元(オタク)的なものがこんなに多いなんて~~ )。同様に、Safari の JS エンジンは自社の [Nitro]()、Firefox の JS エンジンは自社開発の[オープンソースの SpiderMonkey](https://spidermonkey.dev/) です......
 
-> 这也是为什么当我们提到自研的浏览器时通常仅认为只有 4 个的缘故，其他的各自基于 chromium 套皮贴牌的所谓“自研”浏览器，一没自己的排版引擎二没自己的JS引擎三没自己的网络栈...总而言之硬核部分全都不是自研的，那这是否就有点
+> これが、自社開発のブラウザというと通常は 4 つしかないとされる理由です。chromium をベースに外観だけ変えてブランドを付けた、いわゆる「自社開発」のブラウザは、独自の組版エンジンもなければ、独自の JS エンジンもなく、独自のネットワークスタックもありません...要するに、コアな部分はどれも自社開発ではないので、それは果たして少し
 
-那浏览器又是如何工作的？可能有的人会想“不就是拿到一个 HTML 文件解析一下然后在屏幕上画出来嘛”—— **仅** 放在渲染引擎上来说，似乎确实可以就这样概况？渲染引擎吃掉服务器发来的的 HTML、CSS、JS 文件等，进行解析后交给 GPU 在屏幕上画出来：
+では、ブラウザはどのように動作しているのでしょうか。「HTML ファイルを取得して解析し、画面に描画するだけでしょう」と考える人もいるかもしれません。レンダリングエンジンだけに限って言えば、**確かに**そのようにまとめられそうです。レンダリングエンジンは、サーバから送られてきた HTML、CSS、JS ファイルなどを取り込み、解析したうえで GPU に渡して画面に描画させます。
 
 ![](https://s2.loli.net/2025/03/08/6ObUMxFAh5Tkvw1.png)
 
-稍微一展开是这个样子（HTTP Client 就是浏览器）：
+少し展開すると、次のようになります(HTTP Client がブラウザです)。
 
 ![](https://s2.loli.net/2025/03/08/OLtXs5rTjk2i7pG.png)
 
-HTML 解析出来是表示内容的 DOM Tree，CSS 解析出来是表示布局 CSSOM Tree，合起来是包含具体渲染信息的 Render Tree，再加上 JS Engine 进行动态的内容调整和各种幕后工作，现代浏览器的雏形好像就这么形成了：
+HTML を解析すると内容を表す DOM Tree が得られ、CSS を解析するとレイアウトを表す CSSOM Tree が得られます。両者を合わせると具体的な描画情報を含む Render Tree になり、さらに JS Engine が動的な内容の調整やさまざまな裏方の処理を行うことで、現代のブラウザの原型ができあがります。
 
 ![](https://s2.loli.net/2025/03/08/6agfHueKnjmJCB1.png)
 
-不过虽然看起来哪怕是初学编译原理的本科生都能用递归下降手搓一个简易的解析引擎，但实际上要实现现代 Web 标准再加上足够高的性能，背后的工作量远比绝大部分人想象中的要多得多，无论是浏览器背后的网络协议栈还是内存管理和多进程架构或是渲染引擎和 JS 引擎的实现细节单独拿一小块出来都能单独写上好多篇论文，理论上应该没有一个开发者能够独立地把所有部分讲清楚，而且本文的重点也不在整个浏览器如何工作，所以这里也不会深入展开：）
+ただ、コンパイラの原理を学び始めたばかりの学部生でも、再帰下降で簡易的な解析エンジンを手作りできそうに見えますが、実際には、現代の Web 標準を実装し、さらに十分高い性能を出すには、背後の作業量はほとんどの人が想像するよりはるかに多くなります。ブラウザの背後にあるネットワークプロトコルスタック、メモリ管理とマルチプロセスアーキテクチャ、レンダリングエンジンや JS エンジンの実装の詳細は、どれも一部を取り出すだけで何本もの論文が書けるほどです。理論上、すべての部分を 1 人の開発者で説明しきれる人はいないはずです。また、本稿の焦点はブラウザ全体がどう動作するかではないので、ここでは深入りしません :)
 
 ![](https://s2.loli.net/2025/03/08/AxTcI3XVnUyZ68l.png)
 
 ## Chromium Render Process
 
-Chromium 的运行架构大体如下图所示（这些进程间的通信通常通过 [Mojo](https://chromium.googlesource.com/chromium/src/+/lkgr/mojo/README.md) 这一 IPC Engine 完成）：
+Chromium の実行アーキテクチャは、おおよそ次の図のとおりです(これらのプロセス間の通信は、通常 IPC Engine である [Mojo](https://chromium.googlesource.com/chromium/src/+/lkgr/mojo/README.md) を通じて行われます)。
 
-![为什么这么卡通？因为笔者没有找到其他更合适的图...](https://s2.loli.net/2025/03/08/63bwqkTr1WAXm5g.png)
+![なぜこんなにアニメ調なのか。筆者がほかに適切な図を見つけられなかったためです...](https://s2.loli.net/2025/03/08/63bwqkTr1WAXm5g.png)
 
-Browser Process 负责网络请求处理、存储管理、UI 等（上图的左中右三个线程），当完成网络请求内容的接收之后，其会将页面数据传递给 Render Process 进行渲染：
+Browser Process は、ネットワークリクエストの処理、ストレージ管理、UI などを担当します(上図の左・中・右の 3 つのスレッド)。ネットワークリクエストの内容の受信が完了すると、ページのデータを Render Process に渡してレンダリングさせます。
 
 ![](https://s2.loli.net/2025/03/08/wj6VW8IsRpQlG4Y.png)
 
-Render Process 首先对 HTML、CSS、JavaScript 内容进行解析，前文我们已经讲到 HTML 的解析最后会产生 DOM Tree，而 JavaScript 便在此时 **阻塞 HTML 的解析并优先被解析与运行** ——这是因为 JS 代码可能会改变文档内容（例如使用 `document.write()` ）。
+Render Process はまず HTML、CSS、JavaScript の内容を解析します。前に述べたように HTML の解析は最終的に DOM Tree を生成します。そして JavaScript は、このとき **HTML の解析をブロックし、優先的に解析・実行されます**。JS コードが文書の内容を変更する可能性があるためです(たとえば `document.write()` を使う場合)。
 
-> 如果你的 HTML 内嵌的 JS 代码不使用 `document.write()` ，可以为 `<script>` 标签使用  [async](https://developer.mozilla.org/docs/Web/HTML/Element/script#attr-async) 或 [defer](https://developer.mozilla.org/docs/Web/HTML/Element/script#attr-defer) 特性，从而异步运行 JS 以不阻塞解析过程
+> HTML に埋め込んだ JS コードが `document.write()` を使わないのであれば、`<script>` タグに [async](https://developer.mozilla.org/docs/Web/HTML/Element/script#attr-async) または [defer](https://developer.mozilla.org/docs/Web/HTML/Element/script#attr-defer) 属性を使うことで、JS を非同期に実行して解析をブロックしないようにできます
 
 ![](https://s2.loli.net/2025/03/08/hcvo3XOuCgVNs1k.png)
 
-> 待施工。
+> 作成中です。
 
 ## Reference
 
@@ -64,7 +64,7 @@ https://arttnba3.cn
 
 [JavaScript engine fundamentals: Shapes and Inline Caches](https://mathiasbynens.be/notes/shapes-ics)
 
-[Winty's blog - 现代浏览器架构漫谈](https://github.com/LuckyWinty/blog/blob/master/markdown/Q%26A/%E7%8E%B0%E4%BB%A3%E6%B5%8F%E8%A7%88%E5%99%A8%E6%9E%B6%E6%9E%84%E6%BC%AB%E8%B0%88.md)
+[Winty's blog - 現代ブラウザのアーキテクチャ雑談](https://github.com/LuckyWinty/blog/blob/master/markdown/Q%26A/%E7%8E%B0%E4%BB%A3%E6%B5%8F%E8%A7%88%E5%99%A8%E6%9E%B6%E6%9E%84%E6%BC%AB%E8%B0%88.md)
 
 [Firing up the Ignition interpreter](https://v8.dev/blog/ignition-interpreter)
 

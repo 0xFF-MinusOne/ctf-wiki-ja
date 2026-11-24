@@ -1,27 +1,27 @@
-# 堆相关数据结构
+# ヒープ関連のデータ構造
 
-堆的操作就这么复杂，那么在 glibc 内部必然也有精心设计的数据结构来管理它。与堆相应的数据结构主要分为
+ヒープの操作はこれほど複雑ですから、glibc の内部にも、それを管理するために丹念に設計されたデータ構造があるはずです。ヒープに対応するデータ構造は、主に次の2つに分けられます。
 
-- 宏观结构，包含堆的宏观信息，可以通过这些数据结构索引堆的基本信息。
-- 微观结构，用于具体处理堆的分配与回收中的内存块。
+- マクロ構造(macro structure)。ヒープの全体的な情報を含み、これらのデータ構造を通じてヒープの基本情報を引けます。
+- ミクロ構造(micro structure)。ヒープの割り当てと回収における個々のメモリブロックを具体的に扱うために使います。
 
 ## Overview
 
-> 待补充。
+> 追記予定です。
 
-## 微观结构
+## ミクロ構造
 
-这里首先介绍堆的一些主要内部结构，**堆的漏洞利用与这些结构密切相关**。
+ここではまず、ヒープの主な内部構造をいくつか紹介します。**ヒープの脆弱性攻撃は、これらの構造と密接に関係しています**。
 
 ### malloc_chunk
 
-#### 概述
+#### 概要
 
-在程序的执行过程中，我们称由 malloc 申请的内存为 `chunk` 。这块内存在 ptmalloc 内部用 malloc_chunk 结构体来表示。当程序申请的 `chunk` 被 free 后，会被加入到相应的空闲管理列表中。
+プログラムの実行中、malloc で確保したメモリを `chunk` と呼びます。このメモリは ptmalloc の内部では malloc_chunk 構造体で表されます。プログラムが確保した `chunk` が free されると、対応する空きリスト(free list)に追加されます。
 
-非常有意思的是，**无论一个 `chunk` 的大小如何，处于分配状态还是释放状态，它们都使用一个统一的结构**。虽然它们使用了同一个数据结构，但是根据是否被释放，它们的表现形式会有所不同。
+非常に興味深いことに、**`chunk` のサイズがどうであれ、また確保状態か解放状態かにかかわらず、すべて同じ1つの構造を使います**。同じデータ構造を使いますが、解放されているかどうかによって、現れ方は異なります。
 
-malloc_chunk 的结构如下
+malloc_chunk の構造は次のとおりです。
 
 ```c
 /*
@@ -43,7 +43,7 @@ struct malloc_chunk {
 };
 ```
 
-首先，我们给出一些必要的宏的定义：
+まず、必要なマクロの定義をいくつか示します。
 
 ```c
 /* INTERNAL_SIZE_T is the word-size used for internal bookkeeping of
@@ -89,35 +89,35 @@ struct malloc_chunk {
 			  ? __alignof__ (long double) : 2 * SIZE_SZ)
 ```
 
-> 一般来说， `size_t` 被定义为 `unsigned long` ，其在 64 位中是 64 位无符号整数，32 位中是 32 位无符号整数。
+> 一般に、`size_t` は `unsigned long` として定義されます。これは64ビットでは64ビットの符号なし整数、32ビットでは32ビットの符号なし整数です。
 
-下面我们来看 `chunk` 结构体，各个字段的具体的解释如下：
+それでは `chunk` 構造体を見ていきましょう。各フィールドの具体的な説明は次のとおりです。
 
--   **prev_size**,  如果该 `chunk` 的 **物理相邻的前一地址chunk（两个指针的地址差值为前一chunk大小）** 是空闲的话，那该字段记录的是前一个 `chunk` 的大小(包括 `chunk` 头)。否则，该字段可以用来存储物理相邻的前一个chunk 的数据。**这里的前一 `chunk` 指的是较低地址的 `chunk` **。
--   **size** ，该 `chunk` 的大小，大小必须是 `MALLOC_ALIGNMENT` 的整数倍。如果申请的内存大小不是 `MALLOC_ALIGNMENT` 的整数倍，会被转换满足大小的最小的 `MALLOC_ALIGNMENT` 的倍数，这通过 `request2size()` 宏完成。32 位系统中， `MALLOC_ALIGNMENT` 可能是 `4` 或 `8` ；64 位系统中，`MALLOC_ALIGNMENT` 是 `8`。 该字段的低三个比特位对 `chunk` 的大小没有影响，它们从高到低分别表示
-    -   NON_MAIN_ARENA，记录当前 `chunk` 是否不属于主线程，1表示不属于，0表示属于。
-    -   IS_MAPPED，记录当前 `chunk` 是否是由 mmap 分配的。 
-    -   PREV_INUSE，记录前一个 `chunk` 块是否被分配。一般来说，堆中第一个被分配的内存块的 size 字段的P位都会被设置为1，以便于防止访问前面的非法内存。当一个 `chunk` 的 size 的 P 位为 0 时，我们能通过 `prev_size` 字段来获取上一个 `chunk` 的大小以及地址。这也方便进行空闲 `chunk` 之间的合并。
--   **fd，bk**。 `chunk` 处于分配状态时，从 fd 字段开始是用户的数据。 `chunk` 空闲时，会被添加到对应的空闲管理链表中，其字段的含义如下
-    -   fd 指向下一个（非物理相邻）空闲的 `chunk` 。
-    -   bk 指向上一个（非物理相邻）空闲的 `chunk` 。
-    -   通过 fd 和 bk 可以将空闲的 `chunk` 块加入到空闲的 `chunk` 块链表进行统一管理。
--   **fd_nextsize， bk_nextsize**，也是只有 `chunk` 空闲的时候才使用，不过其用于较大的 chunk（large chunk）。
-    -   fd_nextsize 指向前一个与当前 `chunk` 大小不同的第一个空闲块，不包含 bin 的头指针。
-    -   bk_nextsize 指向后一个与当前 `chunk` 大小不同的第一个空闲块，不包含 bin 的头指针。
-    -   一般空闲的 large `chunk` 在 fd 的遍历顺序中，按照由大到小的顺序排列。**这样做可以避免在寻找合适chunk 时挨个遍历。**
+-   **prev_size**。この `chunk` の**物理的に隣接する前のアドレスの chunk(2つのポインタのアドレスの差が、前の chunk のサイズになる)**が空き(free)であれば、このフィールドには前の `chunk` のサイズ(`chunk` ヘッダを含む)が記録されます。そうでなければ、このフィールドは物理的に隣接する前の chunk のデータを格納するために使えます。**ここでいう前の `chunk` とは、より低いアドレスにある `chunk` を指します**。
+-   **size**。この `chunk` のサイズで、`MALLOC_ALIGNMENT` の整数倍でなければなりません。要求されたメモリサイズが `MALLOC_ALIGNMENT` の整数倍でない場合は、そのサイズを満たす最小の `MALLOC_ALIGNMENT` の倍数に変換されます。これは `request2size()` マクロで行われます。32ビットシステムでは `MALLOC_ALIGNMENT` は `4` または `8` になりえ、64ビットシステムでは `MALLOC_ALIGNMENT` は `8` です。このフィールドの下位3ビットは `chunk` のサイズに影響せず、上位から順に次を表します。
+    -   NON_MAIN_ARENA。現在の `chunk` がメインスレッドに属さないかどうかを記録します。1 は属さない、0 は属することを表します。
+    -   IS_MAPPED。現在の `chunk` が mmap で確保されたかどうかを記録します。
+    -   PREV_INUSE。前の `chunk` ブロックが確保されているかどうかを記録します。一般に、ヒープで最初に確保されるメモリブロックの size フィールドの P ビットは 1 に設定されます。これは、それより前の不正なメモリへのアクセスを防ぐためです。ある `chunk` の size の P ビットが 0 のとき、`prev_size` フィールドから1つ前の `chunk` のサイズとアドレスを取得できます。これは、空き `chunk` どうしの統合も容易にします。
+-   **fd、bk**。`chunk` が確保状態のとき、fd フィールドの位置からがユーザーのデータになります。`chunk` が空きのときは、対応する空き管理リストに追加され、これらのフィールドの意味は次のようになります。
+    -   fd は、次の(物理的な隣接とは限らない)空き `chunk` を指します。
+    -   bk は、前の(物理的な隣接とは限らない)空き `chunk` を指します。
+    -   fd と bk によって、空き `chunk` ブロックを空き `chunk` ブロックのリストに加え、一括して管理できます。
+-   **fd_nextsize、bk_nextsize**。これらも `chunk` が空きのときにだけ使われますが、より大きな chunk(large chunk)に使われます。
+    -   fd_nextsize は、現在の `chunk` とサイズが異なる最初の前の空きブロックを指します。bin のヘッドポインタは含みません。
+    -   bk_nextsize は、現在の `chunk` とサイズが異なる最初の後ろの空きブロックを指します。bin のヘッドポインタは含みません。
+    -   一般に、空きの large `chunk` は fd をたどる順序で、大きいものから小さいものへ並びます。**こうすると、適切な chunk を探すときに1つずつたどらずに済みます。**
 
-> 自 glibc 2.26 版本起，在 32 位 glibc 中，`MALLOC_ALIGNMENT` 宏的定义在编译时优先选择 `sysdeps/i386/malloc-alignment.h` 当中的定义，该值定义为一个常量：
+> glibc 2.26 以降、32ビットの glibc では、`MALLOC_ALIGNMENT` マクロの定義はコンパイル時に `sysdeps/i386/malloc-alignment.h` の定義が優先的に選ばれ、その値は次の定数として定義されます。
 > 
 > ```c
 > #define MALLOC_ALIGNMENT 16
 > ```
 > 
-> 因此，对于自 2.26 版本起始的 32 位 glibc，其 `MALLOC_ALIGNMENT` 并非基于 `SIZE_SZ` 计算的 `8` ，而是和 64 位 glibc 所用值相同的 `16`。
+> したがって、2.26 以降の32ビット glibc では、`MALLOC_ALIGNMENT` は `SIZE_SZ` から計算される `8` ではなく、64ビット glibc と同じ値の `16` になります。
 
-一个已经分配的 `chunk` 的样子如下。**我们称前两个字段称为 `chunk` header，后面的部分称为 user data。每次 malloc 申请得到的内存指针，其实指向 user data 的起始处。** 
+確保済みの `chunk` の姿は次のとおりです。**最初の2つのフィールドを `chunk` header、その後ろの部分を user data と呼びます。malloc で確保して得られるメモリのポインタは、実際には user data の先頭を指しています。**
 
-当一个 `chunk` 处于使用状态时，它的下一个 `chunk` 的 prev_size 域无效，所以下一个 `chunk` 的该部分也可以被当前chunk使用。**这就是chunk中的空间复用。**
+`chunk` が使用状態にあるとき、その次の `chunk` の prev_size フィールドは無効なので、次の `chunk` のこの部分も現在の chunk が使えます。**これが chunk における領域の再利用です。**
 
 ```c++
 chunk-> +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -136,7 +136,7 @@ chunk-> +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
         +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ```
 
-被释放的 `chunk` 被记录在链表中（可能是循环双向链表，也可能是单向链表）。具体结构如下
+解放された `chunk` はリストに記録されます(循環双方向リストの場合も、単方向リストの場合もあります)。具体的な構造は次のとおりです。
 
 ```c++
 chunk-> +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
@@ -158,15 +158,15 @@ chunk-> +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
         +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ```
 
-可以发现，如果一个 `chunk` 处于 free 状态，那么会有两个位置记录其相应的大小
+`chunk` が free 状態のとき、対応するサイズを記録する場所が2か所あることが分かります。
 
-1. 本身的 size 字段会记录，
+1. 自身の size フィールドに記録される。
 
-2. 它后面的 `chunk` 会记录。
+2. その後ろの `chunk` に記録される。
 
-**一般情况下**，物理相邻的两个空闲 `chunk` 会被合并为一个 `chunk` 。堆管理器会通过 prev_size 字段以及 size 字段合并两个物理相邻的空闲 `chunk` 块。
+**一般的な場合**、物理的に隣接する2つの空き `chunk` は統合されて1つの `chunk` になります。ヒープマネージャは prev_size フィールドと size フィールドを使って、物理的に隣接する2つの空き `chunk` ブロックを統合します。
 
-**！！！一些关于堆的约束，后面详细考虑！！！**
+**!!!ヒープに関するいくつかの制約については、後ほど詳しく検討します!!!**
 
 ```c++
 /*
@@ -190,13 +190,13 @@ chunk-> +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 */
 ```
 
-#### chunk相关宏
+#### chunk 関連のマクロ
 
-这里主要介绍 `chunk` 的大小、对齐检查以及一些转换的宏。
+ここでは主に、`chunk` のサイズ、アライメントの検査、およびいくつかの変換のマクロを紹介します。
 
-**chunk 与 mem 指针头部的转换**
+**chunk と mem ポインタ先頭の変換**
 
-mem指向用户得到的内存的起始位置。
+mem は、ユーザーが得たメモリの開始位置を指します。
 
 ```c++
 /* conversion from malloc headers to user pointers, and back */
@@ -204,20 +204,20 @@ mem指向用户得到的内存的起始位置。
 #define mem2chunk(mem) ((mchunkptr)((char *) (mem) -2 * SIZE_SZ))
 ```
 
-**最小的 `chunk` 大小**
+**最小の `chunk` サイズ**
 
 ```c++
 /* The smallest possible chunk */
 #define MIN_CHUNK_SIZE (offsetof(struct malloc_chunk, fd_nextsize))
 ```
 
-这里，offsetof 函数计算出 fd_nextsize 在 malloc_chunk 中的偏移，说明最小的 `chunk` 至少要包含 bk 指针。
+ここで offsetof 関数は fd_nextsize の malloc_chunk 内でのオフセットを計算します。これは、最小の `chunk` が少なくとも bk ポインタまでを含む必要があることを示しています。
 
-**最小申请的堆内存大小**
+**確保できるヒープメモリの最小サイズ**
 
-用户最小申请的内存大小必须是 2 * SIZE_SZ 的最小整数倍。
+ユーザーが要求できる最小のメモリサイズは、2 * SIZE_SZ の最小の整数倍でなければなりません。
 
-**注：就目前而看 MIN_CHUNK_SIZE 和 MINSIZE 大小是一致的，个人认为之所以要添加两个宏是为了方便以后修改 malloc_chunk 时方便一些。**
+**注:現状では MIN_CHUNK_SIZE と MINSIZE のサイズは一致しています。個人的には、2つのマクロを追加した理由は、将来 malloc_chunk を変更するときに都合がよいようにするためだと思います。**
 
 ```c++
 /* The smallest size we can malloc is an aligned minimal chunk */
@@ -227,9 +227,9 @@ mem指向用户得到的内存的起始位置。
                       ~MALLOC_ALIGN_MASK))
 ```
 
-**检查分配给用户的内存是否对齐**
+**ユーザーに割り当てるメモリがアライメントされているかの検査**
 
-2 * SIZE_SZ 大小对齐。
+2 * SIZE_SZ のサイズでアライメントします。
 
 ```c++
 /* Check if m has acceptable alignment */
@@ -241,7 +241,7 @@ mem指向用户得到的内存的起始位置。
      MALLOC_ALIGN_MASK)
 ```
 
-**请求字节数判断**
+**要求バイト数の判定**
 
 ```c++
 /*
@@ -254,7 +254,7 @@ mem指向用户得到的内存的起始位置。
     ((unsigned long) (req) >= (unsigned long) (INTERNAL_SIZE_T)(-2 * MINSIZE))
 ```
 
-**将用户请求内存大小转为实际分配内存大小**
+**ユーザーが要求したメモリサイズを、実際に割り当てるメモリサイズに変換**
 
 ```c++
 /* pad request bytes into a usable size -- internal version */
@@ -274,14 +274,14 @@ mem指向用户得到的内存的起始位置。
     (sz) = request2size(req);
 ```
 
-当一个 `chunk` 处于已分配状态时，它的物理相邻的下一个 `chunk` 的 prev_size 字段必然是无效的，故而这个字段就可以被当前这个 `chunk` 使用。这就是 ptmalloc 中 `chunk` 间的复用。具体流程如下
+`chunk` が確保済み状態のとき、物理的に隣接する次の `chunk` の prev_size フィールドは必ず無効なので、このフィールドを現在の `chunk` が使えます。これが ptmalloc における `chunk` 間の再利用です。具体的な流れは次のとおりです。
 
-1. 首先，利用 REQUEST_OUT_OF_RANGE 判断是否可以分配用户请求的字节大小的 chunk。
-2. 其次，需要注意的是用户请求的字节是用来存储数据的，即 `chunk` header 后面的部分。与此同时，由于chunk 间复用，所以可以使用下一个 `chunk` 的 prev_size 字段。因此，这里只需要再添加 SIZE_SZ 大小即可以完全存储内容。
-3. 由于系统中所允许的申请的 `chunk` 最小是 MINSIZE，所以与其进行比较。如果不满足最低要求，那么就需要直接分配MINSIZE字节。
-4. 如果大于的话，因为系统中申请的 `chunk` 需要 2 * SIZE_SZ 对齐，所以这里需要加上MALLOC_ALIGN_MASK 以便于对齐。
+1. まず、REQUEST_OUT_OF_RANGE を使って、ユーザーが要求したバイト数の chunk を割り当てられるかを判定する。
+2. 次に、注意すべき点として、ユーザーが要求したバイト数はデータを格納するためのもの、つまり `chunk` header より後ろの部分です。同時に、chunk 間の再利用があるため、次の `chunk` の prev_size フィールドを使えます。したがって、ここでは SIZE_SZ だけ加えれば、内容を完全に格納できます。
+3. システムで許される `chunk` の最小サイズは MINSIZE なので、それと比較する。最低要件を満たさなければ、直接 MINSIZE バイトを割り当てる。
+4. それより大きければ、システムで要求する `chunk` は 2 * SIZE_SZ にアライメントされる必要があるため、アライメントのために MALLOC_ALIGN_MASK を加える。
 
-**标记位相关**
+**フラグビット関連**
 
 ```c++
 /* size field is or'ed with PREV_INUSE when previous adjacent chunk in use */
@@ -317,7 +317,7 @@ mem指向用户得到的内存的起始位置。
 #define SIZE_BITS (PREV_INUSE | IS_MMAPPED | NON_MAIN_ARENA)
 ```
 
-**获取chunk size**
+**chunk size の取得**
 
 ```c++
 /* Get size, ignoring use bits */
@@ -327,14 +327,14 @@ mem指向用户得到的内存的起始位置。
 #define chunksize_nomask(p) ((p)->mchunk_size)
 ```
 
-**获取下一个物理相邻的chunk**
+**物理的に隣接する次の chunk の取得**
 
 ```c++
 /* Ptr to next physical malloc_chunk. */
 #define next_chunk(p) ((mchunkptr)(((char *) (p)) + chunksize(p)))
 ```
 
-**获取前一个chunk的信息**
+**前の chunk の情報の取得**
 
 ```c++
 /* Size of the chunk below P.  Only valid if !prev_inuse (P).  */
@@ -347,7 +347,7 @@ mem指向用户得到的内存的起始位置。
 #define prev_chunk(p) ((mchunkptr)(((char *) (p)) - prev_size(p)))
 ```
 
-**当前chunk使用状态相关操作**
+**現在の chunk の使用状態に関する操作**
 
 ```c++
 /* extract p's inuse bit */
@@ -362,7 +362,7 @@ mem指向用户得到的内存的起始位置。
     ((mchunkptr)(((char *) (p)) + chunksize(p)))->mchunk_size &= ~(PREV_INUSE)
 ```
 
-**设置chunk的size字段**
+**chunk の size フィールドの設定**
 
 ```c++
 /* Set size at head, without disturbing its use bit */
@@ -378,14 +378,14 @@ mem指向用户得到的内存的起始位置。
     (((mchunkptr)((char *) (p) + (s)))->mchunk_prev_size = (s))
 ```
 
-**获取指定偏移的chunk**
+**指定オフセットの chunk の取得**
 
 ```c++
 /* Treat space at ptr + offset as a chunk */
 #define chunk_at_offset(p, s) ((mchunkptr)(((char *) (p)) + (s)))
 ```
 
-**指定偏移处chunk使用状态相关操作**
+**指定オフセットにある chunk の使用状態に関する操作**
 
 ```c++
 /* check/set/clear inuse bits in known places */
@@ -401,13 +401,13 @@ mem指向用户得到的内存的起始位置。
 
 ### bin
 
-#### 概述
+#### 概要
 
-我们曾经说过，用户释放掉的 `chunk` 不会马上归还给系统，ptmalloc 会统一管理 heap 和 mmap 映射区域中的空闲的chunk。当用户再一次请求分配内存时，ptmalloc 分配器会试图在空闲的chunk中挑选一块合适的给用户。这样可以避免频繁的系统调用，降低内存分配的开销。
+前に述べたとおり、ユーザーが解放した `chunk` はすぐにはシステムに返却されず、ptmalloc は heap と mmap のマッピング領域にある空きの chunk を一括して管理します。ユーザーが再びメモリの割り当てを要求したとき、ptmalloc アロケータは空きの chunk の中から適切なものを選んでユーザーに渡そうとします。これにより、頻繁なシステムコールを避け、メモリ割り当てのオーバーヘッドを減らせます。
 
-在具体的实现中，ptmalloc 采用分箱式方法对空闲的 `chunk` 进行管理。首先，它会根据空闲的 `chunk` 的大小以及使用状态将 `chunk` 初步分为4类：fast bins，small bins，large bins，unsorted bin。每类中仍然有更细的划分，相似大小的 `chunk` 会用双向链表链接起来。也就是说，在每类 bin 的内部仍然会有多个互不相关的链表来保存不同大小的 chunk。
+具体的な実装では、ptmalloc は bin(箱)方式で空きの `chunk` を管理します。まず、空きの `chunk` のサイズと使用状態に基づいて、`chunk` を大きく4種類に分けます。fast bins、small bins、large bins、unsorted bin です。各種類の中にはさらに細かい区分があり、似たサイズの `chunk` は双方向リストでつながれます。つまり、各種類の bin の内部には、サイズごとに chunk を保持する、互いに無関係な複数のリストがあります。
 
-对于 small bins，large bins，unsorted bin 来说，ptmalloc 将它们维护在同一个数组中。这些bin对应的数据结构在 malloc_state 中，如下
+small bins、large bins、unsorted bin について、ptmalloc はこれらを同じ1つの配列で維持しています。これらの bin に対応するデータ構造は malloc_state 内にあり、次のとおりです。
 
 ```c++
 #define NBINS 128
@@ -415,30 +415,30 @@ mem指向用户得到的内存的起始位置。
 mchunkptr bins[ NBINS * 2 - 2 ];
 ```
 
-`bins` 主要用于索引不同 bin 的 fd 和 bk。
+`bins` は主に、さまざまな bin の fd と bk を引くために使われます。
 
-为了简化在双链接列表中的使用，每个bin的header都设置为malloc_chunk类型。这样可以避免header类型及其特殊处理。但是，为了节省空间和提高局部性，只分配bin的fd/bk指针，然后使用repositioning tricks将这些指针视为一个`malloc_chunk*`的字段。
+二重リンクリストでの使用を簡単にするため、各 bin の header は malloc_chunk 型に設定されています。これにより、header の型と、その特別な処理を避けられます。ただし、領域の節約と局所性の向上のため、bin の fd/bk ポインタだけを確保し、その後 repositioning tricks を使ってこれらのポインタを `malloc_chunk*` のフィールドとして扱います。
 
 
-以 32 位系统为例，bins 前 4 项的含义如下
+32ビットシステムを例に、bins の最初の4項目の意味は次のとおりです。
 
-| 含义    | bin1的fd/bin2的prev_size | bin1的bk/bin2的size | bin2的fd/bin3的prev_size | bin2的bk/bin3的size |
+| 意味    | bin1 の fd/bin2 の prev_size | bin1 の bk/bin2 の size | bin2 の fd/bin3 の prev_size | bin2 の bk/bin3 の size |
 | ----- | ---------------------- | ----------------- | ---------------------- | ----------------- |
-| bin下标 | 0                      | 1                 | 2                      | 3                 |
+| bin の添字 | 0                      | 1                 | 2                      | 3                 |
 
-可以看到，bin2 的 prev_size、size 和 bin1 的 fd、bk 是重合的。由于我们只会使用 fd 和 bk 来索引链表，所以该重合部分的数据其实记录的是 bin1 的 fd、bk。 也就是说，虽然后一个 bin 和前一个 bin 共用部分数据，但是其实记录的仍然是前一个 bin 的链表数据。通过这样的复用，可以节省空间。
+bin2 の prev_size、size は bin1 の fd、bk と重なっていることが分かります。リストを引くのには fd と bk しか使わないので、この重なった部分のデータは、実は bin1 の fd、bk を記録しています。つまり、後ろの bin と前の bin は一部のデータを共用していますが、記録しているのはやはり前の bin のリストのデータです。このような再利用により、領域を節約できます。
 
-数组中的 bin 依次如下
+配列の中の bin は順に次のとおりです。
 
-1. 第一个为 unsorted bin，字如其面，这里面的 `chunk` 没有进行排序，存储的 `chunk` 比较杂。
-2. 索引从 2 到 63 的 bin 称为 small bin，同一个 small bin 链表中的 `chunk` 的大小相同。两个相邻索引的 small bin 链表中的 `chunk` 大小相差的字节数为**2个机器字长**，即32位相差8字节，64位相差16字节。
-3. small bins 后面的 bin 被称作 large bins。large bins 中的每一个 bin 都包含一定范围内的 chunk，其中的chunk 按 fd 指针的顺序从大到小排列。相同大小的chunk同样按照最近使用顺序排列。
+1. 1番目は unsorted bin で、名前のとおり、この中の `chunk` はソートされておらず、格納されている `chunk` はかなり雑多です。
+2. 添字 2 から 63 までの bin を small bin と呼びます。同じ small bin のリスト内の `chunk` のサイズは同じです。隣り合う添字の small bin のリストにある `chunk` のサイズの差は**マシンワード2個分**、つまり32ビットでは8バイト、64ビットでは16バイトです。
+3. small bins の後ろの bin を large bins と呼びます。large bins の各 bin には、ある範囲内の chunk が含まれ、その中の chunk は fd ポインタの順に大きいものから小さいものへ並びます。同じサイズの chunk も、同様に最近使用された順に並びます。
 
-此外，上述这些bin的排布都会遵循一个原则：**任意两个物理相邻的空闲chunk不能在一起**。
+さらに、上記の各 bin の配置は、1つの原則に従います。**物理的に隣接する任意の2つの空き chunk が、並んで存在してはならない**。
 
-需要注意的是，并不是所有的 `chunk` 被释放后就立即被放到 bin 中。ptmalloc 为了提高分配的速度，会把一些小的 `chunk` **先**放到 fast bins 的容器内。**而且，fastbin 容器中的 `chunk` 的使用标记总是被置位的，所以不满足上面的原则。**
+注意すべき点として、すべての `chunk` が解放後すぐに bin に入れられるわけではありません。ptmalloc は割り当ての速度を上げるため、小さな `chunk` を**先に** fast bins のコンテナに入れます。**しかも、fastbin のコンテナ内の `chunk` の使用中フラグは常にセットされているため、上の原則を満たしません。**
 
-bin 通用的宏如下
+bin に共通のマクロは次のとおりです。
 
 ```c++
 typedef struct malloc_chunk *mbinptr;
@@ -449,20 +449,20 @@ typedef struct malloc_chunk *mbinptr;
               offsetof(struct malloc_chunk, fd))
 
 /* analog of ++bin */
-//获取下一个bin的地址
+//次の bin のアドレスを取得
 #define next_bin(b) ((mbinptr)((char *) (b) + (sizeof(mchunkptr) << 1)))
 
 /* Reminders about list directionality within bins */
-// 这两个宏可以用来遍历bin
-// 获取 bin 的位于链表头的 chunk
+// この2つのマクロは bin をたどるのに使える
+// bin のリスト先頭にある chunk を取得
 #define first(b) ((b)->fd)
-// 获取 bin 的位于链表尾的 chunk
+// bin のリスト末尾にある chunk を取得
 #define last(b) ((b)->bk)
 ```
 
 #### Fast Bin
 
-大多数程序经常会申请以及释放一些比较小的内存块。如果将一些较小的 `chunk` 释放之后发现存在与之相邻的空闲的 `chunk` 并将它们进行合并，那么当下一次再次申请相应大小的 `chunk` 时，就需要对 `chunk` 进行分割，这样就大大降低了堆的利用效率。**因为我们把大部分时间花在了合并、分割以及中间检查的过程中。**因此，ptmalloc 中专门设计了 fast bin，对应的变量就是 malloc state 中的 fastbinsY 
+多くのプログラムは、比較的小さなメモリブロックの確保と解放を頻繁に行います。小さな `chunk` を解放した後、隣接する空き `chunk` があるのを見つけて統合してしまうと、次に同じサイズの `chunk` を要求したときに、`chunk` を分割しなければならなくなり、ヒープの利用効率が大きく下がります。**時間の大半を、統合、分割、そしてその間の検査に費やしてしまうからです。**そのため ptmalloc では fast bin を特別に設計しており、対応する変数は malloc state の fastbinsY です。
 
 ```c++
 /*
@@ -490,9 +490,9 @@ typedef struct malloc_chunk *mfastbinptr;
 */
 ```
 
-为了更加高效地利用 fast bin，glibc 采用单向链表对其中的每个 bin 进行组织，并且**每个 bin 采取 LIFO 策略**，最近释放的 `chunk` 会更早地被分配，所以会更加适合于局部性。也就是说，当用户需要的 `chunk` 的大小小于 fastbin 的最大大小时， ptmalloc 会首先判断 fastbin 中相应的 bin 中是否有对应大小的空闲块，如果有的话，就会直接从这个 bin 中获取 chunk。如果没有的话，ptmalloc才会做接下来的一系列操作。
+fast bin をより効率よく使うため、glibc は単方向リストでその中の各 bin を構成し、**各 bin は LIFO 方式をとります**。最近解放された `chunk` ほど早く割り当てられるため、局所性によりよく適合します。つまり、ユーザーが必要とする `chunk` のサイズが fastbin の最大サイズ以下のとき、ptmalloc はまず fastbin の対応する bin に該当サイズの空きブロックがあるかを調べ、あれば、そのまま bin から chunk を取得します。なければ、ptmalloc は続く一連の操作を行います。
 
-默认情况下（**32位系统为例**）， fastbin 中默认支持最大的 `chunk` 的数据空间大小为 64 字节。但是其可以支持的chunk的数据空间最大为80字节。除此之外， fastbin 最多可以支持的 bin 的个数为 10 个，从数据空间为 8 字节开始一直到 80 字节（注意这里说的是数据空间大小，也即除去 prev_size 和 size 字段部分的大小）定义如下
+デフォルトでは(**32ビットシステムを例に**)、fastbin がデフォルトでサポートする最大の `chunk` のデータ領域サイズは 64 バイトです。ただし、サポートできる chunk のデータ領域の最大は 80 バイトです。そのほか、fastbin がサポートできる bin の数は最大 10 個で、データ領域が 8 バイトのものから 80 バイトまでです(ここで言っているのはデータ領域のサイズ、つまり prev_size と size のフィールド部分を除いたサイズです)。定義は次のとおりです。
 
 ```c++
 #define NFASTBINS (fastbin_index(request2size(MAX_FAST_SIZE)) + 1)
@@ -518,7 +518,7 @@ typedef struct malloc_chunk *mfastbinptr;
    upon startup (since statics are zero-filled), simplifying
    initialization checks.
  */
-//判断分配区是否有 fast bin chunk，1表示没有
+//割り当て領域に fast bin chunk があるかを判定。1 はなしを表す
 #define FASTCHUNKS_BIT (1U)
 
 #define have_fastchunks(M) (((M)->flags & FASTCHUNKS_BIT) == 0)
@@ -533,10 +533,10 @@ typedef struct malloc_chunk *mfastbinptr;
    The initial value comes from MORECORE_CONTIGUOUS, but is
    changed dynamically if mmap is ever used as an sbrk substitute.
  */
-// MORECORE是否返回连续的内存区域。
-// 主分配区中的MORECORE其实为sbr()，默认返回连续虚拟地址空间
-// 非主分配区使用mmap()分配大块虚拟内存，然后进行切分来模拟主分配区的行为
-// 而默认情况下mmap映射区域是不保证虚拟地址空间连续的，所以非主分配区默认分配非连续虚拟地址空间。
+// MORECORE が連続したメモリ領域を返すかどうか。
+// メイン割り当て領域の MORECORE は実は sbr() で、デフォルトでは連続した仮想アドレス空間を返す
+// メイン以外の割り当て領域は mmap() で大きな仮想メモリを確保し、それを切り分けてメイン割り当て領域の動作を模倣する
+// 一方、デフォルトでは mmap のマッピング領域は仮想アドレス空間の連続を保証しないため、メイン以外の割り当て領域はデフォルトで非連続な仮想アドレス空間を割り当てる。
 #define NONCONTIGUOUS_BIT (2U)
 
 #define contiguous(M) (((M)->flags & NONCONTIGUOUS_BIT) == 0)
@@ -566,9 +566,9 @@ typedef struct malloc_chunk *mfastbinptr;
 #define get_max_fast() global_max_fast
 ```
 
-ptmalloc 默认情况下会调用 set_max_fast(s) 将全局变量 global_max_fast 设置为 DEFAULT_MXFAST，也就是设置 fast bins 中 `chunk` 的最大值。当 MAX_FAST_SIZE 被设置为 0 时，系统就不会支持 fastbin 。
+ptmalloc はデフォルトで set_max_fast(s) を呼び出し、グローバル変数 global_max_fast を DEFAULT_MXFAST に設定します。これが fast bins 内の `chunk` の最大値の設定です。MAX_FAST_SIZE が 0 に設定されると、システムは fastbin をサポートしなくなります。
 
-**fastbin的索引**
+**fastbin の添字**
 
 ```c++
 
@@ -576,14 +576,14 @@ ptmalloc 默认情况下会调用 set_max_fast(s) 将全局变量 global_max_fas
 
 /* offset 2 to use otherwise unindexable first 2 bins */
 // chunk size=2*size_sz*(2+idx)
-// 这里要减2，否则的话，前两个bin没有办法索引到。
+// ここで 2 を引くのは、そうしないと最初の2つの bin を引けないため。
 #define fastbin_index(sz)                                                      \
     ((((unsigned int) (sz)) >> (SIZE_SZ == 8 ? 4 : 3)) - 2)
 ```
 
-**需要特别注意的是，fastbin 范围的 `chunk` 的 inuse 始终被置为 1。因此它们不会和其它被释放的 `chunk` 合并。**
+**特に注意すべき点として、fastbin の範囲の `chunk` の inuse は常に 1 にセットされています。したがって、それらは解放されたほかの `chunk` と統合されません。**
 
-但是当释放的 `chunk` 与该 `chunk` 相邻的空闲 `chunk` 合并后的大小大于FASTBIN_CONSOLIDATION_THRESHOLD时，内存碎片可能比较多了，我们就需要把 fast bins 中的chunk都进行合并，以减少内存碎片对系统的影响。
+ただし、解放した `chunk` と、それに隣接する空き `chunk` を統合した後のサイズが FASTBIN_CONSOLIDATION_THRESHOLD より大きいときは、メモリの断片化がかなり進んでいる可能性があるため、メモリ断片化がシステムに与える影響を減らすために、fast bins 内の chunk をすべて統合する必要があります。
 
 ```c++
 /*
@@ -600,7 +600,7 @@ ptmalloc 默认情况下会调用 set_max_fast(s) 将全局变量 global_max_fas
 #define FASTBIN_CONSOLIDATION_THRESHOLD (65536UL)
 ```
 
-**malloc_consolidate 函数可以将 fastbin 中所有能和其它 `chunk` 合并的 `chunk` 合并在一起。具体地参见后续的详细函数的分析。** 
+**malloc_consolidate 関数は、fastbin 内の、ほかの `chunk` と統合できるすべての `chunk` をまとめて統合します。具体的には、後続の関数の詳細な解析を参照してください。**
 
 ```
 /*
@@ -613,9 +613,9 @@ ptmalloc 默认情况下会调用 set_max_fast(s) 将全局变量 global_max_fas
 
 #### Small Bin
 
-small bins 中每个 `chunk` 的大小与其所在的 bin 的 index 的关系为：chunk_size = 2 * SIZE_SZ *index，具体如下
+small bins における各 `chunk` のサイズと、その `chunk` が属する bin の index との関係は chunk_size = 2 * SIZE_SZ *index で、具体的には次のとおりです。
 
-| 下标   | SIZE_SZ=4（32位） | SIZE_SZ=8（64位） |
+| 添字   | SIZE_SZ=4(32ビット) | SIZE_SZ=8(64ビット) |
 | ---- | -------------- | -------------- |
 | 2    | 16             | 32             |
 | 3    | 24             | 48             |
@@ -624,45 +624,45 @@ small bins 中每个 `chunk` 的大小与其所在的 bin 的 index 的关系为
 | x    | 2\*4\*x        | 2\*8\*x        |
 | 63   | 504            | 1008           |
 
-small bins 中一共有 62 个循环双向链表，每个链表中存储的 `chunk` 大小都一致。比如对于 32 位系统来说，下标 2 对应的双向链表中存储的 `chunk` 大小为均为 16 字节。每个链表都有链表头结点，这样可以方便对于链表内部结点的管理。此外，**small bins 中每个 bin 对应的链表采用 FIFO 的规则**，所以同一个链表中先被释放的 `chunk` 会先被分配出去。
+small bins には全部で 62 個の循環双方向リストがあり、各リストに格納される `chunk` のサイズはすべて同じです。たとえば32ビットシステムでは、添字 2 に対応する双方向リストに格納される `chunk` のサイズはどれも 16 バイトです。各リストにはリストの先頭ノードがあり、これによりリスト内部のノードの管理が容易になります。さらに、**small bins の各 bin に対応するリストは FIFO の規則を採用しています**。そのため、同じリストの中で先に解放された `chunk` が先に割り当てられます。
 
-small bin相关的宏如下
+small bin 関連のマクロは次のとおりです。
 
 ```c++
 #define NSMALLBINS 64
 #define SMALLBIN_WIDTH MALLOC_ALIGNMENT
-// 是否需要对small bin的下标进行纠正
+// small bin の添字を補正する必要があるか
 #define SMALLBIN_CORRECTION (MALLOC_ALIGNMENT > 2 * SIZE_SZ)
 
 #define MIN_LARGE_SIZE ((NSMALLBINS - SMALLBIN_CORRECTION) * SMALLBIN_WIDTH)
-//判断chunk的大小是否在small bin范围内
+//chunk のサイズが small bin の範囲内か判定
 #define in_smallbin_range(sz)                                                  \
     ((unsigned long) (sz) < (unsigned long) MIN_LARGE_SIZE)
-// 根据chunk的大小得到small bin对应的索引。
+// chunk のサイズから、対応する small bin の添字を得る。
 #define smallbin_index(sz)                                                     \
     ((SMALLBIN_WIDTH == 16 ? (((unsigned) (sz)) >> 4)                          \
                            : (((unsigned) (sz)) >> 3)) +                       \
      SMALLBIN_CORRECTION)
 ```
 
-**或许，大家会很疑惑，那 fastbin 与 small bin 中 `chunk` 的大小会有很大一部分重合啊，那 small bin 中对应大小的 bin 是不是就没有什么作用啊？** 其实不然，fast bin 中的 `chunk` 是有可能被放到 small bin 中去的，我们在后面分析具体的源代码时会有深刻的体会。
+**もしかすると、疑問に思う人もいるでしょう。fastbin と small bin の `chunk` のサイズはかなりの部分が重なっているのだから、small bin の該当サイズの bin は役に立たないのではないか、と。** 実はそうではありません。fast bin の `chunk` は small bin に入れられることがあり、これは後で具体的なソースコードを解析するときに深く実感できるでしょう。
 
 #### Large Bin
 
-large bins 中一共包括 63 个 bin，每个 bin 中的 `chunk` 的大小不一致，而是处于一定区间范围内。此外，这 63 个 bin 被分成了 6 组，每组 bin 中的 `chunk` 大小之间的公差一致，具体如下：
+large bins には全部で 63 個の bin があり、各 bin 内の `chunk` のサイズは一様ではなく、ある範囲内にあります。さらに、この 63 個の bin は 6 つのグループに分けられ、各グループの bin 内の `chunk` のサイズの公差は同じです。具体的には次のとおりです。
 
-| 组    | 数量   | 公差      |
+| グループ    | 個数   | 公差      |
 | ---- | ---- | ------- |
 | 1    | 32   | 64B     |
 | 2    | 16   | 512B    |
 | 3    | 8    | 4096B   |
 | 4    | 4    | 32768B  |
 | 5    | 2    | 262144B |
-| 6    | 1    | 不限制     |
+| 6    | 1    | 制限なし     |
 
-这里我们以 32 位平台的 large bin 为例，第一个 large bin 的起始 `chunk` 大小为 512 字节，位于第一组，所以该bin 可以存储的 `chunk` 的大小范围为 [512,512+64)。
+ここでは32ビットプラットフォームの large bin を例にします。最初の large bin の先頭の `chunk` サイズは 512 バイトで、第1グループにあるため、この bin に格納できる `chunk` のサイズ範囲は [512,512+64) です。
 
-关于 large bin 的宏如下，这里我们以 32 位平台下，第一个 large bin 的起始 `chunk` 大小为例，为 512 字节，那么 512>>6 = 8，所以其下标为56+8=64。
+large bin に関するマクロは次のとおりです。ここでは32ビットプラットフォームで、最初の large bin の先頭の `chunk` サイズが 512 バイトの場合を例にします。512>>6 = 8 なので、その添字は 56+8=64 です。
 
 ```c++
 #define largebin_index_32(sz)                                                  \
@@ -715,9 +715,9 @@ large bins 中一共包括 63 个 bin，每个 bin 中的 `chunk` 的大小不�
 
 #### Unsorted Bin
 
-unsorted bin 可以视为空闲 `chunk` 回归其所属 bin 之前的缓冲区。
+unsorted bin は、空き `chunk` が所属する bin に戻る前のバッファとみなせます。
 
-其在 glibc 中具体的说明如下
+glibc での具体的な説明は次のとおりです。
 
 ```c++
 /*
@@ -735,25 +735,25 @@ unsorted bin 可以视为空闲 `chunk` 回归其所属 bin 之前的缓冲区�
  */
 ```
 
-从下面的宏我们可以看出
+次のマクロから分かります。
 
 ```c++
 /* The otherwise unindexable 1-bin is used to hold unsorted chunks. */
 #define unsorted_chunks(M) (bin_at(M, 1))
 ```
 
-unsorted bin 处于我们之前所说的 bin 数组下标 1 处。故而 unsorted bin 只有一个链表。unsorted bin 中的空闲 `chunk` 处于乱序状态，主要有两个来源
+unsorted bin は、先に述べた bin 配列の添字 1 の位置にあります。したがって unsorted bin のリストは1つだけです。unsorted bin 内の空き `chunk` は順序が乱れた状態で、主に2つの由来があります。
 
-- 当一个较大的 `chunk` 被分割成两半后，如果剩下的部分大于 MINSIZE，就会被放到 unsorted bin 中。
-- 释放一个不属于 fast bin 的 chunk，并且该 `chunk` 不和 top `chunk` 紧邻时，该 `chunk` 会被首先放到 unsorted bin 中。关于 top `chunk` 的解释，请参考下面的介绍。
+- 比較的大きな `chunk` が2つに分割されたとき、残りの部分が MINSIZE より大きければ、unsorted bin に入れられる。
+- fast bin に属さない chunk を解放し、その `chunk` が top `chunk` と隣接していないとき、その `chunk` はまず unsorted bin に入れられる。top `chunk` の説明については、下の紹介を参照してください。
 
-此外，Unsorted Bin 在使用的过程中，采用的遍历顺序是 FIFO 。
+さらに、Unsorted Bin は使用の過程で、FIFO の順でたどります。
 
 #### common macro
 
-这里介绍一些通用的宏。
+ここでは、いくつかの共通のマクロを紹介します。
 
-**根据chunk的大小统一地获得chunk所在的索引**
+**chunk のサイズから、chunk が属する添字を統一的に得る**
 
 ```c++
 #define bin_index(sz)                                                          \
@@ -762,7 +762,7 @@ unsorted bin 处于我们之前所说的 bin 数组下标 1 处。故而 unsorte
 
 ### Top Chunk
 
-glibc 中对于 top `chunk` 的描述如下
+glibc での top `chunk` の説明は次のとおりです。
 
 ```c++
 /*
@@ -787,25 +787,25 @@ glibc 中对于 top `chunk` 的描述如下
 #define initial_top(M) (unsorted_chunks(M))
 ```
 
-程序第一次进行 malloc 的时候，heap 会被分为两块，一块给用户，剩下的那块就是 top chunk。其实，所谓的top `chunk` 就是处于当前堆的物理地址最高的 chunk。这个 `chunk` 不属于任何一个 bin，它的作用在于当所有的bin 都无法满足用户请求的大小时，如果其大小不小于指定的大小，就进行分配，并将剩下的部分作为新的 top chunk。否则，就对heap进行扩展后再进行分配。在main arena中通过sbrk扩展heap，而在thread arena中通过mmap分配新的heap。
+プログラムが最初に malloc を行うとき、heap は2つのブロックに分けられ、1つはユーザーに渡され、残りが top chunk になります。実は、top `chunk` とは、現在のヒープの物理アドレスで最も高い位置にある chunk のことです。この `chunk` はどの bin にも属さず、その役割は、すべての bin がユーザーの要求サイズを満たせないとき、そのサイズが指定のサイズ以上であれば割り当て、残りの部分を新しい top chunk とすることです。そうでなければ、heap を拡張してから割り当てます。main arena では sbrk で heap を拡張し、thread arena では mmap で新しい heap を割り当てます。
 
-需要注意的是，top `chunk` 的 prev_inuse 比特位始终为1，否则其前面的chunk就会被合并到top chunk中。
+注意すべき点として、top `chunk` の prev_inuse ビットは常に 1 です。そうでないと、その前の chunk が top chunk に統合されてしまいます。
 
-**初始情况下，我们可以将 unsorted `chunk` 作为 top chunk。**
+**初期状態では、unsorted `chunk` を top chunk として扱えます。**
 
 ### last remainder
 
-在用户使用 malloc 请求分配内存时，ptmalloc2 找到的 `chunk` 可能并不和申请的内存大小一致，这时候就将分割之后的剩余部分称之为 last remainder `chunk` ，unsort bin 也会存这一块。top `chunk` 分割剩下的部分不会作为last remainder.
+ユーザーが malloc でメモリの割り当てを要求したとき、ptmalloc2 が見つけた `chunk` が要求したメモリサイズと一致しないことがあります。その場合、分割した後の残りの部分を last remainder `chunk` と呼び、unsort bin にもこのブロックが格納されます。top `chunk` を分割した残りの部分は last remainder にはなりません。
 
-## 宏观结构
+## マクロ構造
 
 ### arena
 
-在我们之前介绍的例子中，无论是主线程还是新创建的线程，在第一次申请内存时，都会有独立的arena。那么会不会每个线程都有独立的arena呢？下面我们就具体介绍。
+これまでに紹介した例では、メインスレッドでも新しく作られたスレッドでも、最初にメモリを要求するときには独立した arena が用意されていました。では、すべてのスレッドに独立した arena があるのでしょうか。以下で具体的に紹介します。
 
-#### arena 数量
+#### arena の数
 
-对于不同系统，arena数量的[约束](https://github.com/sploitfun/lsploits/blob/master/glibc/malloc/arena.c#L847)如下
+システムによって、arena の数の[制約](https://github.com/sploitfun/lsploits/blob/master/glibc/malloc/arena.c#L847)は次のとおりです。
 
 ```text
 For 32 bit systems:
@@ -814,25 +814,25 @@ For 64 bit systems:
      Number of arena = 8 * number of cores.
 ```
 
-显然，不是每一个线程都会有对应的 arena。至于为什么64位系统，要那么设置，我也没有想明白。此外，因为每个系统的核数是有限的，当线程数大于核数的二倍（超线程技术）时，就必然有线程处于等待状态，所以没有必要为每个线程分配一个 arena。
+明らかに、すべてのスレッドに対応する arena があるわけではありません。64ビットシステムでなぜそのように設定されているのかは、私にも分かりませんでした。また、システムのコア数には限りがあるため、スレッド数がコア数の2倍(ハイパースレッディング)を超えると、必ず待ち状態になるスレッドが出ます。したがって、スレッドごとに arena を割り当てる必要はありません。
 
-#### arena 分配规则
+#### arena の割り当て規則
 
-**待补充。**
+**追記予定です。**
 
-#### 区别
+#### 違い
 
-与 thread 不同的是，main_arena 并不在申请的 heap 中，而是一个全局变量，在 libc.so 的数据段。
+thread とは異なり、main_arena は確保した heap の中にはなく、グローバル変数で、libc.so のデータセグメントにあります。
 
 ### heap_info
 
-程序刚开始执行时，每个线程是没有 heap 区域的。当其申请内存时，就需要一个结构来记录对应的信息，而heap_info 的作用就是这个。而且当该heap的资源被使用完后，就必须得再次申请内存了。此外，一般申请的heap 是不连续的，因此需要记录不同heap之间的链接结构。
+プログラムの実行開始時、各スレッドには heap 領域がありません。メモリを要求するときに、対応する情報を記録する構造が必要になり、heap_info の役割がそれです。さらに、その heap のリソースを使い切ったら、再びメモリを要求しなければなりません。また、一般に確保された heap は連続していないため、異なる heap 間のつながりを記録する構造が必要です。
 
-**该数据结构是专门为从 Memory Mapping Segment 处申请的内存准备的，即为非主线程准备的。**
+**このデータ構造は、Memory Mapping Segment から確保されるメモリ、つまりメインスレッド以外のスレッドのために用意されたものです。**
 
-主线程可以通过 sbrk() 函数扩展 program break location 获得（直到触及Memory Mapping Segment），只有一个heap，没有 heap_info 数据结构。
+メインスレッドは sbrk() 関数で program break location を拡張することで得られます(Memory Mapping Segment に達するまで)。heap は1つだけで、heap_info データ構造はありません。
 
-heap_info 的主要结构如下
+heap_info の主な構造は次のとおりです。
 
 ```c++
 #define HEAP_MIN_SIZE (32 * 1024)
@@ -871,25 +871,25 @@ typedef struct _heap_info
 } heap_info;
 ```
 
-该结构主要是描述堆的基本信息，包括
+この構造は主にヒープの基本情報を記述しており、次を含みます。
 
-- 堆对应的 arena 的地址
-- 由于一个线程申请一个堆之后，可能会使用完，之后就必须得再次申请。因此，一个线程可能会有多个堆。prev即记录了上一个 heap_info 的地址。这里可以看到每个堆的 heap_info 是通过单向链表进行链接的。
-- size 表示当前堆的大小
-- 最后一部分确保对齐
+- ヒープに対応する arena のアドレス
+- スレッドが1つヒープを確保した後、それを使い切ることがあり、その場合は再び確保しなければなりません。したがって、1つのスレッドが複数のヒープを持つことがあります。prev は1つ前の heap_info のアドレスを記録します。ここから、各ヒープの heap_info は単方向リストでつながれていることが分かります。
+- size は現在のヒープのサイズを表す
+- 最後の部分はアライメントを保証する
 
-!!! note "pad 里负数的缘由是什么呢？"
-    `pad` 是为了确保分配的空间是按照 `MALLOC_ALIGN_MASK+1` (记为 `MALLOC_ALIGN_MASK_1`) 对齐的。在 `pad` 之前该结构体一共有 6 个 `SIZE_SZ` 大小的成员, 为了确保  `MALLOC_ALIGN_MASK_1` 字节对齐, 可能需要进行 `pad`，不妨假设该结构体的最终大小为 `MALLOC_ALIGN_MASK_1*x`，其中 `x` 为自然数，那么需要 `pad` 的空间为 `MALLOC_ALIGN_MASK_1 * x - 6 * SIZE_SZ = (MALLOC_ALIGN_MASK_1 * x - 6 * SIZE_SZ) % MALLOC_ALIGN_MASK_1 = 0 - 6 * SIZE_SZ % MALLOC_ALIGN_MASK_1=-6 * SIZE_SZ % MALLOC_ALIGN_MASK_1 = -6 * SIZE_SZ & MALLOC_ALIGN_MASK`。
+!!! note "pad の中の負数の由来は何でしょうか?"
+    `pad` は、確保される領域が `MALLOC_ALIGN_MASK+1`(`MALLOC_ALIGN_MASK_1` と記します)にアライメントされることを保証するためのものです。`pad` の前には、この構造体に `SIZE_SZ` 大のメンバが全部で 6 個あります。`MALLOC_ALIGN_MASK_1` バイトのアライメントを保証するには `pad` が必要になることがあります。構造体の最終的なサイズを `MALLOC_ALIGN_MASK_1*x`(`x` は自然数)と仮定すると、`pad` に必要な領域は `MALLOC_ALIGN_MASK_1 * x - 6 * SIZE_SZ = (MALLOC_ALIGN_MASK_1 * x - 6 * SIZE_SZ) % MALLOC_ALIGN_MASK_1 = 0 - 6 * SIZE_SZ % MALLOC_ALIGN_MASK_1=-6 * SIZE_SZ % MALLOC_ALIGN_MASK_1 = -6 * SIZE_SZ & MALLOC_ALIGN_MASK` となります。
 
-看起来该结构应该是相当重要的，但是如果如果我们仔细看完整个 malloc 的实现的话，就会发现它出现的频率并不高。
+この構造はかなり重要そうに見えますが、malloc の実装全体を丁寧に読んでみると、登場する頻度は高くないことが分かります。
 
 ### malloc_state
 
-该结构用于管理堆，记录每个 arena 当前申请的内存的具体状态，比如说是否有空闲chunk，有什么大小的空闲chunk 等等。无论是 thread arena 还是 main arena，它们都只有一个 malloc state 结构。由于 thread 的 arena 可能有多个，malloc state结构会在最新申请的arena中。
+この構造はヒープの管理に使われ、各 arena が現在確保しているメモリの具体的な状態を記録します。たとえば、空き chunk があるか、どんなサイズの空き chunk があるか、などです。thread arena でも main arena でも、malloc state 構造は1つだけです。thread の arena は複数ありえるため、malloc state 構造は最新に確保された arena の中に置かれます。
 
-**注意，main arena 的 malloc_state 并不是 heap segment 的一部分，而是一个全局变量，存储在 libc.so 的数据段。**
+**注意:main arena の malloc_state は heap segment の一部ではなく、グローバル変数で、libc.so のデータセグメントに格納されています。**
 
-其结构如下
+その構造は次のとおりです。
 
 ```c++
 struct malloc_state {
@@ -933,10 +933,10 @@ struct malloc_state {
 ```
 
 -   __libc_lock_define(, mutex);
-    -   该变量用于控制程序串行访问同一个分配区，当一个线程获取了分配区之后，其它线程要想访问该分配区，就必须等待该线程分配完成后才能够使用。
+    -   この変数は、プログラムが同じ割り当て領域へ直列にアクセスするように制御するために使います。あるスレッドが割り当て領域を取得すると、ほかのスレッドがその割り当て領域にアクセスするには、そのスレッドの割り当てが完了するまで待たなければなりません。
 
 -   flags
-    -   flags记录了分配区的一些标志，比如 bit0 记录了分配区是否有 `fast bin chunk` ，bit1 标识分配区是否能返回连续的虚拟地址空间。具体如下
+    -   flags は割り当て領域のいくつかのフラグを記録します。たとえば bit0 は割り当て領域に `fast bin chunk` があるかどうかを記録し、bit1 は割り当て領域が連続した仮想アドレス空間を返せるかどうかを示します。具体的には次のとおりです。
 
 ```c
 
@@ -982,16 +982,16 @@ struct malloc_state {
 ```
 
 -   fastbinsY[NFASTBINS]
-    -   存放每个 fast `chunk` 链表头部的指针
+    -   各 fast `chunk` リストの先頭へのポインタを格納する
 -   top
-    -   指向分配区的 top chunk
+    -   割り当て領域の top chunk を指す
 -   last_reminder
-    -   最新的 `chunk` 分割之后剩下的那部分
+    -   最新の `chunk` を分割した後に残った部分
 -   bins
-    -   用于存储 unstored bin，small bins 和 large bins 的 `chunk` 链表。
+    -   unstored bin、small bins、large bins の `chunk` リストを格納するために使う。
 -   binmap
-    -   ptmalloc 用一个 bit 来标识某一个 bin 中是否包含空闲 `chunk` 。
+    -   ptmalloc は、ある bin に空き `chunk` が含まれているかどうかを 1 ビットで示す。
 
 ### malloc_par
 
-**！！待补充！！**
+**!!追記予定です!!**

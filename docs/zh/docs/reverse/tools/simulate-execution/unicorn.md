@@ -1,59 +1,59 @@
 # Unicorn Engine
 
-## 什么是Unicorn引擎
+## Unicorn エンジンとは
 
-Unicorn是一个轻量级, 多平台, 多架构的CPU模拟器框架. 我们可以更好地关注CPU操作, 忽略机器设备的差异. 想象一下, 我们可以将其应用于这些情景: 比如我们单纯只是需要模拟代码的执行而非需要一个真的CPU去完成那些操作, 又或者想要更安全地分析恶意代码, 检测病毒特征, 或者想要在逆向过程中验证某些代码的含义. 使用CPU模拟器可以很好地帮助我们提供便捷.
+Unicorn は、軽量でマルチプラットフォーム、マルチアーキテクチャの CPU エミュレータフレームワークです。マシンやデバイスの違いを無視して、CPU の動作に集中できます。たとえば、本物の CPU でそれらの操作を実行する必要はなく、コードの実行をエミュレートするだけでよい場合、マルウェアをより安全に解析してウイルスの特徴を検出したい場合、あるいはリバースエンジニアリングの過程であるコードの意味を検証したい場合などに応用できます。CPU エミュレータを使うと、こうした作業がとても便利になります。
 
-它的亮点(这也归功于Unicorn是基于[qemu](http://www.qemu.org)而开发的)有:
+Unicorn の特長(これは Unicorn が [qemu](http://www.qemu.org) をベースに開発されていることのおかげでもあります)は次のとおりです。
 
-* 支持多种架构: Arm, Arm64 (Armv8), M68K, Mips, Sparc, & X86 (include X86_64).
-* 对Windows和*nix系统(已确认包含Mac OSX, Linux, *BSD & Solaris)的原生支持
-* 具有平台独立且简洁易于使用的API
-* 使用JIT编译技术, 性能表现优异
+* 多くのアーキテクチャに対応: Arm, Arm64 (Armv8), M68K, Mips, Sparc, & X86 (X86_64 を含む)
+* Windows と *nix 系 OS(Mac OSX, Linux, *BSD, Solaris を含むことを確認済み)にネイティブ対応
+* プラットフォームに依存しない、簡潔で使いやすい API
+* JIT コンパイル技術を使っており、性能が優れている
 
-你可以在[Black Hat USA 2015](http://www.unicorn-engine.org/BHUSA2015-unicorn.pdf)获悉有关Unicorn引擎的更多技术细节. Github项目主页: [unicorn](https://github.com/unicorn-engine/unicorn)
+Unicorn エンジンの技術的な詳細は [Black Hat USA 2015](http://www.unicorn-engine.org/BHUSA2015-unicorn.pdf) で知ることができます。GitHub のプロジェクトページ: [unicorn](https://github.com/unicorn-engine/unicorn)
 
-尽管它不同寻常, 但它无法模拟整个程序或系统, 也不支持系统调用. 你需要手动映射内存并写入数据进去, 随后你才能从指定地址开始模拟. 
+優れたツールですが、プログラム全体やシステム全体をエミュレートすることはできず、システムコールにも対応していません。メモリを手動でマップしてデータを書き込んでおく必要があり、その後で指定したアドレスからエミュレートを開始できます。
 
-## 应用的情景
+## 利用場面
 
-什么时候能够用到Unicorn引擎呢? 
+Unicorn エンジンはどんなときに使えるでしょうか。
 
-* 你可以调用恶意软件中一些有趣的函数, 而不用创建一个有害的进程.
-* 用于CTF竞赛
-* 用于模糊测试
-* 用于gdb插件, 基于代码模拟执行的插件
-* 模拟执行一些混淆代码
+* マルウェアの中の興味深い関数を、有害なプロセスを作らずに呼び出せる
+* CTF の競技で使う
+* ファジングに使う
+* gdb プラグイン、特にコードのエミュレート実行に基づくプラグインに使う
+* 難読化されたコードをエミュレート実行する
 
-## 如何安装
+## インストール方法
 
-安装Unicorn最简单的方式就是使用pip安装, 只要在命令行中运行以下命令即可(这是适合于喜爱用python的用户的安装方法, 对于那些想要使用C的用户, 则需要去官网查看文档编译源码包):
+Unicorn を最も簡単にインストールする方法は pip を使うことで、コマンドラインで次のコマンドを実行するだけです(これは Python を好んで使うユーザー向けの方法です。C を使いたい場合は、公式サイトのドキュメントを見てソースパッケージをコンパイルする必要があります)。
 
 ``` shell
 pip install unicorn
 ```
 
-但如果你想用源代码进行本地编译的话, 你需要在[下载](http://www.unicorn-engine.org/download/)页面中下载源代码包, 然后可以按照以下命令执行:
+ソースコードからローカルでコンパイルしたい場合は、[ダウンロード](http://www.unicorn-engine.org/download/)ページからソースコードパッケージをダウンロードし、次のコマンドを実行します。
 
-* *nix 平台用户
+* *nix 系プラットフォームのユーザー
 
 ``` shell
 $ cd bindings/python
 $ sudo make install
 ```
 
-* Windows平台用户
+* Windows プラットフォームのユーザー
 
 ``` shell
 cd bindings/python
 python setup.py install
 ```
 
-对于Windows, 在执行完上述命令后, 还需要将[下载](http://www.unicorn-engine.org/download/)页面的`Windows core engine`的所有dll文件复制到`C:\locationtopython\Lib\site-packages\unicorn`位置处. 
+Windows では、上記のコマンドを実行した後、[ダウンロード](http://www.unicorn-engine.org/download/)ページの `Windows core engine` のすべての dll ファイルを `C:\locationtopython\Lib\site-packages\unicorn` にコピーする必要もあります。
 
-## 使用unicorn的快速指南
+## Unicorn のクイックガイド
 
-我们将会展示如何使用python调用unicorn的api以及它是如何轻易地模拟二进制代码. 当然这里用的api仅是一小部分, 但对于入门已经足够了.
+Python から unicorn の API を呼び出す方法と、それがいかに簡単にバイナリコードをエミュレートできるかを示します。ここで使う API はごく一部ですが、入門には十分です。
 
 ``` python
  1 from __future__ import print_function
@@ -96,7 +96,7 @@ python setup.py install
 38     print("ERROR: %s" % e)
 ```
 
-运行结果如下:
+実行結果は次のとおりです。
 
 ``` shell
 $ python test1.py 
@@ -106,33 +106,33 @@ Emulation done. Below is the CPU context
 >>> EDX = 0x788f
 ```
 
-样例里的注释已经非常直观, 但我们还是对每一行代码做出解释:
+サンプル中のコメントはすでにとても分かりやすいですが、それでも各行のコードについて説明します。
 
-* 行号2~3: 在使用Unicorn前导入`unicorn`模块. 样例中使用了一些x86寄存器常量, 所以也需要导入`unicorn.x86_const`模块
+* 行番号2~3: Unicorn を使う前に `unicorn` モジュールをインポートします。サンプルでは x86 のレジスタ定数を使っているので、`unicorn.x86_const` モジュールもインポートする必要があります
 
-* 行号6: 这是我们需要模拟的二进制机器码, 使用十六进制表示, 代表的汇编指令是: "INC ecx" 和 "DEC edx".
+* 行番号6: エミュレートしたいバイナリの機械語で、16進数で表されています。表すアセンブリ命令は "INC ecx" と "DEC edx" です
 
-* 行号9: 我们将模拟执行上述指令的所在虚拟地址
+* 行番号9: 上記の命令をエミュレート実行する仮想アドレスです
 
-* 行号14: 使用`Uc`类初始化Unicorn, 该类接受2个参数: 硬件架构和硬件位数(模式). 在样例中我们需要模拟执行x86架构的32位代码, 我
-们使用变量`mu`来接受返回值.
+* 行番号14: `Uc` クラスで Unicorn を初期化します。このクラスは2つの引数、ハードウェアアーキテクチャとハードウェアのビット数(モード)を受け取ります。サンプルでは x86 アーキテクチャの32ビットコードをエミュレート実行したいので、
+戻り値を変数 `mu` で受け取ります
 
-* 行号17: 使用`mem_map `方法根据在行号9处声明的地址, 映射2MB用于模拟执行的内存空间. 所有进程中的CPU操作都应该只访问该内存区域. 映射的内存具有默认的读,写和执行权限.
+* 行番号17: `mem_map` メソッドで、行番号9で宣言したアドレスに、エミュレート実行用の 2MB のメモリ空間をマップします。プロセス中のすべての CPU 操作は、このメモリ領域だけにアクセスするはずです。マップされたメモリには、デフォルトで読み取り・書き込み・実行の権限があります
 
-* 行号20: 将需要模拟执行的代码写入我们刚刚映射的内存中. `mem_write`方法接受2个参数: 要写入的内存地址和需要写入内存的代码.
+* 行番号20: エミュレート実行したいコードを、いまマップしたメモリに書き込みます。`mem_write` メソッドは2つの引数、書き込み先のメモリアドレスとメモリに書き込むコードを受け取ります
 
-* 行号23~24: 使用`reg_write`方法设置`ECX`和`EDX`寄存器的值
+* 行番号23~24: `reg_write` メソッドで `ECX` と `EDX` レジスタの値を設定します
 
-* 行号27: 使用`emu_start`方法开始模拟执行, 该API接受4个参数: 要模拟执行的代码地址, 模拟执行停止的内存地址(这里是
-`X86_CODE32`的最后1字节处), 模拟执行的时间和需要执行的指令数目. 如果我们像样例一样忽略后两个参数, Unicorn将会默认以无穷时间和无穷指令数目的条件来模拟执行代码. 
+* 行番号27: `emu_start` メソッドでエミュレート実行を開始します。この API は4つの引数、エミュレート実行するコードのアドレス、エミュレート実行を停止するメモリアドレス(ここでは
+`X86_CODE32` の最後の1バイトの位置)、エミュレート実行の時間、実行する命令数を受け取ります。サンプルのように後ろの2つの引数を省略すると、Unicorn はデフォルトで時間無制限・命令数無制限の条件でコードをエミュレート実行します
 
-* 行号32~35: 打印输出`ECX`和`EDX`寄存器的值. 我们使用函数`reg_read`来读取寄存器的值.
-
-
-要想查看更多的python示例, 可以查看文件夹[bindings/python](https://github.com/unicorn-engine/unicorn/tree/master/bindings/python)下的代码. 而C的示例则可以查看[sample](https://github.com/unicorn-engine/unicorn/tree/master/samples)文件夹下的代码. 
+* 行番号32~35: `ECX` と `EDX` レジスタの値を出力します。レジスタの値の読み取りには関数 `reg_read` を使います
 
 
-## 参考链接
+Python のサンプルをさらに見たい場合は、フォルダ [bindings/python](https://github.com/unicorn-engine/unicorn/tree/master/bindings/python) 以下のコードを参照してください。C のサンプルは、[sample](https://github.com/unicorn-engine/unicorn/tree/master/samples) フォルダ以下のコードを参照してください。
+
+
+## 参考リンク
 
 * [Unicorn Official Site](http://www.unicorn-engine.org/)
 * [Quick tutorial on programming with Unicorn - with C & Python.](http://www.unicorn-engine.org/docs/)

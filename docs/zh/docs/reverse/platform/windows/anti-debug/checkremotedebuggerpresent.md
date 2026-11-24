@@ -1,8 +1,8 @@
 # CheckRemoteDebuggerPresent
 
-## 关于CheckRemoteDebuggerPresent
+## CheckRemoteDebuggerPresent について
 
-`kernel32`的`CheckRemoteDebuggerPresent()`函数用于检测指定进程是否正在被调试. `Remote`在单词里是指同一个机器中的不同进程.
+`kernel32` の `CheckRemoteDebuggerPresent()` 関数は、指定したプロセスがデバッグされているかどうかを検出するために使います。名前の中の `Remote` は、同じマシン上の別のプロセスを指します。
 
 ``` c
 BOOL WINAPI CheckRemoteDebuggerPresent(
@@ -11,11 +11,11 @@ BOOL WINAPI CheckRemoteDebuggerPresent(
 );
 ```
 
-如果调试器存在(通常是检测自己是否正在被调试), 该函数会将`pbDebuggerPresent`指向的值设为`0xffffffff`.
+デバッガが存在する場合(通常は自分がデバッグされているかどうかの検出です)、この関数は `pbDebuggerPresent` が指す値を `0xffffffff` に設定します。
 
-## 检测代码
+## 検出コード
 
-可以用以下32位代码检测32位环境
+32ビット環境では、次の32ビットコードで検出できます。
 
 ``` asm
 push eax
@@ -27,7 +27,7 @@ test eax, eax
 jne being_debugged
 ```
 
-或64位代码检测64位环境
+64ビット環境では、次の64ビットコードで検出できます。
 
 ``` asm
 enter 20h, 0
@@ -39,9 +39,9 @@ test ebp, ebp
 jne being_debugged
 ```
 
-## 如何绕过
+## 回避の方法
 
-比如有如下的代码
+たとえば次のようなコードがあるとします。
 
 ``` c++
 int main(int argc, char *argv[])
@@ -59,6 +59,6 @@ int main(int argc, char *argv[])
 }
 ```
 
-我们可以直接修改`isDebuggerPresent`的值或修改跳转条件来绕过(注意不是`CheckRemoteDebuggerPresent`的izhi, 它的返回值是用于表示函数是否正确执行).
+`isDebuggerPresent` の値を直接書き換えるか、ジャンプの条件を書き換えることで回避できます(`CheckRemoteDebuggerPresent` の戻り値ではないことに注意してください。その戻り値は、関数が正しく実行されたかどうかを表すものです)。
 
-但如果要针对`CheckRemoteDebuggerPresent`这个api函数进行修改的话. 首先要知道`CheckRemoteDebuggerPresent`内部其实是通过调用`NtQueryInformationProcess`来完成功能的. 而我们就需要对`NtQueryInformationProcess`的返回值进行修改. 我们将在[ NtQueryInformationProcess 篇](./ntqueryinformationprocess.md)进行介绍.
+ただし、`CheckRemoteDebuggerPresent` というこの API 関数そのものを書き換えようとする場合は、まず、`CheckRemoteDebuggerPresent` が内部で `NtQueryInformationProcess` を呼び出して機能を実現していることを知っておく必要があります。そこで、`NtQueryInformationProcess` の戻り値を書き換える必要があります。これについては [NtQueryInformationProcess の章](./ntqueryinformationprocess.md)で説明します。

@@ -1,16 +1,16 @@
 # House of Lore
 
-## 概述
+## 概要
 
-House of Lore 攻击与 Glibc 堆管理中的 Small Bin 的机制紧密相关。
+House of Lore 攻撃は、Glibc のヒープ管理における Small Bin の仕組みと密接に関係しています。
 
-House of Lore 可以实现分配任意指定位置的 chunk，从而修改任意地址的内存。
+House of Lore を使うと、任意に指定した位置の chunk を確保させることができ、それによって任意のアドレスのメモリを書き換えられます。
 
-House of Lore 利用的前提是需要控制 Small Bin Chunk 的 bk 指针，并且控制指定位置 chunk 的 fd 指针。
+House of Lore を利用するための前提は、Small Bin の chunk の bk ポインタを制御でき、かつ指定した位置の chunk の fd ポインタを制御できることです。
 
 ## 基本原理
 
-如果在 malloc 的时候，申请的内存块在 small bin 范围内，那么执行的流程如下
+malloc の際、要求されたメモリブロックが small bin の範囲内であれば、処理の流れは次のようになります。
 
 ```c
     /*
@@ -22,39 +22,39 @@ House of Lore 利用的前提是需要控制 Small Bin Chunk 的 bk 指针，并
      */
 
     if (in_smallbin_range(nb)) {
-        // 获取 small bin 的索引
+        // small bin のインデックスを取得
         idx = smallbin_index(nb);
-        // 获取对应 small bin 中的 chunk 指针
+        // 対応する small bin の chunk ポインタを取得
         bin = bin_at(av, idx);
-        // 先执行 victim= last(bin)，获取 small bin 的最后一个 chunk
-        // 如果 victim = bin ，那说明该 bin 为空。
-        // 如果不相等，那么会有两种情况
+        // まず victim = last(bin) を実行し、small bin の最後の chunk を取得
+        // victim = bin なら、その bin は空
+        // 等しくなければ、次の 2 通りの場合がある
         if ((victim = last(bin)) != bin) {
-            // 第一种情况，small bin 还没有初始化。
+            // 1 つ目、small bin がまだ初期化されていない場合
             if (victim == 0) /* initialization check */
-                // 执行初始化，将 fast bins 中的 chunk 进行合并
+                // 初期化を行い、fast bins の chunk を統合する
                 malloc_consolidate(av);
-            // 第二种情况，small bin 中存在空闲的 chunk
+            // 2 つ目、small bin に空き chunk が存在する場合
             else {
-                // 获取 small bin 中倒数第二个 chunk 。
+                // small bin の末尾から 2 番目の chunk を取得
                 bck = victim->bk;
-                // 检查 bck->fd 是不是 victim，防止伪造
+                // bck->fd が victim かどうかを検査し、偽造を防ぐ
                 if (__glibc_unlikely(bck->fd != victim)) {
                     errstr = "malloc(): smallbin double linked list corrupted";
                     goto errout;
                 }
-                // 设置 victim 对应的 inuse 位
+                // victim に対応する inuse ビットを設定
                 set_inuse_bit_at_offset(victim, nb);
-                // 修改 small bin 链表，将 small bin 的最后一个 chunk 取出来
+                // small bin のリストを変更し、small bin の最後の chunk を取り出す
                 bin->bk = bck;
                 bck->fd = bin;
-                // 如果不是 main_arena，设置对应的标志
+                // main_arena でなければ、対応するフラグを設定
                 if (av != &main_arena) set_non_main_arena(victim);
-                // 细致的检查
+                // 詳細な検査
                 check_malloced_chunk(av, victim, nb);
-                // 将申请到的 chunk 转化为对应的 mem 状态
+                // 確保した chunk を対応する mem の状態に変換
                 void *p = chunk2mem(victim);
-                // 如果设置了 perturb_type , 则将获取到的chunk初始化为 perturb_type ^ 0xff
+                // perturb_type が設定されていれば、取得した chunk を perturb_type ^ 0xff で初期化
                 alloc_perturb(p, bytes);
                 return p;
             }
@@ -62,26 +62,26 @@ House of Lore 利用的前提是需要控制 Small Bin Chunk 的 bk 指针，并
     }
 ```
 
-从下面的这部分我们可以看出
+次の部分から次のことがわかります。
 
 ```c
-                // 获取 small bin 中倒数第二个 chunk 。
+                // small bin の末尾から 2 番目の chunk を取得
                 bck = victim->bk;
-                // 检查 bck->fd 是不是 victim，防止伪造
+                // bck->fd が victim かどうかを検査し、偽造を防ぐ
                 if (__glibc_unlikely(bck->fd != victim)) {
                     errstr = "malloc(): smallbin double linked list corrupted";
                     goto errout;
                 }
-                // 设置 victim 对应的 inuse 位
+                // victim に対応する inuse ビットを設定
                 set_inuse_bit_at_offset(victim, nb);
-                // 修改 small bin 链表，将 small bin 的最后一个 chunk 取出来
+                // small bin のリストを変更し、small bin の最後の chunk を取り出す
                 bin->bk = bck;
                 bck->fd = bin;
 ```
 
-如果我们可以修改 small bin 的最后一个 chunk 的 bk 为我们指定内存地址的fake chunk，并且同时满足之后的 bck->fd != victim 的检测，那么我们就可以使得 small bin 的 bk 恰好为我们构造的 fake chunk。也就是说，当下一次申请 small bin 的时候，我们就会分配到指定位置的 fake chunk。
+small bin の最後の chunk の bk を、指定したメモリアドレスにある fake chunk に書き換えられ、さらにその後の bck->fd != victim の検査も満たせるなら、small bin の bk をちょうど構築した fake chunk にできます。つまり、次に small bin のサイズを要求したときに、指定した位置の fake chunk が確保されます。
 
-## 示例代码
+## サンプルコード
 
 ```c
 #include <stdio.h>
@@ -174,13 +174,13 @@ int main(int argc, char * argv[]){
 }
 ```
 
-上面代码已经讲得非常清楚了，不再解释。
+上のコードはすでに十分に説明されているので、これ以上は解説しません。
 
-**但是需要注意的是：**
+**ただし、次の点に注意が必要です。**
 
-1. `void *p5 = malloc(1000);` 是为了防止和 victim_chunk 之后和 top_chunk合并。
+1. `void *p5 = malloc(1000);` は、victim_chunk が後で top_chunk と統合されるのを防ぐためのものです。
 
-2. `free((void*)victim)`，victim 会被放入到 unsort bin 中去，然后下一次分配的大小如果比它大，那么将从 top chunk 上分配相应大小，而该 chunk 会被取下link到相应的 bin 中。如果比它小(相等则直接返回)，则从该 chunk 上切除相应大小，并返回相应 chunk，剩下的成为 last reminder chunk ,还是存在 unsorted bin 中。
+2. `free((void*)victim)` により、victim は unsort bin に入れられます。次に確保するサイズがそれより大きければ、top chunk から対応するサイズが確保され、この chunk は取り外されて対応する bin にリンクされます。それより小さければ(等しければそのまま返されます)、この chunk から対応するサイズが切り出されて対応する chunk が返され、残りは last reminder chunk となって、引き続き unsorted bin に残ります。
 
 ## 参考文献
 

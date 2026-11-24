@@ -1,26 +1,26 @@
-# 虚拟机分析
+# 仮想マシン(VM)の解析
 
-有关虚拟机分析部分, 我们以一道简单的crackme来进行讲解. 
+仮想マシンの解析については、簡単な crackme を使って説明します。
 
-对应的`crackme`可以点击此处下载: [FuelVM.exe](https://github.com/ctf-wiki/ctf-challenges/blob/master/reverse/vm/fuelvm/FuelVM.exe)
+対応する `crackme` はこちらからダウンロードできます: [FuelVM.exe](https://github.com/ctf-wiki/ctf-challenges/blob/master/reverse/vm/fuelvm/FuelVM.exe)
 
-对应的`keygenme`可以点击此处下载: [fuelvm_keygen.py](https://github.com/ctf-wiki/ctf-challenges/blob/master/reverse/vm/fuelvm/fuelvm_keygen.py)
+対応する `keygenme` はこちらからダウンロードできます: [fuelvm_keygen.py](https://github.com/ctf-wiki/ctf-challenges/blob/master/reverse/vm/fuelvm/fuelvm_keygen.py)
 
-对应的`IDA数据库`可以点击此处下载: [FuelVM.idb](https://github.com/ctf-wiki/ctf-challenges/blob/master/reverse/vm/fuelvm/FuelVM.idb)
+対応する `IDA データベース` はこちらからダウンロードできます: [FuelVM.idb](https://github.com/ctf-wiki/ctf-challenges/blob/master/reverse/vm/fuelvm/FuelVM.idb)
 
-本题作者设计了一个具有多种指令的简单虚拟机. 我们使用IDA来进行分析. 并为了方便讲解, 我对反汇编出的一些变量重新进行了命名. 
+この問題の作者は、多くの命令を持つ簡単な仮想マシンを設計しました。ここでは IDA を使って解析します。また、説明しやすいように、逆アセンブルで得られた変数の一部に名前を付け直しています。
 
-## 运行程序
+## プログラムの実行
 
-我们运行程序 FuelVM.exe. 界面如下所示
+プログラム FuelVM.exe を実行します。画面は次のとおりです。
 
 ![start.png](./figure/start.png)
 
-在这个界面中, 我们看到右两个输入框, 一个用于输入用户名Name, 另一个则用于输入密钥Key. 还有两个按钮, Go用于提交输入, 而Exit则用于退出程序.
+この画面には2つの入力欄があり、1つはユーザー名 Name を入力するため、もう1つはキー Key を入力するためのものです。ボタンも2つあり、Go は入力の送信用、Exit はプログラムの終了用です。
 
-## 获取用户输入
+## ユーザー入力の取得
 
-那么我们就可以从这里入手. 程序想获取用户输入, 需要调用的一个API是`GetDlgItemTextA()`
+ここから手をつけられます。プログラムがユーザー入力を取得するために呼び出す API の1つが `GetDlgItemTextA()` です。
 
 ``` c
 UINT GetDlgItemTextA(
@@ -31,7 +31,7 @@ UINT GetDlgItemTextA(
 );
 ```
 
-获取的输入字符串会保存在`lpString`里. 那么我们就可以打开IDA查找有交叉引用`GetDlgItemTextA()`的地方.
+取得した入力文字列は `lpString` に保存されます。そこで IDA を開き、`GetDlgItemTextA()` へのクロスリファレンスがある場所を探します。
 
 ``` asm
 .text:00401142                 push    0Ch             ; cchMax
@@ -49,11 +49,11 @@ UINT GetDlgItemTextA(
 .text:00401176                 jmp     short locExit
 ```
 
-如上, IDA只有这里调用过`GetDlgItemTextA`并且调用了两次分别获取`inputName`和`inputKey`. 随后初始化了一个变量为0, 因为还不明白这个变量的作用, 因此先重命名为`var_a`. 之后进行了一次函数调用并jmp跳转. 因为jmp跳转位置的代码是一些退出程序的代码, 因此我们可以断定上面的这个call, 是在调用处理用户输入的函数. 因此将jmp的位置重命名为`locExit`, 函数则重命名为`process_input`. 
+上のとおり、IDA で `GetDlgItemTextA` が呼ばれているのはここだけで、2回呼び出して、それぞれ `inputName` と `inputKey` を取得しています。その後、ある変数を0に初期化しています。この変数の役割はまだ分からないので、ひとまず `var_a` と名付けます。続いて関数を1つ呼び出し、jmp でジャンプしています。jmp の飛び先のコードはプログラムを終了させるコードなので、上の call はユーザー入力を処理する関数を呼び出していると断定できます。そこで jmp の飛び先を `locExit`、関数を `process_input` と名付け直します。
 
-## 处理用户输入
+## ユーザー入力の処理
 
-我们进入`process_input`函数, 该函数仅仅对输入字符串进行了很简单的处理. 
+`process_input` 関数に入ると、この関数は入力文字列に対してごく簡単な処理しか行っていません。
 
 ```c
   result = strlength((int)inputName);
@@ -81,7 +81,7 @@ UINT GetDlgItemTextA(
   return result;
 ```
 
-首先是这个`strlength()`函数. 函数使用`cld; repne scasb; not ecx; dec ecx`来计算字符串长度并将结果保存在`ecx`里. 是汇编基础知识就不多介绍. 所以我们将该函数重命名为`strlength`
+まず `strlength()` 関数です。この関数は `cld; repne scasb; not ecx; dec ecx` で文字列の長さを計算し、結果を `ecx` に保存します。アセンブリの基礎知識なので詳しくは説明しません。そこでこの関数を `strlength` と名付け直します。
 
 ```asm
 .text:004011C2 arg_0           = dword ptr  8
@@ -101,9 +101,9 @@ UINT GetDlgItemTextA(
 .text:004011D5 strlength       endp
 ```
 
-而在IDA生成的伪C代码处有`v1`和`v2`, 我对其进行了注解, 可以看汇编, 里面是使用`ecx`与`7`进行比较, 而`ecx`是字符串的长度, 于是我们可以知道, 这里对输入的要求是: *inputName 和 inputKey 的长度均不少于 7*
+IDA が生成した擬似 C コードには `v1` と `v2` があり、これには注釈を付けてあります。アセンブリを見ると、`ecx` と `7` を比較しており、`ecx` は文字列の長さです。したがって、入力に対する要求は *inputName と inputKey の長さがどちらも 7 以上であること* だと分かります。
 
-当`inputName`和`inputKey`长度均不少于7时, 那么就可以对输入进行简单的变换. 以下是一个循环
+`inputName` と `inputKey` の長さがどちらも 7 以上のときは、入力に簡単な変換を行います。次のループです。
 
 ```c
       i = 0;
@@ -115,7 +115,7 @@ UINT GetDlgItemTextA(
       while ( i <= *(_DWORD *)&lenOfName );
 ```
 
-对应的python代码即
+対応する Python コードは次のとおりです。
 
 ``` python
 def obfuscate(username):
@@ -125,9 +125,9 @@ def obfuscate(username):
     return s
 ```
 
-函数之后对一些变量进行了赋值(这些并不重要, 就忽略不讲了.) 
+関数はその後、いくつかの変数に値を代入しています(これらは重要ではないので、省略します)。
 
-## 注册SEH
+## SEH の登録
 
 ```asm
 .text:004012B5                 push    offset seh_handler
@@ -137,7 +137,7 @@ def obfuscate(username):
 .text:004012CD                 int     3               ; Trap to Debugger
 ```
 
-`initVM`完成的是一些虚拟机启动前的初始化工作(其实就是对一些寄存器和相关的部分赋初值), 我们之后来讨论. 这里我们关注的是SEH部分. 这里注册了一个SEH句柄, 异常处理函数我重命名为`seh_handler`, 并之后使用`int 3`手动触发异常. 而在`seh_handler`位置, IDA并未正确识别出对应的代码
+`initVM` は仮想マシンの起動前の初期化処理(実際にはレジスタや関連部分に初期値を代入しているだけ)を行いますが、これは後で説明します。ここで注目するのは SEH の部分です。ここでは SEH ハンドラを1つ登録しており、例外処理関数を `seh_handler` と名付け直しました。その後、`int 3` で例外を手動で発生させています。`seh_handler` の位置では、IDA は対応するコードを正しく識別できていません。
 
 ``` 
 .text:004012D7 seh_handler     db 64h                  ; DATA XREF: process_input+7Do
@@ -152,9 +152,9 @@ def obfuscate(username):
 .text:0040131C                 dd 0B1FF4176h, 403000h, 31C8058Fh, 3D800040h, 4031C8h
 ```
 
-我们可以点击相应位置按下`c`键, 将这些数据转换成代码进行识别. (我们需要按下多次c键进行转换), 得到如下代码.
+該当位置をクリックして `c` キーを押すと、これらのデータをコードに変換して認識させられます(変換には `c` キーを何度か押す必要があります)。すると次のコードが得られます。
 
-如下, 在`seh_handler`位置, 又用类似的方法注册了一个位于`401306h`的异常处理函数, 并通过`xor ecx,ecx; div ecx`手动触发了一个`除0异常`. 而在`loc_401301`位置, 这是一个反调试技巧, `jmp loc_401301+2`会使得`EIP`转向一条指令中间, 使得无法继续调试. 所以我们可以将`00401301~00401306`部分的代码`nop`掉, 然后在`00401306`位置创建一个新函数`seh_handler2`
+次のとおり、`seh_handler` の位置では、同様の方法で `401306h` にある例外処理関数をもう1つ登録し、`xor ecx,ecx; div ecx` で `ゼロ除算例外` を手動で発生させています。`loc_401301` の位置はアンチデバッグのテクニックで、`jmp loc_401301+2` は `EIP` を命令の途中に向けさせ、デバッグを続けられなくします。そこで `00401301~00401306` 部分のコードを `nop` にし、`00401306` の位置に新しい関数 `seh_handler2` を作成します。
 
 ```
 seh_handler:                            ; DATA XREF: process_input+7Do
@@ -184,11 +184,11 @@ seh_handler:                            ; DATA XREF: process_input+7Do
 .text:00401329                 mul     ecx
 ```
 
-类似的, 还有`401330h`重命名为`seh_handler3`, 而`40135Eh`是最后一个注册的异常处理函数, 我们可以推测这才是虚拟机真正的main函数, 因此我们将`40135Eh`重命名为`vm_main`. (有关SEH和反调试的部分, 可以推荐大家自己去动态调试一番弄清楚)
+同様に、`401330h` を `seh_handler3` と名付け直します。`40135Eh` は最後に登録される例外処理関数で、これが仮想マシンの本当の main 関数だと推測できるため、`40135Eh` を `vm_main` と名付け直します(SEH とアンチデバッグの部分は、自分で動的デバッグして理解することをおすすめします)。
 
-## 恢复堆栈平衡
+## スタックバランスの回復
 
-我们创建了一个`vm_main`函数(重命名后还需要创建函数, IDA才能识别), 然后按下`F5`提示失败, 失败的原因则是由于堆栈不平衡导致的.  因此我们可以点击IDA菜单项`Options->General`在右侧勾选`stack pointer`. 这样就会显示出对应的栈指针. 
+`vm_main` 関数を作成しました(名前を付け直した後、IDA に認識させるには関数として作成する必要があります)。ここで `F5` を押すと失敗します。失敗の原因はスタックが不均衡なことです。そこで、IDA のメニュー項目 `Options->General` を開き、右側の `stack pointer` にチェックを入れます。すると対応するスタックポインタが表示されます。
 
 ```
 .text:004017F2 000                 jmp     vm_main
@@ -211,9 +211,9 @@ seh_handler:                            ; DATA XREF: process_input+7Do
 .text:00401811     vm_main         endp ; sp-analysis failed
 ```
 
-我们来到最下显示不平衡的位置. 最上的`jmp vm_main`表明虚拟机内在执行一个循环. 而`MessageBoxA`的调用则是显示最后弹出的错误信息. 而在`locret_40180A`位置处, 经过多次leave堆栈严重不平衡, 因此我们需要手动恢复堆栈平衡. 
+一番下の、不均衡が表示されている位置に来ます。一番上の `jmp vm_main` は、仮想マシンの内部でループが実行されていることを示します。`MessageBoxA` の呼び出しは、最後にポップアップするエラーメッセージを表示するものです。`locret_40180A` の位置では、leave が何度も実行されてスタックが大きく不均衡になっているため、手動でスタックバランスを回復する必要があります。
 
-这里也很简单, 在`0040180A`位置已经堆栈平衡了(000), 因此我们只需要将这一句`leave`修改为`retn`就可以了. 如下这样
+これも簡単で、`0040180A` の位置ではすでにスタックが均衡している(000)ので、この `leave` を `retn` に書き換えるだけです。次のようにします。
 
 ```
 .text:0040180A     locret_40180A:                          ; CODE XREF: vm_main+492j
@@ -224,13 +224,13 @@ seh_handler:                            ; DATA XREF: process_input+7Do
 .text:0040180D 004                 leave
 ```
 
-然后你就可以发现`vm_main`可以F5生成伪C代码了. 
+すると、`vm_main` で F5 を押して擬似 C コードを生成できるようになります。
 
-## 虚拟机指令分析
+## 仮想マシンの命令の解析
 
-说实话, 虚拟机的分析部分是一个比较枯燥的还原过程, 你需要比对各个小部分的操作来判断这是一个怎样的指令, 使用的是哪些寄存器. 像这个crackme中, vm进行的是一个`取指-译码-执行`的循环. `译码`过程可给予我们的信息最多, 不同的指令都会在这里, 根据它们各自的`opcode`, 使用`if-else if-else`分支进行区分. 实际的还原过程并不复杂, 但有可能会因为虚拟机实现的指令数量而显得有些乏味. 
+正直なところ、仮想マシンの解析は比較的退屈な復元作業です。各部分の操作を突き合わせて、それがどんな命令なのか、どのレジスタを使っているのかを判断する必要があります。この crackme では、VM は `フェッチ-デコード-実行` のループを行っています。`デコード` の処理から得られる情報が最も多く、さまざまな命令がここで、それぞれの `opcode` に応じて `if-else if-else` の分岐で区別されます。実際の復元作業は複雑ではありませんが、仮想マシンが実装している命令の数によっては、やや退屈に感じるかもしれません。
 
-最后分析出的结果如下:
+最終的に解析した結果は次のとおりです。
 
 | opcode | value |
 | ------ | ----- |
@@ -245,7 +245,7 @@ seh_handler:                            ; DATA XREF: process_input+7Do
 | xor    | 0x1d  |
 | check  | 0xff  |
 
-我们再来看分析后的`initVM`函数
+次に、解析後の `initVM` 関数を見ます。
 
 ```c
 int initVM()
@@ -266,9 +266,9 @@ int initVM()
 }
 ```
 
-这里有4个通用寄存器(`r1/r2/r3/r4`), 1个`sp`指针和1个`pc`指针, 标志`zf`和`sf`. 先前我们不知道的`var_a`也被重命名为`cur_index`, 指向的是`inputName`当前正在处理的字符索引. 
+ここには4つの汎用レジスタ(`r1/r2/r3/r4`)、1つの `sp` ポインタ、1つの `pc` ポインタ、フラグ `zf` と `sf` があります。先ほど役割が分からなかった `var_a` も `cur_index` と名付け直しました。これは `inputName` で現在処理している文字のインデックスを指します。
 
-对于VM实现的多个指令我们就不再多说, 重点来看下`check`部分的操作.
+VM が実装している各命令についてはこれ以上述べず、`check` 部分の操作を重点的に見ます。
 
 ```c
 int __fastcall check(int a1)
@@ -295,9 +295,9 @@ int __fastcall check(int a1)
 }
 ```
 
-如果`r1`中的值跟`inputKey[cur_index]`相等, 那么会继续判断是否已经检查完了整个`inputName`, 如果没有出错且比对结束, 那么就会弹出`Good job! Now write a keygen.`的消息框. 否则会继续`initVM`进入下一轮循环.(出错了当然是弹出消息框提示错误了. )
+`r1` の値が `inputKey[cur_index]` と等しければ、`inputName` 全体の検査が終わったかどうかをさらに判定します。エラーがなく比較が終わっていれば、`Good job! Now write a keygen.` というメッセージボックスが表示されます。そうでなければ `initVM` を続けて次のループに入ります(エラーのときは、もちろんエラーを知らせるメッセージボックスが表示されます)。
 
-`cur_index`会在`initVM`中自增1, 那么还记得之前在`process_input`里有执行2次`initVM`吗. 因为有执行2次`initVM`, 所以我们的`inputKey`的前2位可以是任意字符. 
+`cur_index` は `initVM` の中で1ずつ増えます。さて、先ほど `process_input` の中で `initVM` が2回実行されていたのを覚えているでしょうか。`initVM` が2回実行されるため、`inputKey` の最初の2文字は任意の文字でかまいません。
 
 ```c
       unk_4031CE = i;
@@ -308,13 +308,13 @@ int __fastcall check(int a1)
       JUMPOUT(*(_DWORD *)&word_4012CE);
 ```
 
- 故而我们分析完了整个虚拟机, 便可以开始着手编写`Keygen`. 
+以上で仮想マシン全体の解析が終わったので、`Keygen` の作成に取りかかれます。
 
-对应的`keygenme`可以点击此处下载: [fuelvm_keygen.py](https://github.com/ctf-wiki/ctf-challenges/blob/master/reverse/vm/fuelvm/fuelvm_keygen.py)
+対応する `keygenme` はこちらからダウンロードできます: [fuelvm_keygen.py](https://github.com/ctf-wiki/ctf-challenges/blob/master/reverse/vm/fuelvm/fuelvm_keygen.py)
 
 ```bash
 $ python2 fuelvm_keygen.py ctf-wiki
 [*] Password for user 'ctf-wiki' is: 4mRC*TKJI
 ```
 
-对应的`IDA数据库`可以点击此处下载: [FuelVM.idb](https://github.com/ctf-wiki/ctf-challenges/blob/master/reverse/vm/fuelvm/FuelVM.idb)
+対応する `IDA データベース` はこちらからダウンロードできます: [FuelVM.idb](https://github.com/ctf-wiki/ctf-challenges/blob/master/reverse/vm/fuelvm/FuelVM.idb)

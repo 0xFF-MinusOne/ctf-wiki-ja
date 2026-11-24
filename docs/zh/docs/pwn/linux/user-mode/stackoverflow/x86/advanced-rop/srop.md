@@ -1,28 +1,28 @@
 # SROP
 
-## 基本介绍
+## 基本紹介
 
-SROP(Sigreturn Oriented Programming)于2014年被Vrije Universiteit Amsterdam的Erik Bosman提出，其相关研究**`Framing Signals — A Return to Portable Shellcode`**发表在安全顶级会议[Oakland 2014](http://www.ieee-security.org/TC/SP2014)上，被评选为当年的[Best Student Papers](http://www.ieee-security.org/TC/SP2014/awards.html)。其中相关的paper以及slides的链接如下：
+SROP(Sigreturn Oriented Programming)は、2014年に Vrije Universiteit Amsterdam の Erik Bosman によって提案されました。その研究 **`Framing Signals — A Return to Portable Shellcode`** はセキュリティのトップカンファレンス [Oakland 2014](http://www.ieee-security.org/TC/SP2014) で発表され、その年の [Best Student Papers](http://www.ieee-security.org/TC/SP2014/awards.html) に選ばれました。関連する paper と slides のリンクは次のとおりです。
 
 [paper](http://www.ieee-security.org/TC/SP2014/papers/FramingSignals-AReturntoPortableShellcode.pdf)
 
 [slides](https://tc.gtisc.gatech.edu/bss/2014/r/srop-slides.pdf)
 
-其中，`sigreturn`是一个系统调用，在类unix系统发生signal的时候会被间接地调用。
+このうち `sigreturn` はシステムコールで、unix 系システムで signal が発生したときに間接的に呼び出されます。
 
-## signal机制
+## signal の仕組み
 
- signal机制是类unix系统中进程之间相互传递信息的一种方法。一般，我们也称其为软中断信号，或者软中断。比如说，进程之间可以通过系统调用kill来发送软中断信号。一般来说，信号机制常见的步骤如下图所示：
+signal(シグナル)は、unix 系システムでプロセス間が互いに情報を伝え合う方法の一つです。一般にソフトウェア割り込みシグナル、あるいはソフトウェア割り込みとも呼ばれます。たとえば、プロセス間でシステムコール kill を使ってソフトウェア割り込みシグナルを送れます。一般的なシグナル処理の手順は次の図のとおりです。
 
 ![Process of Signal Handlering](figure/ProcessOfSignalHandlering.png)
 
-1. 内核向某个进程发送signal机制，该进程会被暂时挂起，进入内核态。
+1. カーネルがあるプロセスに signal を送ると、そのプロセスは一時的に中断され、カーネルモードに入ります。
 
-2. 内核会为该进程保存相应的上下文，**主要是将所有寄存器压入栈中，以及压入signal信息，以及指向sigreturn的系统调用地址**。此时栈的结构如下图所示，我们称ucontext以及siginfo这一段为Signal Frame。**需要注意的是，这一部分是在用户进程的地址空间的。**之后会跳转到注册过的signal handler中处理相应的signal。因此，当signal handler执行完之后，就会执行sigreturn代码。
+2. カーネルはそのプロセスの対応するコンテキストを保存します。**主な内容は、すべてのレジスタをスタックに積むこと、signal の情報を積むこと、そして sigreturn のシステムコールのアドレスを指すものを積むことです。** このときのスタックの構造は下図のとおりで、ucontext と siginfo の部分を Signal Frame と呼びます。**この部分はユーザープロセスのアドレス空間にあることに注意してください。** その後、登録済みの signal handler にジャンプして対応する signal を処理します。そのため、signal handler の実行が終わると、sigreturn のコードが実行されます。
 
     ![signal2-stack](figure/signal2-stack.png)
 
-    对于signal Frame来说，会因为架构的不同而有所区别，这里给出分别给出x86以及x64的sigcontext
+    Signal Frame はアーキテクチャによって異なります。ここでは x86 と x64 の sigcontext をそれぞれ示します。
 
     -   x86
 
@@ -110,78 +110,78 @@ SROP(Sigreturn Oriented Programming)于2014年被Vrije Universiteit Amsterdam的
     };
     ```
 
-3. signal handler返回后，内核为执行sigreturn系统调用，为该进程恢复之前保存的上下文，其中包括将所有压入的寄存器，重新pop回对应的寄存器，最后恢复进程的执行。其中，32位的sigreturn的调用号为119(0x77)，64位的系统调用号为15(0xf)。
+3. signal handler が戻った後、カーネルは sigreturn システムコールを実行するため、そのプロセスについて以前保存したコンテキストを復元します。これには、積まれたすべてのレジスタを対応するレジスタへ pop し直し、最後にプロセスの実行を再開することが含まれます。32 ビットの sigreturn のシステムコール番号は 119(0x77)、64 ビットのシステムコール番号は 15(0xf)です。
 
-## 攻击原理
+## 攻撃の原理
 
-仔细回顾一下内核在signal信号处理的过程中的工作，我们可以发现，内核主要做的工作就是为进程保存上下文，并且恢复上下文。这个主要的变动都在Signal Frame中。但是需要注意的是：
+カーネルが signal を処理する過程での働きを振り返ると、カーネルが主に行うのはプロセスのコンテキストの保存と復元であることが分かります。この主要な変更はすべて Signal Frame にあります。ただし、次の点に注意が必要です。
 
-- Signal Frame被保存在用户的地址空间中，所以用户是可以读写的。
-- 由于内核与信号处理程序无关(kernel agnostic about signal handlers)，它并不会去记录这个signal对应的Signal Frame，所以当执行sigreturn系统调用时，此时的Signal Frame并不一定是之前内核为用户进程保存的Signal Frame。
+- Signal Frame はユーザーのアドレス空間に保存されるため、ユーザーが読み書きできます。
+- カーネルはシグナルハンドラについて関知しない(kernel agnostic about signal handlers)ため、その signal に対応する Signal Frame を記録しません。したがって sigreturn システムコールが実行されるとき、その時点の Signal Frame が、以前カーネルがユーザープロセスのために保存した Signal Frame であるとは限りません。
 
-说到这里，其实，SROP的基本利用原理也就出现了。下面举两个简单的例子。
+ここまで来ると、SROP の基本的な利用原理が見えてきます。以下に簡単な例を2つ挙げます。
 
-### 获取shell
+### shell の取得
 
-首先，我们假设攻击者可以控制用户进程的栈，那么它就可以伪造一个Signal Frame，如下图所示，这里以64位为例子，给出Signal Frame更加详细的信息
+まず、攻撃者がユーザープロセスのスタックを制御できると仮定します。すると攻撃者は Signal Frame を偽造できます。下図は 64 ビットを例に、Signal Frame のより詳しい情報を示したものです。
 
 ![signal2-stack](./figure/srop-example-1.png)
 
-当系统执行完sigreturn系统调用之后，会执行一系列的pop指令以便于恢复相应寄存器的值，当执行到rip时，就会将程序执行流指向syscall地址，根据相应寄存器的值，此时，便会得到一个shell。
+システムが sigreturn システムコールを実行し終えると、対応するレジスタの値を復元するために一連の pop 命令が実行されます。rip に到達すると、プログラムの実行フローは syscall のアドレスを指し、対応するレジスタの値に従って、shell が得られます。
 
 ### system call chains
 
-需要指出的是，上面的例子中，我们只是单独的获得一个shell。有时候，我们可能会希望执行一系列的函数。我们只需要做两处修改即可
+上の例では、単独で shell を得ただけであることを指摘しておきます。場合によっては、一連の関数を実行したいことがあります。その場合は、次の2点を変更するだけで済みます。
 
-- **控制栈指针。**
-- **把原来rip指向的`syscall` gadget换成`syscall; ret` gadget。**
+- **スタックポインタを制御する。**
+- **元々 rip が指していた `syscall` gadget を `syscall; ret` gadget に置き換える。**
 
-如下图所示 ，这样当每次syscall返回的时候，栈指针都会指向下一个Signal Frame。因此就可以执行一系列的sigreturn函数调用。
+下図のようにすると、syscall が返るたびにスタックポインタが次の Signal Frame を指すようになります。したがって、一連の sigreturn 関数呼び出しを実行できます。
 
 ![signal2-stack](./figure/srop-example-2.png)
 
-### 后续
+### 補足
 
-需要注意的是，我们在构造ROP攻击的时候，需要满足下面的条件
+ROP 攻撃を組み立てるときには、次の条件を満たす必要があることに注意してください。
 
--   **可以通过栈溢出来控制栈的内容**
--   **需要知道相应的地址**
+-   **スタックオーバーフローでスタックの内容を制御できること**
+-   **対応するアドレスを知っている必要があります**
     -   **"/bin/sh"**
     -   **Signal Frame**
     -   **syscall**
     -   **sigreturn**
--   需要有够大的空间来塞下整个sigal frame
+-   signal frame 全体を詰め込めるだけの十分な大きさの領域が必要です
 
-此外，关于sigreturn以及syscall;ret这两个gadget在上面并没有提及。提出该攻击的论文作者发现了这些gadgets出现的某些地址：
+また、sigreturn と syscall;ret という2つの gadget については、上では触れていません。この攻撃を提案した論文の著者は、これらの gadget が現れるいくつかのアドレスを見つけました。
 
 ![gadget1](./figure/srop-gadget-1.png)
 
-并且，作者发现，有些系统上SROP的地址被随机化了，而有些则没有。比如说`Linux < 3.3 x86_64`（在Debian 7.0， Ubuntu Long Term Support， CentOS 6系统中默认内核），可以直接在vsyscall中的固定地址处找到syscall&return代码片段。如下
+さらに著者は、システムによって SROP のアドレスがランダム化されているものとされていないものがあることを発見しました。たとえば `Linux < 3.3 x86_64`(Debian 7.0、Ubuntu Long Term Support、CentOS 6 のデフォルトカーネル)では、vsyscall 内の固定アドレスに syscall&return のコード片を直接見つけられます。次のとおりです。
 
 ![gadget1](./figure/srop-gadget-2.png)
 
-但是目前它已经被`vsyscall-emulate`和`vdso`机制代替了。此外，目前大多数系统都会开启ASLR保护，所以相对来说这些gadgets都并不容易找到。
+しかし現在では、これは `vsyscall-emulate` と `vdso` の仕組みに置き換えられています。また、現在ほとんどのシステムでは ASLR 保護が有効なので、相対的にこれらの gadget は見つけにくくなっています。
 
-值得一说的是，对于sigreturn系统调用来说，在64位系统中，sigreturn系统调用对应的系统调用号为15，只需要RAX=15，并且执行syscall即可实现调用syscall调用。而RAX寄存器的值又可以通过控制某个函数的返回值来间接控制，比如说read函数的返回值为读取的字节数。
+特筆すべきこととして、sigreturn システムコールの場合、64 ビットシステムでは sigreturn に対応するシステムコール番号は 15 なので、RAX=15 にして syscall を実行するだけで sigreturn を呼び出せます。そして RAX レジスタの値は、ある関数の戻り値を制御することで間接的に制御できます。たとえば read 関数の戻り値は読み取ったバイト数です。
 
-## 利用工具
+## 利用ツール
 
-**值得一提的是，在目前的pwntools中已经集成了对于srop的攻击。**
+**特筆すべきこととして、現在の pwntools には srop への攻撃がすでに組み込まれています。**
 
-## 示例
+## 例
 
-这里以360春秋杯中的smallest-pwn为例进行简单介绍。基本步骤如下
+ここでは 360 春秋杯の smallest-pwn を例に簡単に紹介します。基本的な手順は次のとおりです。
 
-**确定文件基本信息**
+**ファイルの基本情報の確認**
 
 ```text
 ➜  smallest file smallest
 smallest: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked, stripped
 ```
 
-可以看到该程序为64位静态链接版本。
+このプログラムは 64 ビットの静的リンク版であることが分かります。
 
-**检查保护**
+**保護の確認**
 
 ```text
 ➜  smallest checksec smallest
@@ -192,11 +192,11 @@ smallest: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), statically linked
     PIE:      No PIE (0x400000)
 ```
 
-程序主要开启了NX保护。
+プログラムでは主に NX 保護が有効になっています。
 
-**漏洞发现**
+**脆弱性の発見**
 
-实用IDA直接反编译看了一下，发现程序就几行汇编代码，如下
+IDA で直接逆コンパイルして見てみると、プログラムはアセンブリがわずか数行で、次のようになっています。
 
 ```asm
 public start
@@ -210,16 +210,16 @@ retn
 start endp
 ```
 
-根据syscall的编号为0，可以知道该程序执行的指令为read(0,$rsp,400)，即向栈顶读入400个字符。毫无疑问，这个是有栈溢出的。
+syscall の番号が 0 であることから、このプログラムが実行する命令は read(0,$rsp,400) であり、スタックの先頭に 400 文字を読み込むものだと分かります。間違いなく、これにはスタックオーバーフローがあります。
 
-**利用思路**
+**利用の方針**
 
-由于程序中并没有sigreturn调用，所以我们得自己构造，正好这里有read函数调用，所以我们可以通过read函数读取的字节数来设置rax的值。重要思路如下
+プログラムには sigreturn の呼び出しがないため、自分で組み立てる必要があります。ちょうど read 関数の呼び出しがあるので、read が読み取るバイト数を使って rax の値を設定できます。重要な方針は次のとおりです。
 
-- 通过控制read读取的字符数来设置RAX寄存器的值，从而执行sigreturn
-- 通过syscall执行execve("/bin/sh",0,0)来获取shell。
+- read が読み取る文字数を制御して RAX レジスタの値を設定し、sigreturn を実行する
+- syscall で execve("/bin/sh",0,0) を実行して shell を得る。
 
-**漏洞利用程序**
+**エクスプロイトプログラム**
 
 ```python
 from pwn import *
@@ -277,22 +277,21 @@ sh.send(sigreturn)
 sh.interactive()
 ```
 
-其基本流程为
+基本的な流れは次のとおりです。
 
-- 读取三个程序起始地址
-- 程序返回时，利用第一个程序起始地址读取地址，修改返回地址(即第二个程序起始地址)为源程序的第二条指令，并且会设置rax=1
-- 那么此时将会执行write(1,$esp,0x400)，泄露栈地址。
-- 利用第三个程序起始地址进而读入payload
-- 再次读取构造sigreturn调用，进而将向栈地址所在位置读入数据，构造execve('/bin/sh',0,0)
-- 再次读取构造sigreturn调用，从而获取shell。
+- プログラムの開始アドレスを3つ読み込む
+- プログラムが返るとき、1つ目のプログラム開始アドレスを使ってアドレスを読み込み、戻りアドレス(つまり2つ目のプログラム開始アドレス)を元のプログラムの2命令目に書き換えます。これにより rax=1 が設定されます
+- すると write(1,$esp,0x400) が実行され、スタックアドレスがリークします。
+- 3つ目のプログラム開始アドレスを使って、さらに payload を読み込む
+- もう一度読み込んで sigreturn の呼び出しを組み立て、スタックアドレスのある位置にデータを読み込ませて execve('/bin/sh',0,0) を組み立てる
+- もう一度読み込んで sigreturn の呼び出しを組み立て、shell を得る。
 
-## 题目
+## 問題
 
 - [Defcon 2015 Qualifier: fuckup](https://brant-ruan.github.io/resources/Binary/learnPwn/fuckup_56f604b0ea918206dcb332339a819344)
 
-参考阅读
+参考文献
 
-- [Sigreturn Oriented Programming (SROP) Attack攻击原理](http://www.freebuf.com/articles/network/87447.html)
+- [Sigreturn Oriented Programming (SROP) Attack 攻撃原理](http://www.freebuf.com/articles/network/87447.html)
 - [SROP by Angel Boy](https://www.slideshare.net/AngelBoy1/sigreturn-ori)
-- [系统调用](https://chromium.googlesource.com/chromiumos/docs/+/master/constants/syscalls.md#x86-32_bit)
-  
+- [システムコール](https://chromium.googlesource.com/chromiumos/docs/+/master/constants/syscalls.md#x86-32_bit)

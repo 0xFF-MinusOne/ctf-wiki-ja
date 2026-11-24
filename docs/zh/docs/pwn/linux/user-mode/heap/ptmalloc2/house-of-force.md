@@ -1,24 +1,24 @@
 # House Of Force
 
-## 介绍
-House Of Force 属于 House Of XXX 系列的利用方法，House Of XXX 是 2004 年《The Malloc Maleficarum-Glibc Malloc Exploitation Techniques》中提出的一系列针对 glibc 堆分配器的利用方法。
-但是，由于年代久远《The Malloc Maleficarum》中提出的大多数方法今天都不能奏效，我们现在所指的 House Of XXX 利用相比 2004 年文章中写的已有较大的不同。但是《The Malloc Maleficarum》依然是一篇推荐阅读的文章，你可以在这里读到它的原文：
+## はじめに
+House Of Force は House Of XXX シリーズの攻撃手法に属します。House Of XXX は、2004 年の論文『The Malloc Maleficarum-Glibc Malloc Exploitation Techniques』で提唱された、glibc のヒープアロケータを標的とする一連の攻撃手法です。
+ただし、年月が経っているため、『The Malloc Maleficarum』で提唱された手法の大半は今日では通用せず、現在私たちが House Of XXX と呼ぶ攻撃は、2004 年の論文に書かれたものとはかなり異なっています。それでも『The Malloc Maleficarum』は今なお一読をおすすめする論文で、原文は次の場所で読めます。
 https://dl.packetstormsecurity.net/papers/attack/MallocMaleficarum.txt
 
 ## 原理
-House Of Force 是一种堆利用方法，但是并不是说 House Of Force 必须得基于堆漏洞来进行利用。如果一个堆(heap based) 漏洞想要通过 House Of Force 方法进行利用，需要以下条件：
+House Of Force はヒープの攻撃手法ですが、House Of Force を使うのに必ずしもヒープの脆弱性が必要というわけではありません。ヒープ(heap based)の脆弱性を House Of Force で攻撃するには、次の条件が必要です。
 
-1. 能够以溢出等方式控制到 top chunk 的 size 域
-2. 能够自由地控制堆分配尺寸的大小
+1. オーバーフローなどの方法で、top chunk の size フィールドを制御できること
+2. ヒープの確保サイズを自由に制御できること
 
-House Of Force 产生的原因在于 glibc 对 top chunk 的处理，根据前面堆数据结构部分的知识我们得知，进行堆分配时，如果所有空闲的块都无法满足需求，那么就会从 top chunk 中分割出相应的大小作为堆块的空间。
+House Of Force が生まれる原因は、glibc の top chunk の扱いにあります。前のヒープのデータ構造の部分で学んだとおり、ヒープを確保する際に、空きブロックがどれも要求を満たせない場合は、top chunk から対応するサイズを切り出してヒープチャンクの領域とします。
 
-那么，当使用 top chunk 分配堆块的 size 值是由用户控制的任意值时会发生什么？答案是，可以使得 top chunk指向我们期望的任何位置，这就相当于一次任意地址写。然而在 glibc 中，会对用户请求的大小和 top chunk 现有的 size 进行验证
+では、top chunk を使ってヒープチャンクを確保するときの size の値がユーザーの制御する任意の値だった場合、何が起こるでしょうか。答えは、top chunk を期待する任意の位置に向けられるということで、これは任意アドレス書き込みに相当します。ただし glibc では、ユーザーが要求したサイズと top chunk の現在の size に対して検証が行われます。
 ```
-// 获取当前的top chunk，并计算其对应的大小
+// 現在の top chunk を取得し、その対応するサイズを計算する
 victim = av->top;
 size   = chunksize(victim);
-// 如果在分割之后，其大小仍然满足 chunk 的最小大小，那么就可以直接进行分割。
+// 分割後もそのサイズが chunk の最小サイズを満たしていれば、そのまま分割できる。
 if ((unsigned long) (size) >= (unsigned long) (nb + MINSIZE)) 
 {
     remainder_size = size - nb;
@@ -34,12 +34,12 @@ if ((unsigned long) (size) >= (unsigned long) (nb + MINSIZE))
     return p;
 }
 ```
-然而，如果可以篡改 size 为一个很大值，就可以轻松的通过这个验证，这也就是我们前面说的需要一个能够控制top chunk size 域的漏洞。
+しかし、size を非常に大きな値に改ざんできれば、この検証を簡単に通過できます。これが、先ほど述べた top chunk の size フィールドを制御できる脆弱性が必要な理由です。
 
 ```
 (unsigned long) (size) >= (unsigned long) (nb + MINSIZE)
 ```
-一般的做法是把 top chunk 的 size 改为-1，因为在进行比较时会把 size 转换成无符号数，因此 -1 也就是说unsigned long 中最大的数，所以无论如何都可以通过验证。
+一般的な方法は、top chunk の size を -1 に書き換えることです。比較の際に size は符号なし整数に変換されるため、-1 は unsigned long で最大の数になり、どんな場合でも検証を通過できます。
 
 ```
 remainder      = chunk_at_offset(victim, nb);
@@ -48,9 +48,9 @@ av->top        = remainder;
 /* Treat space at ptr + offset as a chunk */
 #define chunk_at_offset(p, s) ((mchunkptr)(((char *) (p)) + (s)))
 ```
-之后这里会把 top 指针更新，接下来的堆块就会分配到这个位置，用户只要控制了这个指针就相当于实现任意地址写任意值(write-anything-anywhere)。
+その後、ここで top ポインタが更新され、続くヒープチャンクはこの位置に確保されます。ユーザーがこのポインタを制御できれば、任意のアドレスに任意の値を書き込む(write-anything-anywhere)ことができます。
 
-**与此同时，我们需要注意的是，topchunk的size也会更新，其更新的方法如下**
+**同時に、top chunk の size も更新されることに注意が必要です。更新の方法は次のとおりです**
 
 ```c
 victim = av->top;
@@ -59,10 +59,10 @@ remainder_size = size - nb;
 set_head(remainder, remainder_size | PREV_INUSE);
 ```
 
-所以，如果我们想要下次在指定位置分配大小为 x 的 chunk，我们需要确保 remainder_size 不小于 x+ MINSIZE。
+したがって、次回に指定の位置で大きさ x の chunk を確保したい場合は、remainder_size が x+ MINSIZE 以上であることを確認する必要があります。
 
-## 简单示例1
-在学习完 HOF 的原理之后，我们这里通过一个示例来说明 HOF 的利用，这个例子的目标是通过HOF来篡改 `malloc@got.plt` 实现劫持程序流程
+## 簡単な例 1
+HOF の原理を学んだところで、ここでは例を使って HOF の利用を説明します。この例の目標は、HOF によって `malloc@got.plt` を書き換え、プログラムのフローを乗っ取ることです。
 
 ```
 int main()
@@ -70,13 +70,13 @@ int main()
     long *ptr,*ptr2;
     ptr=malloc(0x10);
     ptr=(long *)(((long)ptr)+24);
-    *ptr=-1;        // <=== 这里把top chunk的size域改为0xffffffffffffffff
-    malloc(-4120);  // <=== 减小top chunk指针
-    malloc(0x10);   // <=== 分配块实现任意地址写
+    *ptr=-1;        // <=== ここで top chunk の size フィールドを 0xffffffffffffffff に書き換える
+    malloc(-4120);  // <=== top chunk のポインタを減らす
+    malloc(0x10);   // <=== ブロックを確保して任意アドレス書き込みを実現する
 }
 ```
 
-首先，我们分配一个 0x10 字节大小的块
+まず、0x10 バイトのブロックを確保します。
 
 ```
 0x602000:	0x0000000000000000	0x0000000000000021 <=== ptr
@@ -84,8 +84,8 @@ int main()
 0x602020:	0x0000000000000000	0x0000000000020fe1 <=== top chunk
 0x602030:	0x0000000000000000	0x0000000000000000
 ```
-之后把 top chunk 的 size 改为 0xffffffffffffffff，在真正的题目中，这一步可以通过堆溢出等漏洞来实现。
-因为 -1 在补码中是以 0xffffffffffffffff 表示的，所以我们直接赋值 -1 就可以。
+次に top chunk の size を 0xffffffffffffffff に書き換えます。実際の問題では、この手順はヒープオーバーフローなどの脆弱性で実現できます。
+-1 は 2 の補数表現では 0xffffffffffffffff なので、直接 -1 を代入すればかまいません。
 
 ```
 0x602000:	0x0000000000000000	0x0000000000000021 <=== ptr
@@ -93,7 +93,7 @@ int main()
 0x602020:	0x0000000000000000	0xffffffffffffffff <=== top chunk size域被更改
 0x602030:	0x0000000000000000	0x0000000000000000
 ```
-注意此时的 top chunk 位置，当我们进行下一次分配的时候就会更改 top chunk 的位置到我们想要的地方
+このときの top chunk の位置に注意してください。次に確保を行うと、top chunk の位置が望む場所に変更されます。
 
 ```
 0x7ffff7dd1b20 <main_arena>:	0x0000000100000000	0x0000000000000000
@@ -104,25 +104,25 @@ int main()
 0x7ffff7dd1b70 <main_arena+80>:	0x0000000000000000	0x0000000000602020 <=== top chunk此时一切正常
 0x7ffff7dd1b80 <main_arena+96>:	0x0000000000000000	0x00007ffff7dd1b78
 ```
-接下来我们执行`malloc(-4120);`，-4120是怎么得出的呢？
-首先，我们需要明确要写入的目的地址，这里我编译程序后，0x601020 是 `malloc@got.plt` 的地址
+続いて `malloc(-4120);` を実行します。-4120 はどのように求めたのでしょうか。
+まず、書き込みたい宛先アドレスを明確にする必要があります。プログラムをコンパイルしたところ、0x601020 が `malloc@got.plt` のアドレスでした。
 
 ```
 0x601020:	0x00007ffff7a91130 <=== malloc@got.plt
 ```
-所以我们应该将 top chunk 指向 0x601010 处，这样当下次再分配 chunk 时，就可以分配到 `malloc@got.plt` 处的内存了。
+そのため、top chunk を 0x601010 に向ける必要があります。そうすれば、次に chunk を確保するときに、`malloc@got.plt` のメモリが確保されます。
 
-之后明确当前 top chunk 的地址，根据前面描述，top chunk 位于 0x602020，所以我们可以计算偏移如下
+次に現在の top chunk のアドレスを確認します。前述のとおり top chunk は 0x602020 にあるので、オフセットは次のように計算できます。
 
 0x601010-0x602020=-4112
 
-此外，用户申请的内存大小，一旦进入申请内存的函数中就变成了无符号整数。
+また、ユーザーが要求したメモリサイズは、メモリを確保する関数に入ると符号なし整数になります。
 
 ```c
 void *__libc_malloc(size_t bytes) {
 ```
 
-如果想要用户输入的大小经过内部的 `checked_request2size`可以得到这样的大小，即
+ユーザーが入力したサイズが、内部の `checked_request2size` を経てこの大きさになるようにしたいわけです。つまり、
 
 ```c
 /*
@@ -150,11 +150,11 @@ void *__libc_malloc(size_t bytes) {
     (sz) = request2size(req);
 ```
 
-一方面，我们需要绕过 REQUEST_OUT_OF_RANGE(req) 这个检测，即我们传给 malloc 的值在负数范围内，不得大于 -2 * MINSIZE，这个一般情况下都是可以满足的。
+一方で、REQUEST_OUT_OF_RANGE(req) の検査を回避する必要があります。つまり malloc に渡す値は負数の範囲にあり、-2 * MINSIZE より大きくてはいけません。これは通常は満たせます。
 
-另一方面，在满足对应的约束后，我们需要使得 `request2size`正好转换为对应的大小，也就是说，我们需要使得 ((req) + SIZE_SZ + MALLOC_ALIGN_MASK) & ~MALLOC_ALIGN_MASK 恰好为-4112。首先，很显然，-4112 是 chunk 对齐的，那么我们只需要将其分别减去 SIZE_SZ，MALLOC_ALIGN_MASK 就可以得到对应的需要申请的值。其实我们这里只需要减 SIZE_SZ 就可以了，因为多减的 MALLOC_ALIGN_MASK 最后还会被对齐掉。而**如果 -4112 不是 MALLOC_ALIGN 的时候，我们就需要多减一些了。当然，我们最好使得分配之后得到的 chunk 也是对齐的，因为在释放一个 chunk 的时候，会进行对齐检查。**
+他方で、対応する制約を満たしたうえで、`request2size` がちょうど対応する大きさに変換されるようにする必要があります。つまり ((req) + SIZE_SZ + MALLOC_ALIGN_MASK) & ~MALLOC_ALIGN_MASK がちょうど -4112 になるようにしなければなりません。まず、-4112 は chunk にアラインされていることは明らかなので、そこから SIZE_SZ と MALLOC_ALIGN_MASK をそれぞれ引けば、要求すべき値が得られます。実はここでは SIZE_SZ を引くだけで十分で、余分に引いた MALLOC_ALIGN_MASK は最後にアラインで切り捨てられます。そして**-4112 が MALLOC_ALIGN にアラインされていない場合は、もう少し多く引く必要があります。もちろん、確保後に得られる chunk もアラインされているようにするのが望ましいです。chunk を解放するときにアラインの検査が行われるからです。**
 
-因此，我们当调用`malloc(-4120)`之后，我们可以观察到 top chunk 被抬高到我们想要的位置
+したがって、`malloc(-4120)` を呼び出した後、top chunk が望む位置に引き上げられたことが観察できます。
 
 ```
 0x7ffff7dd1b20 <main_arena>:\	0x0000000100000000	0x0000000000000000
@@ -165,18 +165,18 @@ void *__libc_malloc(size_t bytes) {
 0x7ffff7dd1b70 <main_arena+80>:	0x0000000000000000	0x0000000000601010 <=== 可以观察到top chunk被抬高
 0x7ffff7dd1b80 <main_arena+96>:	0x0000000000000000	0x00007ffff7dd1b78
 ```
-之后，我们分配的块就会出现在 0x601010+0x10 的位置，也就是 0x601020 可以更改 got 表中的内容了。
+その後、確保するブロックは 0x601010+0x10 の位置、つまり 0x601020 に現れ、got テーブルの内容を書き換えられるようになります。
 
-但是需要注意的是，在被抬高的同时，malloc@got 附近的内容也会被修改。
+ただし、引き上げられると同時に、malloc@got の付近の内容も書き換えられてしまう点に注意が必要です。
 
 ```c
     set_head(victim, nb | PREV_INUSE |
             (av != &main_arena ? NON_MAIN_ARENA : 0));
 ```
 
-## 简单示例2
-在上一个示例中，我们演示了通过 HOF 使得 top chunk 的指针减小来修改位于其上面(低地址)的got表中的内容，
-但是 HOF 其实也可以使得 top chunk 指针增大来修改位于高地址空间的内容，我们通过这个示例来演示这一点
+## 簡単な例 2
+前の例では、HOF で top chunk のポインタを減らし、その上(低位アドレス)にある got テーブルの内容を書き換える方法を示しました。
+しかし HOF では top chunk のポインタを増やして、高位アドレス空間にある内容を書き換えることもできます。この例でそれを示します。
 
 ```
 int main()
@@ -189,8 +189,8 @@ int main()
     malloc(0x10);
 }
 ```
-我们可以看到程序代码与简单示例1基本相同，除了第二次 malloc 的 size 有所不同。
-这次我们的目标是 malloc_hook，我们知道 malloc_hook 是位于 libc.so 里的全局变量值，首先查看内存布局
+プログラムのコードは簡単な例 1 とほぼ同じで、2 回目の malloc の size だけが異なることがわかります。
+今回の目標は malloc_hook です。malloc_hook は libc.so 内のグローバル変数なので、まずメモリレイアウトを確認します。
 
 ```
 Start              End                Offset             Perm Path
@@ -214,11 +214,11 @@ Start              End                Offset             Perm Path
 0x00007ffffffde000 0x00007ffffffff000 0x0000000000000000 rw- [stack]
 0xffffffffff600000 0xffffffffff601000 0x0000000000000000 r-x [vsyscall]
 ```
-可以看到 heap 的基址在 0x602000，而 libc 的基址在 0x7ffff7a0d000，因此我们需要通过 HOF 扩大 top chunk指针的值来实现对 malloc_hook 的写。
-首先，由调试得知 __malloc_hook 的地址位于 0x7ffff7dd1b10 ，采取计算
+heap のベースアドレスは 0x602000、libc のベースアドレスは 0x7ffff7a0d000 であることがわかります。そのため、HOF で top chunk のポインタの値を増やして malloc_hook に書き込む必要があります。
+まず、デバッグにより __malloc_hook のアドレスは 0x7ffff7dd1b10 にあることがわかっているので、次のように計算します。
 
 0x7ffff7dd1b00-0x602020-0x10=140737345551056
-经过这次 malloc 之后，我们可以观察到 top chunk 的地址被抬高到了 0x00007ffff7dd1b00
+この malloc の後、top chunk のアドレスが 0x00007ffff7dd1b00 まで引き上げられたことが観察できます。
 
 ```
 0x7ffff7dd1b20 <main_arena>:	0x0000000100000000	0x0000000000000000
@@ -229,7 +229,7 @@ Start              End                Offset             Perm Path
 0x7ffff7dd1b70 <main_arena+80>:	0x0000000000000000	0x00007ffff7dd1b00 <=== top chunk
 0x7ffff7dd1b80 <main_arena+96>:	0x0000000000000000	0x00007ffff7dd1b78
 ```
-之后，我们只要再次分配就可以控制 0x7ffff7dd1b10 处的 __malloc_hook 值了
+その後、もう一度確保するだけで、0x7ffff7dd1b10 にある __malloc_hook の値を制御できます。
 
 ```
 rax = 0x00007ffff7dd1b10
@@ -238,23 +238,23 @@ rax = 0x00007ffff7dd1b10
 0x400567 <main+65>        call   0x400410 <malloc@plt>
 ```
 
-## 小总结
-在这一节中讲解了 House Of Force 的原理并且给出了两个利用的简单示例，通过观察这两个简单示例我们会发现其实HOF的利用要求还是相当苛刻的。
+## まとめ
+この節では House Of Force の原理を説明し、攻撃の簡単な例を 2 つ示しました。この 2 つの簡単な例を見ると、HOF の利用条件はかなり厳しいことがわかります。
 
-* 首先，需要存在漏洞使得用户能够控制 top chunk 的 size 域。
-* 其次，**需要用户能自由控制 malloc 的分配大小**
-* 第三，分配的次数不能受限制
+* まず、ユーザーが top chunk の size フィールドを制御できる脆弱性が存在すること。
+* 次に、**ユーザーが malloc の確保サイズを自由に制御できる必要があること**
+* 3 つ目に、確保の回数に制限がないこと
 
-其实这三点中第二点往往是最难办的，CTF 题目中往往会给用户分配堆块的大小限制最小和最大值使得不能通过HOF 的方法进行利用。
+この 3 点のうち、2 つ目が最も厄介なことが多く、CTF の問題ではユーザーがヒープチャンクを確保するサイズに最小値と最大値の制限が付けられていて、HOF の方法で攻撃できないことがよくあります。
 
 ## HITCON training lab 11
-[题目链接](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/house-of-force/hitcontraning_lab11)
+[問題へのリンク](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/house-of-force/hitcontraning_lab11)
 
-这里，我们主要修改其 magic 函数为
+ここでは主に、その magic 関数を次のように書き換えます。
 
 
 
-### 基本信息
+### 基本情報
 
 ```shell
 ➜  hitcontraning_lab11 git:(master) file bamboobox     
@@ -268,32 +268,32 @@ bamboobox: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically link
     PIE:      No PIE (0x400000)
 ```
 
-该程序是一个 64 位的动态链接程序。
+このプログラムは 64 ビットの動的リンクプログラムです。
 
-### 基本功能
+### 基本機能
 
-需要注意的是，该程序开始时即申请了 0x10 的内存，用来保留**两个函数指针**。
+プログラムは開始時に 0x10 のメモリを確保し、**2 つの関数ポインタ**を保持していることに注意してください。
 
-该程序大概就是对于盒子里的物品进行添加和删除
+このプログラムは、おおよそ箱の中の品物の追加と削除を行うものです。
 
-1. 展示盒子里的内容，依次盒子里每一个物品的名字。
-2. 向盒子里添加物品，根据用户输入的大小来为每一个物品申请对应的内存，作为其存储名字的空间。但是需要注意的是，这里读取名字使用的是 `read` 函数，读取长度的参数是用户输入的 v2，而 read 的第三个参数是无符号整数，如果我们输入负数，就可以读取任意长度。但是我们需要确保该数值满足`REQUEST_OUT_OF_RANGE` 的约束，所以这里存在**任意长度堆溢出**的漏洞。但即使这样，第一次的时候也比较难以利用，因为初始时候堆的 top chunk 的大小一般是不会很大的。
-3. 修改物品的名字，根据给定的索引，以及大小，向指定索引的物品中读取指定长度名字。这里长度由用户来读入，也存在**任意长度堆溢出**的漏洞。
-4. 删除物品，将对应物品的名字的大小置为0，并将对应的 content 置为 NULL。
+1. 箱の中身を表示する。箱の中の各品物の名前を順に表示します。
+2. 箱に品物を追加する。ユーザーが入力したサイズに応じて、各品物に対応するメモリを確保し、名前を格納する領域とします。ただし、ここで名前の読み込みには `read` 関数が使われ、読み込む長さの引数はユーザーが入力した v2 であり、read の 3 番目の引数は符号なし整数であるため、負数を入力すれば任意の長さを読み込めることに注意してください。ただし、この数値が `REQUEST_OUT_OF_RANGE` の制約を満たすようにする必要があります。そのためここには**任意の長さのヒープオーバーフロー**の脆弱性があります。とはいえ、初回は利用が比較的難しいです。初期状態ではヒープの top chunk のサイズは通常あまり大きくないからです。
+3. 品物の名前を変更する。指定したインデックスとサイズに基づいて、指定したインデックスの品物に指定した長さの名前を読み込みます。ここでも長さはユーザーが入力するため、**任意の長さのヒープオーバーフロー**の脆弱性があります。
+4. 品物を削除する。対応する品物の名前のサイズを 0 にし、対応する content を NULL にします。
 
-此外，由于该程序主要是一个演示程序，所以程序中有一个 magic 函数，可以直接读取 flag。
+また、このプログラムは主にデモ用のプログラムなので、flag を直接読み取れる magic 関数が含まれています。
 
-### 利用
+### 攻撃
 
-由于程序中有个 magic 函数，所以我们的核心目的是覆盖某个指针为 magic 函数的指针。这里，程序在开始的时候申请了一块内存来存储两个函数指针，hello_message用于程序开始时使用，goodbye_message 用于在程序结束时使用，所以我们可以利用覆盖 goodbye_message 来控制程序执行流。具体思路如下
+プログラムに magic 関数があるため、主な目的は、あるポインタを magic 関数のポインタで上書きすることです。このプログラムは開始時に、2 つの関数ポインタを格納するためのメモリを確保しています。hello_message はプログラムの開始時に、goodbye_message はプログラムの終了時に使われるため、goodbye_message を上書きすることで実行フローを制御できます。具体的な方針は次のとおりです。
 
-1. 添加物品，利用堆溢出漏洞覆盖 top chunk 的大小为 -1，即 64 位最大值。
-2. 利用 house of force 技巧，分配 chunk 至堆的基地址。
-3. 覆盖 goodbye_message 为magic 函数地址来控制程序执行流
+1. 品物を追加し、ヒープオーバーフローの脆弱性を利用して top chunk のサイズを -1、つまり 64 ビットの最大値で上書きする。
+2. house of force の技法を用いて、ヒープのベースアドレスに chunk を確保する。
+3. goodbye_message を magic 関数のアドレスで上書きして、実行フローを制御する
 
-**这里需要注意的是，在触发top chunk 转移到指定位置时，所使用的大小应该合适，以便于设置新的 top chunk 大小，从而可以绕过下一次分配top chunk 的检测。**
+**ここで注意すべきは、top chunk を指定の位置に移動させるときに使うサイズは、新しい top chunk のサイズを設定できるよう適切なものにして、次回の top chunk からの確保の際の検査を回避する必要があることです。**
 
-exp 如下
+exp は次のとおりです。
 
 ```shell
 #!/usr/bin/env python
@@ -355,12 +355,12 @@ r.interactive()
 
 ```
 
-当然，这一题也可以使用 unlink 的方法来做。
+なお、この問題は unlink の方法でも解けます。
 
 ## 2016 BCTF bcloud
-[题目链接](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/house-of-force/2016_bctf_bcloud)
+[問題へのリンク](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/house-of-force/2016_bctf_bcloud)
 
-### 基本信息
+### 基本情報
 
 ```shell
 ➜  2016_bctf_bcloud git:(master) file bcloud   
@@ -374,21 +374,21 @@ bcloud: ELF 32-bit LSB executable, Intel 80386, version 1 (SYSV), dynamically li
     PIE:      No PIE (0x8048000)
 ```
 
-可以看出，这是一个动态链接的 32 位程序，主要开启了 Canary 保护与 NX 保护。
+動的リンクの 32 ビットプログラムで、主に Canary 保護と NX 保護が有効になっていることがわかります。
 
-### 基本功能
+### 基本機能
 
-程序大概是一个云笔记管理系统。首先，程序会进行一些初始化，设置用户的名字，组织，host。程序主要有以下几个功能
+プログラムはおおよそクラウドノートの管理システムです。まず、プログラムは初期化を行い、ユーザーの名前、組織(org)、host を設定します。プログラムには主に次の機能があります。
 
-1. 新建note，根据用户的输入x申请x+4的空间作为note的大小。
-2. 展示note，啥功能也没有。。
-3. 编辑note，根据用户指定的 note 编辑对应的内容。
-4. 删除note，删除对应note。
-5. 同步note，标记所有的note已经被同步。
+1. note の新規作成。ユーザーが入力した x に基づいて、x+4 の領域を note のサイズとして確保する。
+2. note の表示。何の機能もない。。
+3. note の編集。ユーザーが指定した note に基づいて、対応する内容を編集する。
+4. note の削除。対応する note を削除する。
+5. note の同期。すべての note が同期済みであると印を付ける。
 
-然而在这五个功能中并没有发现啥漏洞，，，重新看程序，结果发现程序在初始化的时候出现了漏洞。。
+しかし、この 5 つの機能には脆弱性が見つからず、、、プログラムを見直したところ、プログラムの初期化時に脆弱性があることがわかりました。。
 
-初始化名字
+名前の初期化
 
 ```c
 unsigned int init_name()
@@ -409,9 +409,9 @@ unsigned int init_name()
 }
 ```
 
-这里如果程序读入的名字为64个字符，那么当程序在使用info函数输出对应的字符串时，就会输出对应的tmp指针内容，也就是说**泄露了堆的地址**。。
+ここで、プログラムが読み込む名前が 64 文字の場合、info 関数で対応する文字列を出力するときに、対応する tmp ポインタの内容も出力されます。つまり**ヒープのアドレスがリークします**。。
 
-初始化组织和org的时候存在漏洞
+組織と org の初期化に脆弱性があります。
 
 ```c
 unsigned int init_org_host()
@@ -439,18 +439,18 @@ unsigned int init_org_host()
 }
 ```
 
-当读入组织时，给定 64 字节，会覆盖 v2 的低地址。与此同时，我们可以知道 v2 是与 top chunk 相邻的 chunk，而 v2 恰好与 org 相邻，那么由于在 32 位程序中，一般都是 32 位全部都使用，这里 v2 所存储的内容，几乎很大程度上都不是 `\x00` ，所以当执行 strcpy 函数向 v2 中拷贝内容时，很有可能会覆盖top chunk。这就是漏洞所在。
+組織を読み込むとき、64 バイトを与えると v2 の下位アドレスを上書きします。同時に、v2 は top chunk と隣接する chunk であり、v2 は org とちょうど隣接していることもわかります。32 ビットプログラムでは通常 32 ビットすべてが使われるため、ここで v2 に格納されている内容は、ほとんどの場合 `\x00` ではありません。そのため strcpy 関数で v2 に内容をコピーすると、top chunk を上書きしてしまう可能性が非常に高くなります。これが脆弱性です。
 
-### 利用
+### 攻撃
 
-1. 利用初始化名字处的漏洞泄漏堆的基地址。。
-2. 利用 house of force 将 top chunk 分配至全局的 0x0804B0A0 的 &notesize-8 处，当再次申请内存时，便返回notesize地址处的内存，从而我们就可以控制所有note的大小以及对应的地址了。
-3. 修改前三个 note 的大小为16，并修改其指针为 free@got，atoi@got，atoi@got
-4. 将 free@got 修改为 puts@plt。
-5. 泄漏 atoi 地址。
-6. 再次修改另外一个 atoi got 项为 system 地址，从而拿到shell。
+1. 名前の初期化部分の脆弱性を利用して、ヒープのベースアドレスをリークする。。
+2. house of force を利用して、top chunk をグローバルの 0x0804B0A0 の &notesize-8 に確保させる。再びメモリを確保すると notesize のアドレスのメモリが返されるため、すべての note のサイズと対応するアドレスを制御できるようになる。
+3. 最初の 3 つの note のサイズを 16 に書き換え、そのポインタを free@got、atoi@got、atoi@got に書き換える。
+4. free@got を puts@plt に書き換える。
+5. atoi のアドレスをリークする。
+6. もう一方の atoi の got エントリを system のアドレスに書き換えて、shell を取得する。
 
-具体脚本如下
+具体的なスクリプトは次のとおりです。
 
 ```python
 from pwn import *
@@ -544,6 +544,6 @@ if __name__ == "__main__":
 
 
 
-## 题目
+## 問題
 
 - [2016 Boston Key Party CTF cookbook](https://github.com/ctfs/write-ups-2016/tree/master/boston-key-party-2016/pwn/cookbook-6)

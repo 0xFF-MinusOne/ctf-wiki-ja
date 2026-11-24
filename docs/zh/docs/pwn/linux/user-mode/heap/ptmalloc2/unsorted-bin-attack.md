@@ -1,53 +1,53 @@
 # Unsorted Bin Attack
 
-## 概述
+## 概要
 
-Unsorted Bin Attack，顾名思义，该攻击与 Glibc 堆管理中的的 Unsorted Bin 的机制紧密相关。
+Unsorted Bin Attack は、その名のとおり、Glibc のヒープ管理における Unsorted Bin の仕組みと密接に関係する攻撃です。
 
-Unsorted Bin Attack 被利用的前提是控制 Unsorted Bin Chunk 的 bk 指针。
+Unsorted Bin Attack が成立する前提は、Unsorted Bin のチャンクの bk ポインタを制御できることです。
 
-Unsorted Bin Attack 可以达到的效果是实现修改任意地址值为一个较大的数值。
+Unsorted Bin Attack で達成できるのは、任意のアドレスの値を、比較的大きな数値に書き換えることです。
 
-## Unsorted Bin 回顾
+## Unsorted Bin のおさらい
 
-在介绍 Unsorted Bin 攻击前，可以先回顾一下 Unsorted Bin 的基本来源以及基本使用情况。
+Unsorted Bin への攻撃を説明する前に、Unsorted Bin の基本的な発生源と基本的な使われ方をおさらいしておきましょう。
 
-### 基本来源
+### 基本的な発生源
 
-1. 当一个较大的 chunk 被分割成两半后，如果剩下的部分大于 MINSIZE，就会被放到 unsorted bin 中。
-2. 释放一个不属于 fast bin 的 chunk，并且该 chunk 不和 top chunk 紧邻时，该 chunk 会被首先放到 unsorted bin 中。关于top chunk的解释，请参考下面的介绍。
-3. 当进行 malloc_consolidate 时，可能会把合并后的 chunk 放到 unsorted bin 中，如果不是和 top chunk 近邻的话。
+1. 大きめのチャンクが 2 つに分割されたとき、残った部分が MINSIZE より大きければ unsorted bin に入れられます。
+2. fast bin に属さないチャンクを解放し、そのチャンクが top chunk に隣接していない場合、そのチャンクはまず unsorted bin に入れられます。top chunk については、後述の説明を参照してください。
+3. malloc_consolidate が行われると、統合後のチャンクが unsorted bin に入れられることがあります(top chunk に隣接していない場合)。
 
-### 基本使用情况
+### 基本的な使われ方
 
-1. Unsorted Bin 在使用的过程中，采用的遍历顺序是 FIFO，**即插入的时候插入到 unsorted bin 的头部，取出的时候从链表尾获取**。
-2. 在程序 malloc 时，如果在 fastbin，small bin 中找不到对应大小的 chunk，就会尝试从 Unsorted Bin 中寻找 chunk。如果取出来的 chunk 大小刚好满足，就会直接返回给用户，否则就会把这些 chunk 分别插入到对应的 bin 中。
+1. Unsorted Bin は使用時、FIFO の順序で走査されます。**つまり、挿入するときは unsorted bin の先頭に挿入し、取り出すときはリストの末尾から取得します**。
+2. プログラムが malloc を行うとき、fastbin と small bin に対応するサイズのチャンクが見つからなければ、Unsorted Bin からチャンクを探します。取り出したチャンクのサイズがちょうど要求を満たせばそのままユーザに返され、そうでなければそれらのチャンクはそれぞれ対応する bin に挿入されます。
 
 ## Unsorted Bin Leak
 
-在介绍 Unsorted Bin Attack 之前，我们先介绍一下如何使用 Unsorted Bin 进行 Leak。这其实是一个小 trick，许多题中都会用到。
+Unsorted Bin Attack を説明する前に、Unsorted Bin を使って Leak を行う方法を説明します。これは小さな trick ですが、多くの問題で使われます。
 
-### Unsorted Bin 的结构
+### Unsorted Bin の構造
 
-`Unsorted Bin` 在管理时为循环双向链表，若 `Unsorted Bin` 中有两个 `bin`，那么该链表结构如下
+`Unsorted Bin` は管理上、循環二重リンクリストになっています。`Unsorted Bin` に `bin` が 2 つある場合、リストの構造は次のようになります。
 
 ![](./figure/unsortedbins-struct.jpg)
 
-下面这张图就是上面的结构的复现
+次の図は、上の構造を再現したものです。
 
 ![](./figure/gdb-debug-state.png)
 
-我们可以看到，在该链表中必有一个节点（不准确的说，是尾节点，这个就意会一下把，毕竟循环链表实际上没有头尾）的 `fd` 指针会指向 `main_arena` 结构体内部。
+このリストには必ず、`fd` ポインタが `main_arena` 構造体の内部を指すノードが 1 つあります(正確ではありませんが末尾のノードです。循環リストには実際には先頭も末尾もないので、感覚的に捉えてください)。
 
-### Leak 原理
+### Leak の原理
 
-如果我们可以把正确的 `fd` 指针 leak 出来，就可以获得一个与 `main_arena` 有固定偏移的地址，这个偏移可以通过调试得出。而`main_arena` 是一个 `struct malloc_state` 类型的全局变量，是 `ptmalloc` 管理主分配区的唯一实例。说到全局变量，立马可以想到他会被分配在 `.data` 或者 `.bss` 等段上，那么如果我们有进程所使用的 `libc` 的 `.so` 文件的话，我们就可以获得 `main_arena` 与 `libc` 基地址的偏移，实现对 `ASLR` 的绕过。
+正しい `fd` ポインタを leak できれば、`main_arena` から固定のオフセットにあるアドレスが得られます。このオフセットはデバッグで求められます。`main_arena` は `struct malloc_state` 型のグローバル変数で、`ptmalloc` がメインアリーナを管理するための唯一のインスタンスです。グローバル変数であれば `.data` や `.bss` などのセグメントに配置されることがすぐに思い浮かびます。そのため、プロセスが使っている `libc` の `.so` ファイルがあれば、`main_arena` と `libc` のベースアドレスとのオフセットを求められ、`ASLR` を回避できます。
 
-那么如何取得 `main_arena` 与 `libc` 基址的偏移呢？这里提供两种思路。
+では `main_arena` と `libc` のベースアドレスとのオフセットはどう求めるのでしょうか。ここでは 2 つの考え方を紹介します。
 
-#### 通过 __malloc_trim 函数得出
+#### __malloc_trim 関数から求める
 
-在 `malloc.c` 中有这样一段代码
+`malloc.c` には次のようなコードがあります。
 
 ```cpp
 int
@@ -73,33 +73,33 @@ __malloc_trim (size_t s)
 }
 ```
 
-注意到 `mstate ar_ptr = &main_arena;` 这里对 `main_arena` 进行了访问，所以我们就可以通过 IDA 等工具分析出偏移了。
+`mstate ar_ptr = &main_arena;` の部分で `main_arena` にアクセスしていることに注目してください。したがって、IDA などのツールで解析すればオフセットがわかります。
 
 ![](./figure/malloc-trim-ida.png)
 
-比如把 `.so` 文件放到 IDA 中，找到 `malloc_trim` 函数，就可以获得偏移了。
+たとえば `.so` ファイルを IDA に読み込み、`malloc_trim` 関数を見つければ、オフセットが得られます。
 
-#### 通过 __malloc_hook 直接算出
+#### __malloc_hook から直接計算する
 
-比较巧合的是，`main_arena` 和 `__malloc_hook` 的地址差是 0x10，而大多数的 libc 都可以直接查出 `__malloc_hook` 的地址，这样可以大幅减小工作量。以 pwntools 为例
+偶然にも、`main_arena` と `__malloc_hook` のアドレスの差は 0x10 で、しかもほとんどの libc では `__malloc_hook` のアドレスを直接調べられるため、作業量を大幅に減らせます。pwntools を例にすると次のとおりです。
 
 ```python
 main_arena_offset = ELF("libc.so.6").symbols["__malloc_hook"] + 0x10
 ```
 
-这样就可以获得 `main_arena` 与基地址的偏移了。
+これで `main_arena` とベースアドレスとのオフセットが得られます。
 
-### 实现 Leak 的方法
+### Leak を実現する方法
 
-一般来说，要实现 leak，需要有 `UAF`，将一个 `chunk` 放入 `Unsorted Bin` 中后再打出其 `fd`。一般的笔记管理题都会有 `show` 的功能，对处于链表尾的节点 `show` 就可以获得 `libc` 的基地址了。
+一般に leak を実現するには `UAF` が必要で、`chunk` を `Unsorted Bin` に入れてからその `fd` を出力させます。一般的なノート管理型の問題には `show` 機能があるので、リストの末尾にあるノードを `show` すれば `libc` のベースアドレスが得られます。
 
-特别的，`CTF` 中的利用，堆往往是刚刚初始化的，所以 `Unsorted Bin` 一般都是干净的，当里面只存在一个 `bin` 的时候，该 `bin` 的 `fd` 和 `bk` 都会指向 `main_arena` 中。
+特に `CTF` での攻撃では、ヒープは初期化されたばかりであることが多く、`Unsorted Bin` は通常きれいな状態です。中に `bin` が 1 つしか存在しないとき、その `bin` の `fd` と `bk` はどちらも `main_arena` 内を指します。
 
-另外，如果我们无法做到访问链表尾，但是可以访问链表头，那么在 32 位的环境下，对链表头进行 `printf` 等往往可以把 `fd` 和 `bk` 一起输出出来，这个时候同样可以实现有效的 leak。然而在 64 位下，由于高地址往往为 `\x00`，很多输出函数会被截断，这个时候可能就难以实现有效 leak。
+また、リストの末尾にはアクセスできなくても先頭にはアクセスできる場合、32 ビット環境ではリストの先頭に対して `printf` などを行うと `fd` と `bk` をまとめて出力できることが多く、この場合も有効な leak が可能です。しかし 64 ビットでは、上位アドレスが `\x00` であることが多いため、多くの出力関数が途中で打ち切られ、有効な leak が難しくなることがあります。
 
-## Unsorted Bin Attack 原理
+## Unsorted Bin Attack の原理
 
-在  [glibc](https://code.woboq.org/userspace/glibc/)/[malloc](https://code.woboq.org/userspace/glibc/malloc/)/[malloc.c](https://code.woboq.org/userspace/glibc/malloc/malloc.c.html) 中的 `_int_malloc ` 有这么一段代码，当将一个 unsorted bin取出的时候，会将 `bck->fd` 的位置写入本 Unsorted Bin 的位置。
+[glibc](https://code.woboq.org/userspace/glibc/)/[malloc](https://code.woboq.org/userspace/glibc/malloc/)/[malloc.c](https://code.woboq.org/userspace/glibc/malloc/malloc.c.html) の `_int_malloc` には次のようなコードがあります。unsorted bin を取り出すとき、`bck->fd` の位置にこの Unsorted Bin の位置が書き込まれます。
 
 ```C
           /* remove from unsorted list */
@@ -109,11 +109,11 @@ main_arena_offset = ELF("libc.so.6").symbols["__malloc_hook"] + 0x10
           bck->fd = unsorted_chunks (av);
 ```
 
-换而言之，如果我们控制了 bk 的值，我们就能将 `unsorted_chunks (av)` 写到任意地址。
+言い換えれば、bk の値を制御できれば、`unsorted_chunks (av)` を任意のアドレスに書き込めます。
 
 
 
-这里我以 shellphish 的 how2heap 仓库中的 [unsorted_bin_attack.c](https://github.com/shellphish/how2heap/blob/master/unsorted_bin_attack.c) 为例进行介绍，这里我做一些简单的修改，如下
+ここでは shellphish の how2heap リポジトリにある [unsorted_bin_attack.c](https://github.com/shellphish/how2heap/blob/master/unsorted_bin_attack.c) を例に説明します。簡単な修正を加えたものが次のとおりです。
 
 ```c
 #include <stdio.h>
@@ -166,7 +166,7 @@ int main() {
 }
 ```
 
-程序执行后的效果为
+プログラムを実行した結果は次のとおりです。
 
 ```shell
 ➜  unsorted_bin_attack git:(master) ✗ gcc unsorted_bin_attack.c -o unsorted_bin_attack
@@ -188,25 +188,25 @@ Let's malloc again to get the chunk we just free. During this time, target shoul
 0x7ffe0d232518: 0x7f1c705ffb78
 ```
 
-这里我们可以使用一个图来描述一下具体发生的流程以及背后的原理。
+ここで、具体的な流れとその背後にある原理を図で説明します。
 
 ![](./figure/unsorted_bin_attack_order.png)
 
-**初始状态时**
+**初期状態**
 
-unsorted bin 的 fd 和 bk 均指向 unsorted bin 本身。
+unsorted bin の fd と bk は、どちらも unsorted bin 自身を指しています。
 
-**执行free(p)**
+**free(p) の実行**
 
-由于释放的 chunk 大小不属于 fast bin 范围内，所以会首先放入到 unsorted bin 中。
+解放されるチャンクのサイズは fast bin の範囲に属さないため、まず unsorted bin に入れられます。
 
-**修改p[1]**
+**p[1] の書き換え**
 
-经过修改之后，原来在 unsorted bin 中的 p 的 bk 指针就会指向 target addr-16 处伪造的 chunk，即 Target Value 处于伪造 chunk 的 fd 处。
+書き換えの後、もともと unsorted bin 内にあった p の bk ポインタは target addr-16 に偽造されたチャンクを指します。つまり Target Value は偽チャンクの fd の位置にあります。
 
-**申请400大小的chunk**
+**サイズ 400 のチャンクの確保**
 
-此时，所申请的 chunk 处于 small bin 所在的范围，其对应的 bin 中暂时没有 chunk，所以会去unsorted bin中找，发现 unsorted bin 不空，于是把 unsorted bin 中的最后一个 chunk 拿出来。
+このとき、確保しようとするチャンクは small bin の範囲に入りますが、対応する bin にはチャンクがまだありません。そこで unsorted bin を探し、unsorted bin が空でないことがわかるので、unsorted bin の最後のチャンクを取り出します。
 
 ```c
         while ((victim = unsorted_chunks(av)->bk) != unsorted_chunks(av)) {
@@ -224,7 +224,7 @@ unsorted bin 的 fd 和 bk 均指向 unsorted bin 本身。
                exception to best-fit, and applies only when there is
                no exact fit for a small chunk.
              */
-			/* 显然，bck被修改，并不符合这里的要求*/
+			/* 明らかに bck は書き換えられており、ここの条件には合致しない */
             if (in_smallbin_range(nb) && bck == unsorted_chunks(av) &&
                 victim == av->last_remainder &&
                 (unsigned long) (size) > (unsigned long) (nb + MINSIZE)) {
@@ -241,9 +241,9 @@ unsorted bin 的 fd 和 bk 均指向 unsorted bin 本身。
 - unsorted_chunks(av)->bk = bck=target addr-16
 - bck->fd                 = *(target addr -16+16) = unsorted_chunks(av);
 
-**可以看出，在将 unsorted bin 的最后一个 chunk 拿出来的过程中，victim 的 fd 并没有发挥作用，所以即使我们修改了其为一个不合法的值也没有关系。**然而，需要注意的是，unsorted bin 链表可能就此破坏，在插入 chunk 时，可能会出现问题。
+**unsorted bin の最後のチャンクを取り出す過程では、victim の fd は役割を果たしていないので、それを不正な値に書き換えても問題ありません。**ただし、これによって unsorted bin のリストが壊れる可能性があり、チャンクを挿入するときに問題が起きることがあるので注意が必要です。
 
-即修改 target 处的值为 unsorted bin 的链表头部 0x7f1c705ffb78，也就是之前输出的信息。
+つまり target の位置の値は unsorted bin のリストの先頭 0x7f1c705ffb78 に書き換えられます。これは先ほど出力された情報のとおりです。
 
 ```shell
 We free the first chunk now and it will be inserted in the unsorted bin with its bk pointer point to 0x7f1c705ffb78
@@ -254,24 +254,24 @@ Let's malloc again to get the chunk we just free. During this time, target shoul
 0x7ffe0d232518: 0x7f1c705ffb78
 ```
 
-这里我们可以看到 unsorted bin attack 确实可以修改任意地址的值，但是所修改成的值却不受我们控制，唯一可以知道的是，这个值比较大。**而且，需要注意的是，**
+このように、unsorted bin attack は確かに任意アドレスの値を書き換えられますが、書き換え後の値は制御できません。わかるのは、この値が比較的大きいということだけです。**また、注意すべきことは、**
 
-这看起来似乎并没有什么用处，但是其实还是有点卵用的，比如说
+これは一見あまり役に立たないように見えますが、実はそれなりに使い道があります。たとえば次のようなものです。
 
-- 我们通过修改循环的次数来使得程序可以执行多次循环。
-- 我们可以修改 heap 中的 global_max_fast 来使得更大的 chunk 可以被视为 fast bin，这样我们就可以去执行一些 fast bin attack了。
+- ループの回数を書き換えて、プログラムが何度もループを実行できるようにする。
+- ヒープ内の global_max_fast を書き換えて、より大きなチャンクを fast bin として扱わせ、fast bin attack を実行できるようにする。
 
 ## HITCON Training lab14 magic heap
 
-[题目链接](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/unsorted_bin_attack/hitcontraining_lab14)
+[問題へのリンク](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/unsorted_bin_attack/hitcontraining_lab14)
 
-这里我们修改一下源程序中的 l33t 函数，以便于可以正常运行。
+ここでは、正常に動かせるように元のプログラムの l33t 関数を修正します。
 
 ```c
 void l33t() { system("cat ./flag"); }
 ```
 
-### 基本信息
+### 基本情報
 
 ```shell
 ➜  hitcontraining_lab14 git:(master) file magicheap
@@ -285,27 +285,27 @@ magicheap: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically link
     PIE:      No PIE (0x400000)
 ```
 
-可以看出，该程序是一个动态链接的64程序，主要开启了 NX 保护与 Canary 保护。
+このプログラムは動的リンクの 64 ビットプログラムで、主に NX と Canary が有効になっています。
 
-### 基本功能
+### 基本機能
 
-程序大概就是自己写的堆管理器，主要有以下功能
+プログラムは自作のヒープマネージャのようなもので、主に次の機能があります。
 
-1. 创建堆。根据用户指定大小申请相应堆，并且读入指定长度的内容，但是并没有设置 NULL。
-2. 编辑堆。根据指定的索引判断对应堆是不是非空，如果非空，就根据用户读入的大小，来修改堆的内容，这里其实就出现了任意长度堆溢出的漏洞。
-3. 删除堆。根据指定的索引判断对应堆是不是非空，如果非空，就将对应堆释放并置为 NULL。
+1. ヒープの作成。ユーザが指定したサイズに応じてヒープを確保し、指定された長さの内容を読み込みますが、NULL は設定しません。
+2. ヒープの編集。指定されたインデックスに対応するヒープが空でないかを判定し、空でなければ、ユーザが読み込ませたサイズに従ってヒープの内容を書き換えます。ここで実は任意の長さのヒープオーバーフローの脆弱性が生じています。
+3. ヒープの削除。指定されたインデックスに対応するヒープが空でないかを判定し、空でなければ、対応するヒープを解放して NULL にします。
 
-同时，我们看到，当我们控制 v3 为 4869，同时控制 magic 大于 4869，就可以得到 flag 了。
+また、v3 を 4869 に制御し、同時に magic を 4869 より大きくすれば、flag が得られることがわかります。
 
-### 利用
+### 攻撃
 
-很显然， 我们直接利用 unsorted bin attack 即可。
+明らかに、unsorted bin attack をそのまま使えば十分です。
 
-1. 释放一个堆块到 unsorted bin 中。
-2. 利用堆溢出漏洞修改 unsorted bin 中对应堆块的 bk 指针为 &magic-16。
-3. 触发漏洞即可。
+1. チャンクを 1 つ解放して unsorted bin に入れる。
+2. ヒープオーバーフローの脆弱性を利用して、unsorted bin 内の対応するチャンクの bk ポインタを &magic-16 に書き換える。
+3. 脆弱性を発動させる。
 
-代码如下
+コードは次のとおりです。
 
 ```Python
 #!/usr/bin/env python
@@ -361,17 +361,17 @@ r.interactive()
 
 ```
 
-## 2016 0CTF zerostorage-待完成
+## 2016 0CTF zerostorage - 未完成
 
-**注：待进一步完成。**
+**注: 今後さらに加筆予定。**
 
-这里我们以 2016 年 0CTF 的 [zerostorage](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/unsorted_bin_attack/zerostorage) 为例，进行介绍。
+ここでは 2016 年 0CTF の [zerostorage](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/unsorted_bin_attack/zerostorage) を例に説明します。
 
-**这个题当时给了服务器的系统版本和内核版本，所以自己可以下一个一模一样的进行调试，这里我们就直接用自己的本地机器调试了。但是在目前的Ubuntu 16.04 中，由于进一步的随机化，导致 libc 加载的位置与程序模块加载的位置之间的相对偏移不再固定，所以 BrieflyX 的策略就无法再次使用，似乎只能用 angelboy 的策略了。**
+**この問題は出題当時、サーバのシステムバージョンとカーネルバージョンが公開されていたため、まったく同じ環境を自分で用意してデバッグできますが、ここでは手元のローカルマシンで直接デバッグします。ただし現在の Ubuntu 16.04 では、ランダム化がさらに進んだため、libc のロード位置とプログラムモジュールのロード位置との相対オフセットがもはや固定ではなくなり、BrieflyX の方針は再び使えず、angelboy の方針しか使えないようです。**
 
-### 安全性检查
+### セキュリティチェック
 
-可以看出，该程序开启了所有的保护
+このプログラムではすべての保護が有効になっています。
 
 ```shell
 pwndbg> checksec
@@ -384,9 +384,9 @@ pwndbg> checksec
     FORTIFY:  Enabled
 ```
 
-### 基本功能分析
+### 基本機能の分析
 
-程序管理在 bss 段的存储空间 storage ，具有插入，删除，合并，删除，查看，枚举，退出功能。这个storage的结构体如下
+プログラムは bss セグメント上の記憶領域 storage を管理しており、挿入、削除、マージ、削除、表示、列挙、終了の機能があります。この storage の構造体は次のとおりです。
 
 ```text
 00000000 Storage         struc ; (sizeof=0x18, mappedto_7)
@@ -399,85 +399,85 @@ pwndbg> checksec
 
 #### insert-1
 
-基本功能如下
+基本機能は次のとおりです。
 
-1.  逐一查看 storage 数组，查找第一个未使用的元素，但是这个数组最大也就是32。
-2.  读取storage 元素所需要存储内容的长度。
-    -   如果长度不大于0，直接退出；
-    -   否则如果申请的字节数小于128，那就设置为128；
-    -   否则，如果申请的字节数不大于4096，那就设置为对应的数值；
-    -   否则，设置为4096。
-3.  使用 calloc 分配指定长度，注意 calloc 会初始化 chunk 为0。
-4.  将 calloc 分配的内存地址与 bss 段的一个内存（初始时刻为一个随机数）进行抑或，得到一个新的内存地址。
-5.  根据读取的storage的大小来读入内容。
-6.  将对应的storage的大小以及存储内容的地址保存到对应的storage 元素中，并标记该元素处于可用状态。**但是，需要注意的是，这里记录的storage的大小是自己输入的大小！！！**
-7.  递增 storage num的数量。
+1.  storage 配列を順に調べ、最初の未使用の要素を探します。ただしこの配列の最大は 32 です。
+2.  storage の要素に格納する内容の長さを読み込みます。
+    -   長さが 0 以下なら、そのまま終了します。
+    -   そうでなく、要求バイト数が 128 未満なら、128 に設定します。
+    -   そうでなく、要求バイト数が 4096 以下なら、その値に設定します。
+    -   それ以外は 4096 に設定します。
+3.  calloc で指定した長さを確保します。calloc はチャンクを 0 で初期化することに注意してください。
+4.  calloc で確保したメモリアドレスを、bss セグメント上のある値(初期状態では乱数)と XOR し、新しいメモリアドレスを得ます。
+5.  読み込んだ storage のサイズに従って内容を読み込みます。
+6.  対応する storage のサイズと内容を格納するアドレスを対応する storage の要素に保存し、その要素を使用中の状態にします。**ただし、ここで記録される storage のサイズは、自分で入力したサイズであることに注意してください!!!**
+7.  storage num の数をインクリメントします。
 
 #### update-2
 
-1.  如果没有任何存储，就直接返回。
-2.  读入要更新的storage元素的id，如果id大于31或者目前处于不处于使用状态，说明不对，直接返回。
-3.  读取**更新后**storage 元素所需要存储内容的长度。
-    -   如果长度不大于0，直接退出；
-    -   否则如果申请的字节数小于128，那就设置为128；
-    -   否则，如果申请的字节数不大于4096，那就设置为对应的数值；
-    -   否则，设置为4096。
-4.  根据 bss 段对应的随机数获取原先storage 存储内容的地址，
-5.  如果更新后所需的长度不等于更新前的长度，就使用realloc为其重新分配内存。
-6.  再次读取数据，同时更新storage 元素。
+1.  何も格納されていなければ、そのまま return します。
+2.  更新する storage 要素の id を読み込み、id が 31 より大きいか、現在使用中の状態でなければ、不正なので、そのまま return します。
+3.  **更新後**の storage 要素に格納する内容の長さを読み込みます。
+    -   長さが 0 以下なら、そのまま終了します。
+    -   そうでなく、要求バイト数が 128 未満なら、128 に設定します。
+    -   そうでなく、要求バイト数が 4096 以下なら、その値に設定します。
+    -   それ以外は 4096 に設定します。
+4.  bss セグメント上の対応する乱数を使って、もとの storage が格納している内容のアドレスを取得します。
+5.  更新後に必要な長さが更新前の長さと等しくなければ、realloc でメモリを再確保します。
+6.  再度データを読み込み、同時に storage の要素を更新します。
 
 #### merge-3
 
-1. 如果正在使用的元素不大于1个，那么无法合并，直接退出即可。
-2. 判断storage是否已经满了，如果不满，找出空闲的那一块。
-3. 分别读取merge_from的id以及merge_to的id号，并进行相应大小以及使用状态的检测。
-4. 根据最初用户输入的大小来计算两个 merge 到一起后所需要的空间，**如果不大于128，那就不会申请新的空间**，否则就申请相应大小的新的空间。
-5. 依次将merge_to与merge_from的内容拷贝到相对应的位置。
-6. **最后存储merge_from内容的内存地址被释放了，但并没有被置为NULL。同时，存放merge_to内容的内存地址并没有被释放，相应的storage的抑或后的地址只是被置为了NULL。**
+1. 使用中の要素が 1 個以下なら、マージできないので、そのまま終了します。
+2. storage が満杯かどうかを判定し、満杯でなければ空いている場所を探します。
+3. merge_from の id と merge_to の id をそれぞれ読み込み、対応するサイズと使用状態を検査します。
+4. 最初にユーザが入力したサイズから、2 つをマージしたときに必要な領域を計算します。**128 以下なら新しい領域は確保されず**、そうでなければ対応するサイズの新しい領域を確保します。
+5. merge_to と merge_from の内容を順に対応する位置にコピーします。
+6. **最後に、merge_from の内容を格納していたメモリアドレスは解放されますが、NULL にはされません。同時に、merge_to の内容を格納しているメモリアドレスは解放されず、対応する storage の XOR 後のアドレスだけが NULL にされます。**
 
-**但是需要注意的是，，在merge的时候，并没有检测两个storage的ID是否相同。**
+**ただし、マージの際に 2 つの storage の ID が同じかどうかは検査されていないことに注意してください。**
 
 #### delete-4
 
-1. 如果没有存储任何元素，那就直接返回。
-2. 读取指定要修改的storage的元素的id，如果 id 大于32，就直接返回。
-3. 如果 storage  的对应元素并不在使用状态，那么也同时返回。
-4. 之后就是将元素对应的字段分别设置为NULL，并且释放对应的内存。
+1. 要素が 1 つも格納されていなければ、そのまま return します。
+2. 変更対象として指定された storage の要素の id を読み込み、id が 32 より大きければ、そのまま return します。
+3. storage の対応する要素が使用中の状態でなければ、同様に return します。
+4. その後、要素の対応するフィールドをそれぞれ NULL に設定し、対応するメモリを解放します。
 
 #### view-5
 
-1. 如果没有存储任何元素，那就直接返回。
-2. 读取指定要修改的storage的元素的id，如果 id 大于32，就直接返回。
-3. 如果 storage  的对应元素并不在使用状态，那么也同时返回。
-4. 输入对应的storage 的内容。
+1. 要素が 1 つも格納されていなければ、そのまま return します。
+2. 変更対象として指定された storage の要素の id を読み込み、id が 32 より大きければ、そのまま return します。
+3. storage の対応する要素が使用中の状態でなければ、同様に return します。
+4. 対応する storage の内容を出力します。
 
 #### list-6
 
-1. 如果没有存储任何元素，那就直接返回。
-2. 读取指定要修改的storage的元素的id，如果 id 大于32，就直接返回。
-3. 遍历所有正在使用的storage，输入其对应的下标以及对应storage的大小。
+1. 要素が 1 つも格納されていなければ、そのまま return します。
+2. 変更対象として指定された storage の要素の id を読み込み、id が 32 より大きければ、そのまま return します。
+3. 使用中のすべての storage を走査し、その添字と対応する storage のサイズを出力します。
 
-### 漏洞确定
+### 脆弱性の特定
 
-通过这么简单的分析，我们可以 基本确定漏洞主要就是集中在insert操作与merge操作中，尤其是当我们merge两个较小size的storage时，会出现一些问题。
+ここまでの簡単な分析から、脆弱性は主に insert の操作と merge の操作に集中していると見てよいでしょう。特に、サイズの小さい 2 つの storage をマージするときに問題が起きます。
 
-我们来具体分析一下，如果我们在insert过程中插入较小的size（比如8）的storage  A，那么，当我们进行merge时，假设我们选择merge的两个storage 都为A，那么此时程序会直接把就会直接把A的内容再添加到A的原有内容的后面，然后接着就会把A对应的存储数据部分的内存free掉，但是这并没有什么作用，因为A存储内容的地址被赋给了另外一个storage，当再访问merge 后的 storage B部分的内容时，由于B的存储数据部分的地址其实就是A对应的存储数据的地址，所以打印的就是A的数据部分的内容。但是，我们之前刚刚把A对应的内存释放掉，而A由于不在fast bin范围内，所以只会被放到unsorted bin中（而且此时只有一个），所以此时A的fd和bk都存放的是unsorted bin的一个基地址。
+具体的に分析してみましょう。insert の際にサイズの小さい(たとえば 8 の)storage A を挿入したとします。そして merge の際に、マージする 2 つの storage としてどちらも A を選ぶと、プログラムは A の内容をそのまま A のもとの内容の後ろに追加し、続いて A に対応するデータ格納部分のメモリを free します。しかしこれは実質的に意味がありません。A の内容を格納するアドレスは別の storage に代入されているためです。マージ後の storage B の部分の内容に再びアクセスすると、B のデータ格納部分のアドレスは実は A に対応するデータ格納部分のアドレスなので、出力されるのは A のデータ部分の内容です。ところが、先ほど A に対応するメモリを解放しており、A は fast bin の範囲に入らないため unsorted bin に入れられるだけです(しかもこのとき 1 つだけです)。したがって、このとき A の fd と bk にはどちらも unsorted bin のあるベースアドレスが格納されています。
 
-如果我们在merge之前曾经删除过一个storage C，那么在我们merge A后，A就会插在unsorted bin的双向链表的首部，所以其fd则是C对应的地址，bk则是unsorted bin的一个基地址。这样我们就可以直接泄露两个地址。
+merge の前に storage C を削除していた場合、A をマージした後、A は unsorted bin の二重リンクリストの先頭に挿入されるので、その fd は C に対応するアドレス、bk は unsorted bin のあるベースアドレスになります。これで 2 つのアドレスを直接リークできます。
 
-而且需要注意的是，我们还是可以去修改merge后的B的内容的，所以这其实就是个Use After Free。
+また、マージ後の B の内容は引き続き書き換えられるので、これは実質的に Use After Free です。
 
-### 利用流程
+### 攻撃の流れ
 
 - Unsorted Bin Attack
 
-  利用 unsorted bin attack ，修改 global_max_fast 全局变量，由于 global_max_fast 变量为控制最大的Fast chunk的大小，将这里改写为unsorted bin的地址(一般来说是一个很大的正数)，就能使之后的chunk都被当作fast chunk，即可进行Fast bin attack。
+  unsorted bin attack を利用して global_max_fast グローバル変数を書き換えます。global_max_fast 変数は最大の fast chunk のサイズを制御しているので、これを unsorted bin のアドレス(一般に非常に大きな正の数)に書き換えれば、以降のチャンクはすべて fast chunk として扱われ、Fast bin attack を行えるようになります。
 
 - Fast Bin Attack
 
   
 
-## 题目
+## 問題
 
 ## 参考文献
 

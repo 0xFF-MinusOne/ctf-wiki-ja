@@ -1,1 +1,1 @@
-# Uninitialized Memory
+# 未初期化メモリ(Uninitialized Memory)

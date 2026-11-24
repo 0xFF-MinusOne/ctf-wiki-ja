@@ -1,62 +1,62 @@
-# QEMU 下载与编译
+# QEMU のダウンロードとビルド
 
-本文介绍如何从源码编译 QEMU。
+この文書では、ソースコードから QEMU をビルドする方法を紹介します。
 
-## 获取 QEMU 源码
+## QEMU のソースコードを入手する
 
-我们可以前往 [qemu 的官网](https://download.qemu.org)下载对应版本的源码：
+[qemu の公式サイト](https://download.qemu.org)から、対応するバージョンのソースコードをダウンロードできます。
 
 ```shell
 $ wget https://download.qemu.org/qemu-7.0.0.tar.xz
 $ tar -xf qemu-7.0.0.tar.xz
 ```
 
-也可以直接从 [GitHub](https://github.com/qemu/qemu) 上获取：
+[GitHub](https://github.com/qemu/qemu) から直接取得することもできます。
 
 ```shell
 $ git clone git@github.com:qemu/qemu.git
 ```
 
-## 编译 QEMU
+## QEMU をビルドする
 
-首先安装一些必备的依赖：
+まず、必要な依存パッケージをインストールします。
 
 ```shell
 $ sudo apt -y install ninja-build build-essential zlib1g-dev pkg-config libglib2.0-dev binutils-dev libpixman-1-dev libfdt-dev
 ```
 
-接下来创建 build 目录并配置对应的编译选项：
+次に、build ディレクトリを作成し、対応するビルドオプションを設定します。
 
 ```shell
 $ mkdir build && cd build
 build$ ../qemu-7.0.0/configure --enable-kvm --target-list=x86_64-softmmu --enable-debug
 ```
 
-这里我们手动指定了这几个编译选项：
+ここでは、次のビルドオプションを手動で指定しています。
 
-- `--enable-kvm`：开启 kvm 支持。
-- `--target-list=<架构名>`：指定要编译的 CPU 架构，这里我们指定为 `x86_64-softmmu` 即表示我们要编译 x86 架构的 64位 CPU。
-- `--enable-debug`：能够对 Qemu 进行调试。
+- `--enable-kvm`:kvm のサポートを有効にします。
+- `--target-list=<アーキテクチャ名>`:ビルドする CPU アーキテクチャを指定します。ここでは `x86_64-softmmu` を指定しており、x86 アーキテクチャの 64 ビット CPU 向けにビルドすることを意味します。
+- `--enable-debug`:Qemu をデバッグできるようにします。
 
-接下来直接 `make` 即可：
+あとは、そのまま `make` を実行するだけです。
 
 ```shell
 build$ make -j$(nproc)
 ```
 
-完成编译之后在当前目录下可以看到一个新的可执行文件 `qemu-system_x86-64`，这个就是 Qemu 的本体了。
+ビルドが完了すると、カレントディレクトリに新しい実行ファイル `qemu-system_x86-64` ができています。これが Qemu 本体です。
 
-如果想要从命令行启动我们自行编译的 QEMU，则可以键入 `make install` 命令，其会自动安装到 `/bin` 目录下：
+自分でビルドした QEMU をコマンドラインから起動したい場合は、`make install` コマンドを実行すると、`/bin` ディレクトリに自動的にインストールされます。
 
 ```shell
 build$ sudo make install
 ```
 
-## 调试 QEMU
+## QEMU をデバッグする
 
-QEMU 允许我们通过 `-s` 或是 `-gdb tcp::1234` 这样的附加参数来调试虚拟机（比如说调试 Linux kernel），但有的时候我们想要**直接调试 QEMU 本体**（比如说调试一些自己写的模拟设备），这个时候就需要我们将 Host 上的 QEMU 进程作为待调试对象。
+QEMU では、`-s` や `-gdb tcp::1234` のような追加パラメータによって、仮想マシンをデバッグできます(たとえば Linux kernel のデバッグ)。しかし、**QEMU 本体を直接デバッグ**したい場合(たとえば自作のエミュレートデバイスのデバッグ)もあり、このときは Host 上の QEMU プロセスをデバッグ対象にする必要があります。
 
-由于 QEMU 本质上也是运行在宿主机上的一个进程，因此我们只需要直接找到其对应的 pid 便能直接使用 `gdb attach` 进行调试。
+QEMU も本質的にはホスト上で動作する 1 つのプロセスなので、対応する pid を見つけさえすれば、そのまま `gdb attach` でデバッグできます。
 
 ## REFERENCE
 

@@ -3,7 +3,7 @@
 
 ### 0x01 Tcache overview
 
-在 tcache 中新增了两个结构体，分别是 tcache_entry 和 tcache_perthread_struct
+tcache には、tcache_entry と tcache_perthread_struct という2つの構造体が新たに追加されています。
 
 ```C
 /* We overlay this structure on the user-data portion of a chunk when the chunk is stored in the per-thread cache.  */
@@ -24,7 +24,7 @@ static __thread tcache_perthread_struct *tcache = NULL;
 
 
 
-其中有两个重要的函数， `tcache_get()` 和 `tcache_put()`:
+このうち重要な関数が2つあります。`tcache_get()` と `tcache_put()` です。
 
 ```C
 static void
@@ -50,7 +50,7 @@ tcache_get (size_t tc_idx)
 
 ```
 
-这两个函数会在函数 [_int_free](https://sourceware.org/git/gitweb.cgi?p=glibc.git;a=blob;f=malloc/malloc.c;h=2527e2504761744df2bdb1abdc02d936ff907ad2;hb=d5c3fafc4307c9b7a4c7d5cb381fcdbfad340bcc#l4173) 和 [__libc_malloc](https://sourceware.org/git/gitweb.cgi?p=glibc.git;a=blob;f=malloc/malloc.c;h=2527e2504761744df2bdb1abdc02d936ff907ad2;hb=d5c3fafc4307c9b7a4c7d5cb381fcdbfad340bcc#l3051) 的开头被调用，其中 `tcache_put` 当所请求的分配大小不大于`0x408`并且当给定大小的 tcache bin 未满时调用。一个tcache bin中的最大块数`mp_.tcache_count`是`7`。
+この2つの関数は、関数 [_int_free](https://sourceware.org/git/gitweb.cgi?p=glibc.git;a=blob;f=malloc/malloc.c;h=2527e2504761744df2bdb1abdc02d936ff907ad2;hb=d5c3fafc4307c9b7a4c7d5cb381fcdbfad340bcc#l4173) と [__libc_malloc](https://sourceware.org/git/gitweb.cgi?p=glibc.git;a=blob;f=malloc/malloc.c;h=2527e2504761744df2bdb1abdc02d936ff907ad2;hb=d5c3fafc4307c9b7a4c7d5cb381fcdbfad340bcc#l3051) の冒頭で呼び出されます。`tcache_put` は、要求された確保サイズが `0x408` 以下で、かつ指定サイズの tcache bin がいっぱいでないときに呼び出されます。1つの tcache bin に入るブロックの最大数 `mp_.tcache_count` は `7` です。
 
 ```c
 /* This is another arbitrary limit, which tunables can change.  Each
@@ -61,7 +61,7 @@ tcache_get (size_t tc_idx)
 
 
 
-再复习一遍 `tcache_get()` 的源码
+もう一度 `tcache_get()` のソースコードを見ておきましょう。
 
 ```C
 static __always_inline void *
@@ -75,15 +75,15 @@ tcache_get (size_t tc_idx)
   return (void *) e;
 }
 ```
-在 `tcache_get` 中，仅仅检查了 **tc_idx** ，此外，我们可以将 tcache 当作一个类似于 fastbin 的单独链表，只是它的check，并没有 fastbin 那么复杂，仅仅检查 ` tcache->entries[tc_idx] = e->next;`
+`tcache_get` では **tc_idx** しかチェックされていません。さらに、tcache は fastbin に似た独立したリストと見なせますが、そのチェックは fastbin ほど複雑ではなく、チェックされるのは ` tcache->entries[tc_idx] = e->next;` だけです。
 
 ### 0x02 Tcache Usage
 
 
 
-- 内存释放：
+- メモリの解放:
 
-  可以看到，在free函数的最先处理部分，首先是检查释放块是否页对齐及前后堆块的释放情况，便优先放入tcache结构中。
+  free 関数の最初の処理部分で、まず解放するブロックがページアラインされているか、および前後のヒープブロックの解放状況がチェックされ、その後で優先的に tcache 構造に入れられることが分かります。
   
 
   ```c
@@ -135,17 +135,17 @@ tcache_get (size_t tc_idx)
 
 
 
--  内存申请：
+-  メモリの確保:
 
-在内存分配的malloc函数中有多处，会将内存块移入tcache中。
+メモリを確保する malloc 関数の中には、メモリブロックを tcache に移す箇所が複数あります。
 
-（1）首先，申请的内存块符合fastbin大小时并且在fastbin内找到可用的空闲块时，会把该fastbin链上的其他内存块放入tcache中。
+(1) まず、確保するメモリブロックが fastbin のサイズに合致し、fastbin 内に利用可能な空きブロックが見つかったとき、その fastbin のリスト上のほかのメモリブロックを tcache に入れます。
 
-（2）其次，申请的内存块符合smallbin大小时并且在smallbin内找到可用的空闲块时，会把该smallbin链上的其他内存块放入tcache中。
+(2) 次に、確保するメモリブロックが smallbin のサイズに合致し、smallbin 内に利用可能な空きブロックが見つかったとき、その smallbin のリスト上のほかのメモリブロックを tcache に入れます。
 
-（3）当在unsorted bin链上循环处理时，当找到大小合适的链时，并不直接返回，而是先放到tcache中，继续处理。
+(3) unsorted bin のリスト上をループ処理している最中に、サイズが適切なものが見つかっても、すぐには返さず、まず tcache に入れてから処理を続けます。
 
-代码太长就不全贴了，贴个符合fastbin 的时候
+コードが長いので全部は貼りません。fastbin に合致する場合の部分だけ貼ります。
 
 ```c
   if ((unsigned long) (nb) <= (unsigned long) (get_max_fast ()))
@@ -203,9 +203,9 @@ tcache_get (size_t tc_idx)
 
  
 
-- tcache 取出：在内存申请的开始部分，首先会判断申请大小块，在tcache是否存在，如果存在就直接从tcache中摘取，否则再使用_int_malloc分配。
+- tcache からの取り出し: メモリ確保の冒頭で、まず確保するサイズのブロックが tcache に存在するかを判断し、存在すれば tcache から直接取り外し、そうでなければ _int_malloc で確保します。
 
-- 在循环处理unsorted bin内存块时，如果达到放入unsorted bin块最大数量，会立即返回。默认是0，即不存在上限。
+- unsorted bin のメモリブロックをループ処理する際、unsorted bin に入れるブロックの最大数に達したら、すぐに戻ります。デフォルトは 0 で、つまり上限はありません。
 
   ```c
   #if USE_TCACHE
@@ -221,7 +221,7 @@ tcache_get (size_t tc_idx)
   #endif
   ```
 
-- 在循环处理unsorted bin内存块后，如果之前曾放入过tcache块，则会取出一个并返回。
+- unsorted bin のメモリブロックをループ処理した後、それ以前に tcache にブロックを入れていた場合は、1つ取り出して返します。
 
   ```c
   #if USE_TCACHE
@@ -239,11 +239,11 @@ tcache_get (size_t tc_idx)
 
 #### tcache poisoning
 
-通过覆盖 tcache 中的 next，不需要伪造任何 chunk 结构即可实现 malloc 到任何地址。
+tcache 内の next を上書きすることで、チャンク構造を何も偽造せずに、任意のアドレスへ malloc できます。
 
-以 how2heap 中的 [tcache_poisoning](https://github.com/shellphish/how2heap/blob/master/glibc_2.27/tcache_poisoning.c) 为例
+how2heap の [tcache_poisoning](https://github.com/shellphish/how2heap/blob/master/glibc_2.27/tcache_poisoning.c) を例にします。
 
-看一下源码
+ソースコードを見てみましょう。
 
 ```C
 glibc_2.26 [master●] bat tcache_poisoning.c
@@ -291,7 +291,7 @@ glibc_2.26 [master●] bat tcache_poisoning.c
 ───────┴─────────────────────────────────────────────────────────────────────────────────
 ```
 
-运行结果是
+実行結果は次のとおりです。
 ```bash
 glibc_2.26 [master●] ./tcache_poisoning 
 This file demonstrates a simple tcache poisoning attack by tricking malloc into
@@ -310,7 +310,7 @@ Now the tcache list has [ 0x7fff0d28a0c8 ].
 2st malloc(128): 0x7fff0d28a0c8
 We got the control
 ```
-分析一下，程序先申请了一个大小是 128 的 chunk，然后 free。128 在 tcache 的范围内，因此 free 之后该 chunk 被放到了 tcache 中，调试如下：
+解析すると、プログラムはまずサイズ 128 のチャンクを確保し、それを free します。128 は tcache の範囲内なので、free 後このチャンクは tcache に入れられます。デバッグは次のとおりです。
 ```asm
 pwndbg> 
 0x0000555555554815	18		free(a);
@@ -411,9 +411,9 @@ $3 = {
   entries = {0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x555555756260, 0x0 <repeats 56 times>}
 }
 ```
-可以看到，此时第 8 条 tcache 链上已经有了一个 chunk，从 `tcache_perthread_struct` 结构体中也能得到同样的结论 
+このとき、8番目の tcache リストにすでにチャンクが1つあることが分かります。`tcache_perthread_struct` 構造体からも同じ結論が得られます。
 
-然后修改 tcache 的 next
+次に tcache の next を書き換えます。
 ```asm
 pwndbg> 
 We overwrite the first 8 bytes (fd/next pointer) of the data at 0x555555756260
@@ -560,9 +560,9 @@ pwndbg> heapinfo
             unsortbin: 0x0
 (0x90)   tcache_entry[7]: 0x555555756260 --> 0x7fffffffdfa8 --> 0x555555554650
 ```
-此时，第 8 条 tcache 链的 next 已经被改成栈上的地址了。接下来类似 fastbin attack，只需进行两次 `malloc(128)` 即可控制栈上的空间。
+このとき、8番目の tcache リストの next はすでにスタック上のアドレスに書き換えられています。あとは fastbin attack と同様に、`malloc(128)` を2回行うだけでスタック上の領域を制御できます。
 
-第一次 malloc
+1回目の malloc
 ```asm
 pwndbg> n
 1st malloc(128): 0x555555756260
@@ -638,7 +638,7 @@ pwndbg> heapinfo
 (0x90)   tcache_entry[7]: 0x7fffffffdfa8 --> 0x555555554650
 ```
 
-第二次 malloc，即可 malloc 栈上的地址了
+2回目の malloc で、スタック上のアドレスを malloc できます。
 ```asm
 pwndbg> heapinfo
 3886144
@@ -715,10 +715,10 @@ LEGEND: STACK | HEAP | CODE | DATA | RWX | RODATA
 pwndbg> i r rax
 rax            0x7fffffffdfa8	140737488347048
 ```
-可以看出 `tcache posioning` 这种方法和 fastbin attack 类似，但因为没有 size 的限制有了更大的利用范围。
+`tcache posioning` はこの手法が fastbin attack に似ていますが、size の制限がないため、より広い範囲で使えることが分かります。
 
 #### tcache dup
-类似 `fastbin dup`，不过利用的是 `tcache_put()` 的不严谨
+`fastbin dup` に似ていますが、利用するのは `tcache_put()` の厳密でなさです。
 ```C
 static __always_inline void
 tcache_put (mchunkptr chunk, size_t tc_idx)
@@ -730,11 +730,11 @@ tcache_put (mchunkptr chunk, size_t tc_idx)
   ++(tcache->counts[tc_idx]);
 }
 ```
-可以看出，`tcache_put()` 的检查也可以忽略不计（甚至没有对 `tcache->counts[tc_idx]` 的检查），大幅提高性能的同时安全性也下降了很多。
+`tcache_put()` のチェックも無視できるほどであり(`tcache->counts[tc_idx]` に対するチェックすらありません)、性能を大幅に高めた一方で、安全性もかなり低下したことが分かります。
 
-因为没有任何检查，所以我们可以对同一个 chunk 多次 free，造成 cycliced list。
+チェックが一切ないので、同じチャンクを何度も free でき、循環リスト(cycliced list)を作れます。
 
-以 how2heap 的 [tcache_dup](https://github.com/shellphish/how2heap/blob/master/glibc_2.26/tcache_dup.c) 为例分析，源码如下：
+how2heap の [tcache_dup](https://github.com/shellphish/how2heap/blob/master/glibc_2.26/tcache_dup.c) を例に解析します。ソースコードは次のとおりです。
 ```C
 glibc_2.26 [master●] bat ./tcache_dup.c 
 ───────┬─────────────────────────────────────────────────────────────────────────────────
@@ -765,7 +765,7 @@ glibc_2.26 [master●] bat ./tcache_dup.c
 ───────┴─────────────────────────────────────────────────────────────────────────────────
 ```
 
-调试一下，第一次 free
+デバッグしてみます。1回目の free です。
 ```asm
 pwndbg> n
 14		free(a);
@@ -841,9 +841,9 @@ pwndbg> heapinfo
             unsortbin: 0x0
 (0x20)   tcache_entry[0]: 0x555555756260
 ```
-tcache 的第一条链放入了一个 chunk
+tcache の最初のリストにチャンクが1つ入りました。
 
-第二次 free 时，虽然 free 的是同一个 chunk，但因为 `tcache_put()` 没有做任何检查，因此程序不会 crash
+2回目の free では、free するのは同じチャンクですが、`tcache_put()` が何もチェックしないため、プログラムは crash しません。
 ```asm
 pwndbg> n
 16		fprintf(stderr, "Now the free list has [ %p, %p ].\n", a, a);
@@ -917,14 +917,14 @@ pwndbg> heapinfo
             unsortbin: 0x0
 (0x20)   tcache_entry[0]: 0x555555756260 --> 0x555555756260 (overlap chunk with 0x555555756250(freed) )
 ```
-可以看出，这种方法与 `fastbin dup` 相比也简单了很多。
+この手法は `fastbin dup` に比べてもずっと簡単であることが分かります。
 
 #### tcache perthread corruption
-我们已经知道 `tcache_perthread_struct` 是整个 tcache 的管理结构，如果能控制这个结构体，那么无论我们 malloc 的 size 是多少，地址都是可控的。
+`tcache_perthread_struct` が tcache 全体の管理構造であることはすでに分かっています。この構造体を制御できれば、malloc する size が何であっても、アドレスを制御できます。
 
-这里没找到太好的例子，自己想了一种情况
+あまり良い例が見つからなかったので、自分で1つの状況を考えました。
 
-设想有如下的堆排布情况
+次のようなヒープの配置を想定します。
 ```
 tcache_    +------------+
 \perthread |......      |
@@ -939,7 +939,7 @@ tcache_    +------------+
            |            |          |          |
            +------------+          +----------+
 ```
-通过一些手段（如 `tcache posioning`），我们将其改为了
+何らかの手段(たとえば `tcache posioning`)で、これを次のように書き換えたとします。
 ```
 tcache_    +------------+<---------------------------+
 \perthread |......      |                            |
@@ -954,15 +954,15 @@ tcache_    +------------+<---------------------------+
            |            |          |          |
            +------------+          +----------+
 ```
-这样，两次 malloc 后我们就返回了 `tcache_perthread_struct` 的地址，就可以控制整个 tcache 了。
+こうすると、2回の malloc で `tcache_perthread_struct` のアドレスが返ってくるので、tcache 全体を制御できます。
 
-**因为 tcache_perthread_struct 也在堆上，因此这种方法一般只需要 partial overwrite 就可以达到目的。**
+**tcache_perthread_struct もヒープ上にあるため、この手法は通常、partial overwrite だけで目的を達成できます。**
 
 
 
 #### tcache house of spirit
 
-拿 how2heap 的源码来讲：
+how2heap のソースコードで説明します。
 
 ```c
 #include <stdio.h>
@@ -1007,7 +1007,7 @@ int main()
 
 
 
-攻击之后的目的是，去控制栈上的内容，malloc 一块 chunk ，然后我们通过在栈上 fake 的chunk，然后去 free 掉他，我们会发现
+攻撃後の目的は、スタック上の内容を制御することです。チャンクを1つ malloc し、スタック上に fake したチャンクを free すると、次のことが分かります。
 
 ```bash
 gdb-peda$ heapinfo
@@ -1029,21 +1029,21 @@ gdb-peda$ heapinfo
 
 
 
-Tcache 里就存放了一块 栈上的内容，我们之后只需 malloc，就可以控制这块内存。
+Tcache にスタック上の内容が1ブロック入っています。あとは malloc するだけで、このメモリを制御できます。
 
 #### smallbin unlink
 
-在smallbin中包含有空闲块的时候，会同时将同大小的其他空闲块，放入tcache中，此时也会出现解链操作，但相比于unlink宏，缺少了链完整性校验。因此，原本unlink操作在该条件下也可以使用。
+smallbin に空きブロックが含まれているとき、同じサイズのほかの空きブロックも同時に tcache に入れられます。このときリストからの取り外し(unlink)の操作も発生しますが、unlink マクロと比べるとリストの整合性チェックが欠けています。そのため、本来の unlink の操作もこの条件下では使えます。
 
 #### tcache stashing unlink attack
 
-这种攻击利用的是 tcache bin 有剩余(数量小于 `TCACHE_MAX_BINS` )时，同大小的small bin会放进tcache中(这种情况可以用  `calloc` 分配同大小堆块触发，因为 `calloc` 分配堆块时不从 tcache bin 中选取)。在获取到一个 `smallbin` 中的一个chunk后会如果 tcache 仍有足够空闲位置，会将剩余的 small bin 链入 tcache ，在这个过程中只对第一个 bin 进行了完整性检查，后面的堆块的检查缺失。当攻击者可以写一个small bin的bk指针时，其可以在任意地址上写一个libc地址(类似 `unsorted bin attack` 的效果)。构造得当的情况下也可以分配 fake chunk 到任意地址。
+この攻撃が利用するのは、tcache bin に空きがある(数が `TCACHE_MAX_BINS` 未満)とき、同じサイズの small bin が tcache に入れられるという挙動です(この状況は、同じサイズのヒープブロックを `calloc` で確保すると引き起こせます。`calloc` はヒープブロックを確保するとき tcache bin から選ばないためです)。`smallbin` 内のチャンクを1つ取得した後、tcache にまだ十分な空き位置があれば、残りの small bin を tcache にリンクします。この過程では最初の bin に対してのみ整合性チェックが行われ、後続のヒープブロックのチェックは欠けています。攻撃者が small bin の bk ポインタを書き込めるとき、任意のアドレスに libc のアドレスを書き込めます(`unsorted bin attack` に似た効果です)。うまく細工すれば、任意のアドレスに fake chunk を確保することもできます。
 
-这里以 `how2heap` 中的 `tcache_stashing_unlink_attack.c` 为例。
+ここでは `how2heap` の `tcache_stashing_unlink_attack.c` を例にします。
 
-我们按照释放的先后顺序称 `smallbin[sz]` 中的两个 chunk 分别为 chunk0 和 chunk1。我们修改 chunk1 的 `bk` 为 `fake_chunk_addr`。同时还要在 `fake_chunk_addr->bk` 处提前写一个可写地址 `writable_addr` 。调用 `calloc(size-0x10)` 的时候会返回给用户 chunk0 (这是因为 smallbin 的 `FIFO` 分配机制)，假设 `tcache[sz]` 中有 5 个空闲堆块，则有足够的位置容纳 `chunk1` 以及 `fake_chunk` 。在源码的检查中，只对第一个 chunk 的链表完整性做了检测 `__glibc_unlikely (bck->fd != victim)` ，后续堆块在放入过程中并没有检测。
+解放された順に、`smallbin[sz]` 内の2つのチャンクをそれぞれ chunk0 と chunk1 と呼びます。chunk1 の `bk` を `fake_chunk_addr` に書き換えます。同時に、`fake_chunk_addr->bk` の位置にあらかじめ書き込み可能なアドレス `writable_addr` を書いておく必要があります。`calloc(size-0x10)` を呼び出すと、ユーザーには chunk0 が返されます(smallbin が `FIFO` で確保されるためです)。`tcache[sz]` に5個の空きヒープブロックがあるとすると、`chunk1` と `fake_chunk` を収容するのに十分な位置があります。ソースコード中のチェックでは、最初のチャンクのリストの整合性だけが `__glibc_unlikely (bck->fd != victim)` で検査され、後続のヒープブロックは入れる過程で検査されません。
 
-因为tcache的分配机制是 `LIFO` ，所以位于 `fake_chunk->bk` 指针处的 `fake_chunk` 在链入 tcache 的时候反而会放到链表表头。在下一次调用 `malloc(sz-0x10)` 时会返回 `fake_chunk+0x10` 给用户，同时，由于 `bin->bk = bck;bck->fd = bin;` 的unlink操作，会使得 `writable_addr+0x10` 处被写入一个 libc 地址。
+tcache の確保は `LIFO` なので、`fake_chunk->bk` ポインタの位置にある `fake_chunk` は、tcache にリンクされるとき、かえってリストの先頭に置かれます。次に `malloc(sz-0x10)` を呼び出すと、ユーザーには `fake_chunk+0x10` が返されます。同時に、`bin->bk = bck;bck->fd = bin;` という unlink の操作によって、`writable_addr+0x10` の位置に libc のアドレスが書き込まれます。
 
 ```c
 
@@ -1124,9 +1124,9 @@ int main(){
 }
 ```
 
-这个 poc 用栈上的一个数组上模拟 `fake_chunk` 。首先构造出5个 `tcache chunk` 和2个 `smallbin chunk` 的情况。模拟 `UAF` 漏洞修改 `bin2->bk` 为 `fake_chunk` ，在 `calloc(0x90)` 的时候触发攻击。
+この poc では、スタック上の配列で `fake_chunk` を模擬しています。まず、5個の `tcache chunk` と2個の `smallbin chunk` がある状況を作ります。`UAF` 脆弱性を模擬して `bin2->bk` を `fake_chunk` に書き換え、`calloc(0x90)` の時点で攻撃を発動させます。
 
-我们在 `calloc` 处下断点，调用前查看堆块排布情况。此时 `tcache[0xa0]` 中有 5 个空闲块。可以看到 chunk1->bk 已经被改为了 `fake_chunk_addr` 。而 `fake_chunk->bk` 也写上了一个可写地址。由于 `smallbin` 是按照 `bk` 指针寻块的，分配得到的顺序应当是 `0x0000000000603250->0x0000000000603390->0x00007fffffffdbc0 (FIFO)` 。调用 calloc 会返回给用户 `0x0000000000603250+0x10`。
+`calloc` にブレークポイントを置き、呼び出す前のヒープブロックの配置を確認します。このとき `tcache[0xa0]` には5個の空きブロックがあります。chunk1->bk がすでに `fake_chunk_addr` に書き換えられていることが分かります。また `fake_chunk->bk` にも書き込み可能なアドレスが書かれています。`smallbin` は `bk` ポインタに従ってブロックを探すので、確保される順序は `0x0000000000603250->0x0000000000603390->0x00007fffffffdbc0 (FIFO)` になるはずです。calloc を呼び出すとユーザーには `0x0000000000603250+0x10` が返されます。
 
 ```bash
 gdb-peda$ heapinfo
@@ -1159,9 +1159,9 @@ gdb-peda$ x/4gx 0x00007ffff7dcfd30
 0x7ffff7dcfd40 <main_arena+256>:        0x0000000000603390      0x0000000000603250
 ```
 
-调用 calloc 后再查看堆块排布情况，可以看到 `fake_chunk` 已经被链入 `tcache_entry[8]` ,且因为分配顺序变成了 `LIFO` , `0x7fffffffdbd0-0x10` 这个块被提到了链表头，下次 `malloc(0x90)` 即可获得这个块。
+calloc を呼び出した後のヒープブロックの配置を確認すると、`fake_chunk` がすでに `tcache_entry[8]` にリンクされており、確保の順序が `LIFO` に変わったため、`0x7fffffffdbd0-0x10` のブロックがリストの先頭に引き上げられていることが分かります。次に `malloc(0x90)` すればこのブロックを得られます。
 
-其 fd 指向下一个空闲块，在 unlink 过程中 `bck->fd=bin` 的赋值操作使得 `0x00007fffffffdbd0+0x10` 处写入了一个 libc 地址。
+その fd は次の空きブロックを指しています。unlink の過程での `bck->fd=bin` という代入によって、`0x00007fffffffdbd0+0x10` の位置に libc のアドレスが書き込まれました。
 
 ```bash
 gdb-peda$ heapinfo
@@ -1187,7 +1187,7 @@ gdb-peda$ x/4gx 0x7fffffffdbd0
 
 ####  libc leak
 
-在以前的libc 版本中，我们只需这样：
+以前の libc のバージョンでは、次のようにするだけでした。
 
 ```c
 #include <stdlib.h>
@@ -1204,7 +1204,7 @@ int main()
 
 
 
-但是在2.26 之后的 libc 版本后，我们首先得先把tcache 填满：
+しかし 2.26 以降の libc のバージョンでは、まず tcache を満杯にする必要があります。
 
 ```c
 #include <stdlib.h>
@@ -1228,7 +1228,7 @@ int main(int argc , char* argv[])
 } 
 ```
 
-之后，我们就可以 leak libc 了。
+その後は libc を leak できます。
 
 ```bash
 gdb-peda$ heapinfo
@@ -1261,7 +1261,7 @@ addr                prev                size                 status             
 
 ### 0x04 Tcache Check
 
-在最新的 libc 的[commit](https://sourceware.org/git/gitweb.cgi?p=glibc.git;a=blobdiff;f=malloc/malloc.c;h=f730d7a2ee496d365bf3546298b9d19b8bddc0d0;hp=6d7a6a8cabb4edbf00881cb7503473a8ed4ec0b7;hb=bcdaad21d4635931d1bd3b54a7894276925d081d;hpb=5770c0ad1e0c784e817464ca2cf9436a58c9beb7) 中更新了 Tcache 的 double free 的check：
+最新の libc の [commit](https://sourceware.org/git/gitweb.cgi?p=glibc.git;a=blobdiff;f=malloc/malloc.c;h=f730d7a2ee496d365bf3546298b9d19b8bddc0d0;hp=6d7a6a8cabb4edbf00881cb7503473a8ed4ec0b7;hb=bcdaad21d4635931d1bd3b54a7894276925d081d;hpb=5770c0ad1e0c784e817464ca2cf9436a58c9beb7) で、Tcache の double free に対するチェックが更新されました。
 
 ```c
 index 6d7a6a8..f730d7a 100644 (file)
@@ -1327,15 +1327,15 @@ index 6d7a6a8..f730d7a 100644 (file)
 
 
 
-目前为止，只看到了在 free 操作的时候的 check ，似乎没有对 get 进行新的check。
+今のところ、free の操作のときのチェックしか見つかっておらず、get に対する新しいチェックはないようです。
 
 ### 0x05 The pwn of CTF
 
 #### Challenge 1 : LCTF2018 PWN easy_heap
 
-##### 基本信息
+##### 基本情報
 
-远程环境中的 libc 是 libc-2.27.so ，所以堆块申请释放过程中需要考虑 Tcache 。
+リモート環境の libc は libc-2.27.so なので、ヒープブロックの確保と解放の過程では Tcache を考慮する必要があります。
 
 ```shell
 zj@zj-virtual-machine:~/c_study/lctf2018/easy$ checksec ./easy_heap
@@ -1347,16 +1347,16 @@ zj@zj-virtual-machine:~/c_study/lctf2018/easy$ checksec ./easy_heap
     PIE:      PIE enabled
 ```
 
-##### 基本功能
+##### 基本機能
 
-0. 输入函数：循环读入一个字节，如果出现 null 字节或是换行符则停止读入，之后对当前读入的末尾位置和 size 位置进行置零操作。
-1. new: 使用 `malloc(0xa8)` 分配一个块，记录下 size ，输入内容。
-2. free: 首先根据记录下的 size 对堆块进行 `memset` 清零，之后进行常规 free
-3. show：使用 puts 进行输出
+0. 入力関数: 1バイトずつループで読み込み、null バイトまたは改行文字が現れたら読み込みを止め、その後、現在の読み込み末尾の位置と size の位置をゼロにします。
+1. new: `malloc(0xa8)` でブロックを1つ確保し、size を記録し、内容を入力します。
+2. free: まず記録した size に従ってヒープブロックを `memset` でゼロクリアし、その後通常の free を行います。
+3. show: puts で出力します。
 
-功能较为简单。
+機能はかなり単純です。
 
-记录一个 chunk 结构的结构体：
+chunk の構造を記録する構造体:
 
 ```c
 struct Chunk {
@@ -1365,9 +1365,9 @@ struct Chunk {
 };
 ```
 
-使用了一个在堆上分配的结构来记录所有 `Chunk` 结构体，一共可以分配 10 个块。
+ヒープ上に確保した構造で、すべての `Chunk` 構造体を記録しています。確保できるのは全部で10ブロックです。
 
-程序的读入输入函数存在一个 null-byte-overflow 漏洞 ，具体见如下代码
+プログラムの入力読み込み関数には null-byte-overflow 脆弱性があります。具体的には次のコードのとおりです。
 
 ```c
 unsigned __int64 __fastcall read_input(_BYTE *malloc_p, int sz)
@@ -1397,35 +1397,35 @@ unsigned __int64 __fastcall read_input(_BYTE *malloc_p, int sz)
 }
 ```
 
-##### 利用思路
+##### 悪用の考え方
 
-由于存在 tcache ，所以利用过程中需要考虑到 tcache 的存在。
+tcache があるため、悪用の過程では tcache の存在を考慮する必要があります。
 
-通常来讲在堆程序中出现 null-byte-overflow 漏洞 ，都会考虑构造 overlapping heap chunk ，使得 overlapping chunk 可以多次使用 ，达到信息泄露最终劫持控制流的目的 。
+一般に、ヒーププログラムに null-byte-overflow 脆弱性が現れた場合は、overlapping heap chunk を作り、その overlapping chunk を何度も使えるようにして、情報漏えいを経て最終的に制御フローを奪うことを考えます。
 
-null-byte-overflow 漏洞的利用方法通过溢出覆盖 prev_in_use 字节使得堆块进行合并，然后使用伪造的 prev_size 字段使得合并时造成堆块交叉。但是本题由于输入函数无法输入 NULL 字符，所以无法输入 prev_size 为 0x_00 的值，而堆块分配大小是固定的，所以直接采用 null-byte-overflow 的方法无法进行利用，需要其他方法写入 prev_size 。
+null-byte-overflow 脆弱性の悪用方法は、オーバーフローで prev_in_use バイトを上書きしてヒープブロックを統合させ、偽造した prev_size フィールドを使って、統合の際にヒープブロックを交差させるものです。しかしこの問題では、入力関数が NULL 文字を入力できないため、prev_size に 0x_00 の値を入力できません。また、ヒープブロックの確保サイズは固定なので、null-byte-overflow の方法をそのまま使っても悪用できず、prev_size を書き込む別の方法が必要です。
 
-在没有办法手动写入 prev_size ，但又必须使用 prev_size 才可以进行利用的情况下，考虑使用系统写入的 prev_size 。
+prev_size を手動で書き込む方法がないのに、悪用には prev_size を使う必要がある場合は、システムが書き込む prev_size を使うことを考えます。
 
-方法为：在 unsorted bin 合并时会写入 prev_size，而该 prev_size 不会被轻易覆盖（除非有新的 prev_size 需要写入），所以可以利用该 prev_size 进行利用。
+方法は次のとおりです。unsorted bin の統合時に prev_size が書き込まれ、その prev_size は(新しい prev_size を書き込む必要がない限り)簡単には上書きされません。そのため、その prev_size を悪用に使えます。
 
-具体过程：
+具体的な過程:
 
-1. 将 `A -> B -> C` 三块 unsorted bin chunk 依次进行释放
-2. A 和 B 合并，此时 C 前的 prev_size 写入为 0x200
-3. A  、 B  、 C 合并，步骤 2 中写入的 0x200 依然保持
-4. 利用 unsorted bin 切分，分配出 A 
-5. 利用 unsorted bin 切分，分配出 B，注意此时不要覆盖到之前的 0x200
-6. 将 A 再次释放为 unsorted bin 的堆块，使得 fd 和 bk 为有效链表指针
-7. 此时 C 前的 prev_size 依然为 0x200（未使用到的值），A B C 的情况： `A (free) -> B (allocated) -> C (free)`，如果使得 B 进行溢出，则可以将已分配的 B 块包含在合并后的释放状态 unsorted bin 块中。
+1. `A -> B -> C` の3つの unsorted bin chunk を順に解放する
+2. A と B が統合され、このとき C の前の prev_size に 0x200 が書き込まれる
+3. A、B、C が統合されても、手順 2 で書き込まれた 0x200 はそのまま保たれる
+4. unsorted bin の分割を利用して A を確保する
+5. unsorted bin の分割を利用して B を確保する。このとき、先ほどの 0x200 を上書きしないよう注意する
+6. A を再び unsorted bin のヒープブロックとして解放し、fd と bk を有効なリストポインタにする
+7. このとき C の前の prev_size はまだ 0x200(使われなかった値)です。A B C の状態は `A (free) -> B (allocated) -> C (free)` です。B にオーバーフローさせれば、確保済みの B ブロックを、統合後の解放状態の unsorted bin ブロックに含めることができます。
 
-但是在这个过程中需要注意 tcache 的影响。
+ただし、この過程では tcache の影響に注意する必要があります。
 
-##### 利用步骤
+##### 悪用の手順
 
-###### 重排堆块结构，释放出 unsorted bin chunk
+###### ヒープブロックの構造を並べ替え、unsorted bin chunk を解放する
 
-由于本题只有 10 个可分配块数量，而整个过程中我们需要用到 3 个 unsorted bin 的 chunk ，加上 7 个 tcache 的 chunk ，所以需要进行一下重排，将一个 tcache 的 chunk 放到 3 个 unsorted bin chunk 和 top chunk 之间，否则会触发 top 的合并。
+この問題で確保できるブロックは10個しかありません。一方、全体の過程で unsorted bin の chunk が3つ必要で、さらに tcache の chunk が7つ必要なので、並べ替えが必要です。tcache の chunk を1つ、3つの unsorted bin chunk と top chunk の間に置きます。そうしないと top との統合が発生してしまいます。
 
 ```python
     # step 1: get three unsortedbin chunks
@@ -1445,7 +1445,7 @@ null-byte-overflow 漏洞的利用方法通过溢出覆盖 prev_in_use 字节使
         delete(i)
 ```
 
-重分配后的堆结构：
+再配置後のヒープ構造:
 
 ```
 +-----+
@@ -1465,9 +1465,9 @@ null-byte-overflow 漏洞的利用方法通过溢出覆盖 prev_in_use 字节使
 |  .. |
 ```
 
-###### 按照解析中的步骤进行 NULL 字节溢出触发
+###### 解析の手順どおりに NULL バイトオーバーフローを発動させる
 
-为了触发 NULL 字节溢出，我们需要使得解析中的 B 块可以溢出到 C 块中。由于题目中没有 edit 功能，所以我们需要让 B 块进入 tcache 中，这样就可以在释放后再分配出来，且由于 tcache 没有太多变化和检查，会较为稳定。
+NULL バイトオーバーフローを発動させるには、解析中の B ブロックが C ブロックにオーバーフローできるようにする必要があります。この問題には edit 機能がないため、B ブロックを tcache に入れる必要があります。こうすれば、解放した後で再び確保でき、しかも tcache は変化やチェックが少ないため、比較的安定します。
 
 ```python
     for i in range(7):
@@ -1485,7 +1485,7 @@ null-byte-overflow 漏洞的利用方法通过溢出覆盖 prev_in_use 字节使
     delete(8)
 ```
 
-之后进行 A 块的释放（用来提供有效的可以进行 unlink 的 fd 和 bk 值）
+その後 A ブロックを解放します(unlink できる有効な fd と bk の値を提供するためです)。
 
 ```python
     # delete first to provide valid fd & bk
@@ -1493,7 +1493,7 @@ null-byte-overflow 漏洞的利用方法通过溢出覆盖 prev_in_use 字节使
 
 ```
 
-现在堆块结构如下：
+現在のヒープブロックの構造は次のとおりです。
 
 ```
 +-----+
@@ -1513,22 +1513,22 @@ null-byte-overflow 漏洞的利用方法通过溢出覆盖 prev_in_use 字节使
 |  .. |
 ```
 
-tcache bin 链表中，第一位的是 B 块，所以现在可以将 B 块进行分配，且进行 NULL 字符溢出。
+tcache bin のリストの先頭は B ブロックなので、B ブロックを確保して NULL 文字のオーバーフローを行えます。
 
 ```python
     new(0xf8, '0 - overflow')
 ```
 
-在之后的步骤中，我们需要 A 处于 unsorted bin 释放状态，B 处于分配状态，C 处于分配状态，且最后可以在 tcache 块 7 个全满的情况下进行释放（触发合并），所以我们需要 7 个 tcache 都被 free 掉。
+以降の手順では、A が unsorted bin の解放状態、B が確保状態、C が確保状態にあり、最後に tcache のブロック7個が満杯の状態で(統合を発動させる)解放を行える必要があります。そのため、7個の tcache をすべて free する必要があります。
 
-此时由于 B 块被分配为 tcache 块了，所以需要将防止 top 合并的 tcache 块释放掉。
+このとき B ブロックは tcache ブロックとして確保されているため、top との統合を防ぐ tcache ブロックを解放する必要があります。
 
 ```python
     # fill up tcache
     delete(6)
 ```
 
-之后就可以将 C 块释放，进行合并。
+その後 C ブロックを解放して、統合を行えます。
 
 ```python
     # trigger
@@ -1536,7 +1536,7 @@ tcache bin 链表中，第一位的是 B 块，所以现在可以将 B 块进行
 
 ```
 
-合并后的结构：
+統合後の構造:
 
 ```
 +-----+
@@ -1557,9 +1557,9 @@ tcache bin 链表中，第一位的是 B 块，所以现在可以将 B 块进行
 ```
 
 
-###### 地址泄露
+###### アドレスの漏えい
 
-此时的堆已经出现交叉了，接下来将 A 大小从 unsorted bin 中分配出来，就可以使得 libc 地址落入 B 中：
+このときヒープはすでに交差しています。次に A のサイズ分を unsorted bin から確保すれば、libc のアドレスを B に落とせます。
 
 ```python
     # step 3: leak, fill up 
@@ -1573,7 +1573,7 @@ tcache bin 链表中，第一位的是 B 块，所以现在可以将 B 块进行
     libc.address = libc_leak - 0x3ebca0
 ```
 
-堆结构：
+ヒープ構造:
 
 ```
 +-----+
@@ -1595,7 +1595,7 @@ tcache bin 链表中，第一位的是 B 块，所以现在可以将 B 块进行
 
 ###### tcache UAF attack
 
-接下来，由于 B 块已经是 free 状态，但是又有指针指向，所以我们只需要再次分配，使得有两个指针指向 B 块，之后在 tcache 空间足够时，利用 tcache 进行 double free ，进而通过 UAF 攻击 free hook 即可。
+次に、B ブロックはすでに free 状態ですがポインタが指しているので、もう一度確保して、B ブロックを指すポインタを2つ作るだけで構いません。その後、tcache の空きが十分あるときに tcache で double free を行い、UAF 攻撃で free hook を攻撃すればよいことになります。
 
 
 ```python
@@ -1619,7 +1619,7 @@ tcache bin 链表中，第一位的是 B 块，所以现在可以将 B 块进行
 
 ```
 
-##### 完整 exploit
+##### 完全な exploit
 
 ```python
 #! /usr/bin/env python2
@@ -1741,9 +1741,9 @@ if __name__ == '__main__':
 
 #### Challenge 2 : HITCON 2018 PWN baby_tcache
 
-##### 基本信息
+##### 基本情報
 
-远程环境中的 libc 是 libc-2.27.so 和上面的题目一样。
+リモート環境の libc は libc-2.27.so で、上の問題と同じです。
 
 ```bash
 zj@zj-virtual-machine:~/c_study/hitcon2018/pwn1$ checksec ./baby_tcache
@@ -1756,13 +1756,13 @@ zj@zj-virtual-machine:~/c_study/hitcon2018/pwn1$ checksec ./baby_tcache
     FORTIFY:  Enabled
 ```
 
-##### 基本功能
+##### 基本機能
 
-程序的功能很简单 ，就2个功能 ，一个功能为 New 申请使用内存不大于 0x2000 的 chunk ，总共可以申请 10 块 ，通过 bss 段上的一个全局数组 arr 来管理申请的 chunk ，同时 bss 段上的数组 size_arr 来存储相应 chunk 的申请大小 size 。
+プログラムの機能は非常に単純で、2つしかありません。1つは New で、0x2000 以下のメモリを使う chunk を確保します。全部で10ブロックまで確保でき、bss セグメント上のグローバル配列 arr で確保した chunk を管理し、同じく bss セグメント上の配列 size_arr で、対応する chunk の確保サイズ size を保存します。
 
-程序的另外一个功能就是 delete ，删除所选的堆块 ，删除之前会事先把 chunk 的内容区域按照申请的 size 覆盖成 0xdadadada 。
+プログラムのもう1つの機能は delete で、選択したヒープブロックを削除します。削除の前に、chunk の内容領域が、確保した size 分だけ 0xdadadada で上書きされます。
 
-程序的漏洞代码在功能 New 的时候 ，写完数据后 ，有一个 null-byte 溢出漏洞 ，具体如下 ：
+プログラムの脆弱性のコードは New の機能にあり、データを書き終えた後に null-byte オーバーフローの脆弱性があります。具体的には次のとおりです。
 
 ```c
 int new()
@@ -1799,19 +1799,19 @@ int new()
 }
 ```
 
-##### 利用思路
+##### 悪用の考え方
 
-程序的漏洞很容易发现 ，而且申请的 chunk 大小可控 ，所以一般考虑构造 overlapping chunk 处理 。但是问题在于即使把 main_arena 相关的地址写到了 chunk 上 ，也没法调用 show 功能做信息泄露 ，因为程序就没提供这个功能 。
+プログラムの脆弱性は簡単に見つかり、しかも確保する chunk のサイズを制御できるので、overlapping chunk を作って対処することを普通は考えます。しかし問題は、main_arena 関連のアドレスを chunk に書き込めたとしても、show 機能を呼び出して情報を漏えいさせることができない点です。プログラムにこの機能がないためです。
 
-于是有两种思路：
+そこで、2つの考え方があります。
 
-1. 可以考虑 partial overwrite 去改掉 main_arena 相关地址的后几个字节 ，利用 tcache 机制把 `__free_hook` chunk 写进 tcache 的链表中 ，后面利用 unsortedbin attack 往 `__free_hook` 里面写上 unsortedbin addr ，后面把 `__free_hook` 分配出来 ，再利用 partial overwrite 在 `__free_hook` 里面写上 one_shoot ，不过这个方法的爆破工作量太大需要 4096 次
+1. partial overwrite で main_arena 関連のアドレスの下位数バイトを書き換え、tcache の機構を利用して `__free_hook` の chunk を tcache のリストに書き込むことを考えられます。その後 unsortedbin attack で `__free_hook` に unsortedbin のアドレスを書き込み、続いて `__free_hook` を確保して、さらに partial overwrite で `__free_hook` に one_shoot を書き込みます。ただし、この方法はブルートフォースの作業量が大きく、4096 回必要です。
 
-2. 通过 IO file 进行泄露。题目中使用到了 `puts` 函数，会最终调用到 `_IO_new_file_overflow`，该函数会最终使用 `_IO_do_write` 进行真正的输出。在输出时，如果具有缓冲区，会输出 `_IO_write_base` 开始的缓冲区内容，直到 `_IO_write_ptr` （也就是将 `_IO_write_base` 一直到 `_IO_write_ptr` 部分的值当做缓冲区，在无缓冲区时，两个指针指向同一位置，位于该结构体附近，也就是 libc 中），但是在 `setbuf` 后，理论上会不使用缓冲区。然而如果能够修改 `_IO_2_1_stdout_` 结构体的 flags 部分，使得其认为 stdout 具有缓冲区，再将 `_IO_write_base` 处的值进行 partial overwrite ，就可以泄露出 libc 地址了。
+2. IO file を使って漏えいさせる。問題では `puts` 関数が使われており、最終的に `_IO_new_file_overflow` が呼び出され、この関数が最終的に `_IO_do_write` を使って実際の出力を行います。出力時、バッファがあれば、`_IO_write_base` から始まるバッファの内容を `_IO_write_ptr` まで出力します(つまり `_IO_write_base` から `_IO_write_ptr` までの部分の値をバッファとして扱います。バッファがないときは、2つのポインタが同じ位置を指し、その位置はこの構造体の近く、つまり libc の中にあります)。しかし `setbuf` の後は、理論上はバッファを使いません。ところが `_IO_2_1_stdout_` 構造体の flags 部分を書き換えて、stdout にバッファがあると認識させ、さらに `_IO_write_base` の値を partial overwrite すれば、libc のアドレスを漏えいさせられます。
 
-思路 2 中涉及到的相关代码：
+考え方 2 に関係するコード:
 
-`puts` 函数最终会调用到该函数，我们需要满足部分 flag 要求使其能够进入 `_IO_do_write`：
+`puts` 関数は最終的にこの関数を呼び出します。`_IO_do_write` に入れるように、一部の flag の要件を満たす必要があります。
 
 ```c
 int
@@ -1830,14 +1830,14 @@ _IO_new_file_overflow (_IO_FILE *f, int ch)
       :
     }
   if (ch == EOF)
-    return _IO_do_write (f, f->_IO_write_base,  // 需要调用的目标，如果使得 _IO_write_base < _IO_write_ptr，且 _IO_write_base 处
-                                                // 存在有价值的地址 （libc 地址）则可进行泄露
-                                                // 在正常情况下，_IO_write_base == _IO_write_ptr 且位于 libc 中，所以可进行部分写
+    return _IO_do_write (f, f->_IO_write_base,  // 呼び出したい対象。_IO_write_base < _IO_write_ptr にでき、かつ _IO_write_base の位置に
+                                                // 価値のあるアドレス(libc のアドレス)があれば漏えいできる
+                                                // 通常の状態では _IO_write_base == _IO_write_ptr で、かつ libc の中にあるため、部分書き込みができる
 			 f->_IO_write_ptr - f->_IO_write_base);
 
 ```
 
-进入后的部分：
+入った後の部分:
 
 ```c
 static
@@ -1845,7 +1845,7 @@ _IO_size_t
 new_do_write (_IO_FILE *fp, const char *data, _IO_size_t to_do)
 {
   _IO_size_t count;
-  if (fp->_flags & _IO_IS_APPENDING)  /* 需要满足 */
+  if (fp->_flags & _IO_IS_APPENDING)  /* 満たす必要がある */
     /* On a system without a proper O_APPEND implementation,
        you would need to sys_seek(0, SEEK_END) here, but is
        not needed nor desirable for Unix- or Posix-like systems.
@@ -1856,11 +1856,11 @@ new_do_write (_IO_FILE *fp, const char *data, _IO_size_t to_do)
     {
      ............
     }
-  count = _IO_SYSWRITE (fp, data, to_do); // 这里真正进行 write
+  count = _IO_SYSWRITE (fp, data, to_do); // ここで実際に write を行う
 
 ```
 
-可以看到，为调用到目标函数位置，需要满足部分 flags 要求，具体需要满足的 flags ：
+目的の関数の位置まで呼び出すには、一部の flags の要件を満たす必要があることが分かります。具体的に満たす必要がある flags は次のとおりです。
 
 ```c
 _flags = 0xfbad0000  // Magic number
@@ -1869,9 +1869,9 @@ _flags | = _IO_CURRENTLY_PUTTING // _flags = 0xfbad0800
 _flags | = _IO_IS_APPENDING // _flags = 0xfbad1800
 ```
 
-##### 操作过程
+##### 操作の過程
 
-- 形成 overlapping chunk
+- overlapping chunk を作る
 
 ```python
     alloc(0x500-0x8)  # 0
@@ -1917,7 +1917,7 @@ gdb-peda$ x/300xg 0x0000555d56ed6000+0x250
 ...............
 ```
 
-- 改写文件结构体的相关字段
+- ファイル構造体の関連フィールドを書き換える
 
 ```python
     alloc(0x500-0x9+0x34)
@@ -1947,10 +1947,10 @@ gdb-peda$ x/20xg 0x00007fa8a0a40700
 0x7fa8a0a40720 <_IO_2_1_stderr_+160>:	0x00007fa8a0a3f780	0x0000000000000000
 ```
 
-- 文件结构体更改缘由
-  - 通过修改 stdout->_flags 使得程序流能够流到 _IO_do_write (f , f->_IO_write_base , f->_IO_write_ptr - f->_IO_write_base) 这个函数
+- ファイル構造体を変更する理由
+  - stdout->_flags を変更することで、プログラムの流れが _IO_do_write (f , f->_IO_write_base , f->_IO_write_ptr - f->_IO_write_base) というこの関数に流れ込めるようにする
   
-- 完整 exp
+- 完全な exp
 
 ```python
 from pwn import *
@@ -2009,19 +2009,19 @@ if __name__=='__main__':
     exp()
 ```
 
-##### Challenge 2 小结
+##### Challenge 2 まとめ
 
-这个程序的利用过程是一个有用的技巧，这种通过文件结构体的方式来实现内存的读写的相关资料可以参考台湾 Angelboy 的博客。在 hctf2018 steak 中，也存在一个信息泄露的问题，大多数人采用了 copy puts_addr 到 `__free_hook` 指针里实现信息泄露，但实际上也可以通过修改文件结构体的字段来实现信息泄露。
+このプログラムの悪用の過程は役に立つテクニックです。ファイル構造体を使ってメモリの読み書きを実現するこの方法に関する資料は、台湾の Angelboy のブログを参照してください。hctf2018 steak にも情報漏えいの問題があり、多くの人は puts_addr を `__free_hook` ポインタにコピーして情報を漏えいさせましたが、実際にはファイル構造体のフィールドを書き換えることでも情報を漏えいさせられます。
 
 #### Challenge 3 : 2014 HITCON stkof
 
-##### 基本信息
+##### 基本情報
 
-参见[unlink HITCON stkof 简介](./unlink.md#2014 HITCON stkof)
+[unlink HITCON stkof の紹介](./unlink.md#2014 HITCON stkof) を参照してください。
 
-##### libc 2.26 tcache 利用方法
+##### libc 2.26 の tcache の悪用方法
 
-本题可以溢出较长字节，因此可以覆盖 chunk 的 fd 指针，在 libc 2.26 之后的 tcache 机制中，未对 fd 指针指向的 chunk 进行 size 检查，从而可以将 fd 指针覆盖任意地址。在 free 该被溢出 chunk 并且两次 malloc 后可以实现任意地址修改：
+この問題では比較的長いバイト数をオーバーフローさせられるので、チャンクの fd ポインタを上書きできます。libc 2.26 以降の tcache 機構では、fd ポインタが指すチャンクに対する size のチェックがないため、fd ポインタを任意のアドレスに上書きできます。このオーバーフローさせたチャンクを free し、2回 malloc すると、任意のアドレスの書き換えが実現できます。
 
 
 ```python
@@ -2155,9 +2155,9 @@ if __name__ == "__main__":
 
 #### Challenge 4 : HITCON 2019 one_punch_man
 
-##### 基本信息
+##### 基本情報
 
-开启了常见保护，题目环境为 glibc 2.29 ，使用 seccomp 开启了沙箱保护，只有白名单上的系统调用可以使用。
+一般的な保護が有効で、問題の環境は glibc 2.29 です。seccomp でサンドボックス保護が有効になっており、ホワイトリストにあるシステムコールしか使えません。
 
 ```bash
 ╭─wz@wz-virtual-machine ~/Desktop/CTF/xz_files/hitcon2019_one_punch_man ‹master› 
@@ -2200,11 +2200,11 @@ if __name__ == "__main__":
 
 ```
 
-##### 基本功能
+##### 基本機能
 
-Add 函数可以分配 `[0x80,0x400]` 大小的堆块，分配的函数为 `calloc` ，输入数据首先存储到栈上，之后再使用 `strncpy` 拷贝到 `bss` 上的数组里。
+Add 関数は `[0x80,0x400]` の大きさのヒープブロックを確保できます。確保に使う関数は `calloc` で、入力データはまずスタック上に保存され、その後 `strncpy` で `bss` 上の配列にコピーされます。
 
-Delete 函数 `free` 堆块之后未清空，造成 `double free` 和 `UAF`
+Delete 関数は、ヒープブロックを `free` した後にクリアしないため、`double free` と `UAF` が発生します。
 
 ```c
 void __fastcall Delete(__int64 a1, __int64 a2)
@@ -2218,7 +2218,7 @@ void __fastcall Delete(__int64 a1, __int64 a2)
   free(*((void **)&unk_4040 + 2 * v2));
 }
 ```
-后门函数可以调用 `malloc` 分配 `0x217` 大小的堆块，但是要要满足 `*(_BYTE *)(qword_4030 + 0x20) > 6` ，我们在 `main` 函数里可以看到这里被初始化为 `heap_base+0x10` ，对于 glibc 2.29，这个位置对应存储的是 `tcache_perthread_struct` 的 `0x220` 大小的 `tcache_bin` 的数量，正常来说，如果我们想调用后门的功能，要让这个 `count` 为 7 ，然而这也就意味着 `0x217` 再分配和释放都同 `glibc 2.23` 一样，我们无法通过 `UAF` 改 chunk 的 `fd` 来达到任意地址写的目的，因此我们要通过别的方式修改这个值。
+バックドア関数は `malloc` で `0x217` 大のヒープブロックを確保できますが、`*(_BYTE *)(qword_4030 + 0x20) > 6` を満たす必要があります。`main` 関数を見ると、ここは `heap_base+0x10` に初期化されています。glibc 2.29 では、この位置に格納されているのは `tcache_perthread_struct` の `0x220` サイズの `tcache_bin` の数です。通常、バックドアの機能を呼び出したければ、この `count` を 7 にする必要がありますが、それは `0x217` の再確保と解放が `glibc 2.23` と同じ挙動になることを意味し、`UAF` で chunk の `fd` を書き換えて任意アドレス書き込みを行うことができません。そのため、別の方法でこの値を書き換える必要があります。
 ```c
 __int64 __fastcall Magic(__int64 a1, __int64 a2)
 {
@@ -2236,19 +2236,19 @@ __int64 __fastcall Magic(__int64 a1, __int64 a2)
   return puts(buf);
 }
 ```
-Edit 和 Show 函数分别可以对堆块内容进行编辑和输出。
+Edit 関数と Show 関数は、それぞれヒープブロックの内容の編集と出力ができます。
 
-##### 利用思路
+##### 悪用の考え方
 
-由于 glibc 2.29 中新增了对于 `unsorted bin` 链表完整性检查，这使得 `unsorted bin attack` 完全失效，我们的目标是往一个地址中写入 `large value` ，这种情况下就可以选择 `tcache stashing unlink attack`。
+glibc 2.29 では `unsorted bin` のリストに対する整合性チェックが新たに加わり、`unsorted bin attack` は完全に使えなくなりました。目標はあるアドレスに `large value` を書き込むことなので、この場合は `tcache stashing unlink attack` を選べます。
 
-首先我们可以通过UAF来泄露 `heap` 和 `libc` 地址。具体方式是分配并释放多个chunk使其进入 `tcache` ，通过 `Show` 函数可以输出 `tcache bin` 的 `fd` 值来泄露堆地址。释放某个 `small bin size` 范围内的chunk七个，在第八次释放时会先把释放的堆块放入 `unsorted bin` 。通过 `Show` 函数可以泄露出 libc 地址。
+まず UAF で `heap` と `libc` のアドレスを漏えいさせられます。具体的には、複数のチャンクを確保して解放し、`tcache` に入れます。`Show` 関数で `tcache bin` の `fd` の値を出力すれば、ヒープのアドレスを漏えいさせられます。`small bin size` の範囲内のチャンクを7個解放すると、8回目の解放では、解放したヒープブロックがまず `unsorted bin` に入れられます。`Show` 関数で libc のアドレスを漏えいさせられます。
 
-我们首先通过 `UAF` 将 `__malloc_hook` 链入 `tcache` 备用。然后分配并释放六次 `0x100` 大小的chunk进入 `tcache` 。通过 `unsorted bin` 切割得到 `last remainer` 的方式得到两个大小为 `0x100` 的chunk。再分配一个超过 0x100 的块使其进入 `small bin` 。按照释放顺序我们称之为 bin1 和 bin2 。修改 `bin2->bk` 为 `(heap_base+0x2f)-0x10` ，调用 `calloc(0xf0)` 触发 `small bin` 放入 `tcache` 的处理逻辑，由于 `tcache` 中有 6 个块，因此循环处理只会进行一次，这样也避免了 fake_chunk 因 bk 处无可写地址作为下一个块进行 unlink 时 `bck->fd=bin` 带来的内存访问错误。最终改掉 `heap_base+0x30` 的值绕过检查。
+まず `UAF` で `__malloc_hook` を `tcache` にリンクして備えます。その後、`0x100` サイズのチャンクを6回確保して解放し、`tcache` に入れます。`unsorted bin` を切り出して `last remainer` を得る方法で、サイズ `0x100` のチャンクを2つ得ます。さらに 0x100 を超えるブロックを確保して `small bin` に入れます。解放の順序に従い、それぞれ bin1 と bin2 と呼びます。`bin2->bk` を `(heap_base+0x2f)-0x10` に書き換え、`calloc(0xf0)` を呼び出して `small bin` を `tcache` に入れる処理のロジックを発動させます。`tcache` に6個のブロックがあるため、ループ処理は1回しか行われません。これにより、fake_chunk が bk の位置に書き込み可能なアドレスを持たず、次のブロックとして unlink される際に `bck->fd=bin` でメモリアクセスエラーが起きるのも避けられます。最終的に `heap_base+0x30` の値を書き換えて、チェックを回避します。
 
-##### 利用步骤
+##### 悪用の手順
 
-下面在调用 calloc 前下断点，可以看到此时 `tcache[0x100]` 有 6 个堆块，small bin 的分配顺序为 `0x000055555555c460->0x55555555cc80->0x000055555555901f` ，在 `calloc(0xf0)` 调用后， `0x000055555555c460` 会被返回给用户， `0x55555555cc80` 被链入tcache，而由于没有多余位置，跳出循环， `0x000055555555901f` 不做处理。
+次に calloc の呼び出し前にブレークポイントを置くと、このとき `tcache[0x100]` に6個のヒープブロックがあり、small bin の確保の順序は `0x000055555555c460->0x55555555cc80->0x000055555555901f` であることが分かります。`calloc(0xf0)` の呼び出し後、`0x000055555555c460` はユーザーに返され、`0x55555555cc80` は tcache にリンクされます。余分な位置がないためループを抜け、`0x000055555555901f` は処理されません。
 
 ```bash
 gdb-peda$ heapinfo
@@ -2281,7 +2281,7 @@ gdb-peda$ x/4gx 0x00007ffff7fb4d90
 0x7ffff7fb4d90 <main_arena+336>:        0x00007ffff7fb4d80      0x00007ffff7fb4d80                                                  
 0x7ffff7fb4da0 <main_arena+352>:        0x000055555555cc80      0x000055555555c460
 ```
-calloc 分配完成之后的结果和我们预期一致， `0x000055555555901f` 作为 `fake_chunk` 其 `fd` 也被改写为了 `libc` 地址
+calloc による確保が完了した後の結果は予想どおりで、`fake_chunk` としての `0x000055555555901f` の `fd` も `libc` のアドレスに書き換えられました。
 ```bash
 gdb-peda$ heapinfo
 (0x20)     fastbin[0]: 0x0
@@ -2312,9 +2312,9 @@ gdb-peda$ x/4gx 0x000055555555901f+0x10
 0x55555555902f: 0x00007ffff7fb4d90      0x0000000000000000
 0x55555555903f: 0x0000000000000000      0x0000000000000000
 ```
-由于沙箱保护，我们无法执行 `execve` 函数调用，只能通过 `open/read/write` 来读取 flag 。我们选择通过调用后门函数修改 `__malloc_hook` 为 `gadget(mov eax, esi ; add rsp, 0x48 ; ret)` ，以便 add 的时候将 `rsp` 改到可控的输入区域调用 `rop chains` 来 `orw` 读取 `flag` 。
+サンドボックス保護のため、`execve` の関数呼び出しは実行できず、`open/read/write` で flag を読み取るしかありません。バックドア関数を呼び出して `__malloc_hook` を `gadget(mov eax, esi ; add rsp, 0x48 ; ret)` に書き換えることにします。これにより、add のときに `rsp` を制御可能な入力領域に移し、`rop chains` を呼び出して `orw` で `flag` を読み取ります。
 
-完整 exp 如下：
+完全な exp は次のとおりです。
 
 ```python
 #coding=utf-8
@@ -2451,7 +2451,7 @@ def exp():
 exp()
 ```
 
-### 0x06 建议习题：
+### 0x06 推奨演習問題:
 
 * 2018 HITCON children_tcache
 * 2018 BCTF houseOfAtum

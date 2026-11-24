@@ -1,47 +1,47 @@
 # Kernel Stack Canary
 
-Canary 是一种典型的检测机制。在 Linux 内核中，Canary 的实现是与架构相关的，所以这里我们分别从不同的架构来介绍。
+Canary は典型的な検知機構です。Linux カーネルにおける Canary の実装はアーキテクチャに依存するため、ここではアーキテクチャごとに紹介します。
 
 ## x86
 
-### 介绍
+### 概要
 
-在 x86 架构中，同一个 task 中使用相同的 Canary。
+x86 アーキテクチャでは、同一の task 内では同じ Canary が使われます。
 
-### 发展历史
-
-TODO。
-
-### 实现
+### 発展の歴史
 
 TODO。
 
-### 使用
+### 実装
 
-#### 开启
+TODO。
 
-在编译内核时，我们可以设置 CONFIG_CC_STACKPROTECTOR 选项，来开启该保护。
+### 使い方
 
-#### 关闭
+#### 有効化
 
-我们需要重新编译内核，并关闭编译选项才可以关闭  Canary 保护。
+カーネルのコンパイル時に CONFIG_CC_STACKPROTECTOR オプションを設定すると、この保護を有効にできます。
 
-### 状态检查
+#### 無効化
 
-我们可以使用如下方式来检查是否开启了 Canary 保护
+Canary 保護を無効にするには、コンパイルオプションを無効にしてカーネルを再コンパイルする必要があります。
+
+### 状態の確認
+
+次の方法で、Canary 保護が有効かどうかを確認できます。
 
 1. `checksec` 
-2. 人工分析二进制文件，看函数中是否有保存和检查 Canary 的代码
+2. バイナリを手作業で解析し、関数内に Canary を保存・チェックするコードがあるかを見る
 
-### 特点
+### 特徴
 
-可以发现，x86 架构下 Canary 实现的特点是同一个 task 共享 Canary。
+x86 アーキテクチャにおける Canary 実装の特徴は、同一の task が Canary を共有することです。
 
-### 攻击
+### 攻撃
 
-根据 x86 架构下 Canary 实现的特点，我们只要泄漏了一次系统调用中的 Canary，同一 task 的其它系统调用中的 Canary 也就都被泄漏了。
+x86 アーキテクチャにおける Canary 実装のこの特徴から、あるシステムコール中の Canary を一度リークさせれば、同じ task の他のシステムコール中の Canary もすべてリークしたことになります。
 
-## 参考
+## 参考文献
 
 - https://www.workofard.com/2018/01/per-task-stack-canaries-for-arm64/
 - [PESC: A Per System-Call Stack Canary Design for Linux Kernel](https://yajin.org/papers/pesc.pdf)

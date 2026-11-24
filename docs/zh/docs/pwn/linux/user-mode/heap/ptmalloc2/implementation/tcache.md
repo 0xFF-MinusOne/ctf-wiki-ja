@@ -1,14 +1,14 @@
 # tcache
 
-tcache 是 glibc 2.26 (ubuntu 17.10) 之后引入的一种技术（see [commit](https://sourceware.org/git/?p=glibc.git;a=commitdiff;h=d5c3fafc4307c9b7a4c7d5cb381fcdbfad340bcc)），目的是提升堆管理的性能。但提升性能的同时舍弃了很多安全检查，也因此有了很多新的利用方式。
+tcache は glibc 2.26(ubuntu 17.10)以降で導入された技術です(see [commit](https://sourceware.org/git/?p=glibc.git;a=commitdiff;h=d5c3fafc4307c9b7a4c7d5cb381fcdbfad340bcc))。ヒープ管理の性能を高めることを目的としています。しかし、性能向上と引き換えに多くのセキュリティチェックが省かれたため、新たな悪用方法がたくさん生まれました。
 
-> 主要参考了 glibc 源码，angelboy 的 slide 以及 tukan.farm，链接都放在最后了。
+> 主に glibc のソースコード、angelboy のスライド、tukan.farm を参考にしました。リンクは最後にまとめてあります。
 
-## 相关结构体
+## 関連する構造体
 
-tcache 引入了两个新的结构体，`tcache_entry` 和 `tcache_perthread_struct`。
+tcache では、`tcache_entry` と `tcache_perthread_struct` という2つの新しい構造体が導入されました。
 
-这其实和 fastbin 很像，但又不一样。
+これは実は fastbin とよく似ていますが、同じではありません。
 
 ### tcache_entry
 
@@ -23,11 +23,11 @@ typedef struct tcache_entry
 } tcache_entry;
 ```
 
-`tcache_entry` 用于链接空闲的 chunk 结构体，其中的 `next` 指针指向下一个大小相同的 chunk。
+`tcache_entry` は空きチャンクの構造体をつなぐためのもので、中の `next` ポインタは同じサイズの次のチャンクを指します。
 
-需要注意的是这里的 next 指向 chunk 的 user data，而 fastbin 的 fd 指向 chunk 开头的地址。
+ここで注意すべきなのは、next がチャンクの user data を指すのに対し、fastbin の fd はチャンクの先頭のアドレスを指す点です。
 
-而且，tcache_entry 会复用空闲 chunk 的 user data 部分。
+また、tcache_entry は空きチャンクの user data 部分を再利用します。
 
 ### tcache_perthread_struct
 
@@ -49,35 +49,36 @@ typedef struct tcache_perthread_struct
 static __thread tcache_perthread_struct *tcache = NULL;
 ```
 
-每个 thread 都会维护一个 `tcache_perthread_struct`，它是整个 tcache 的管理结构，一共有 `TCACHE_MAX_BINS` 个计数器和 `TCACHE_MAX_BINS`项 tcache_entry，其中
+各スレッドは `tcache_perthread_struct` を1つずつ保持します。これは tcache 全体の管理構造で、`TCACHE_MAX_BINS` 個のカウンタと `TCACHE_MAX_BINS` 個の tcache_entry を持ちます。それぞれの役割は次のとおりです。
 
-- `tcache_entry` 用单向链表的方式链接了相同大小的处于空闲状态（free 后）的 chunk，这一点上和 fastbin 很像。
-- `counts` 记录了 `tcache_entry` 链上空闲 chunk 的数目，每条链上最多可以有 7 个 chunk。
+- `tcache_entry` は、同じサイズの空き状態(free 後)のチャンクを単方向リストでつなぎます。この点は fastbin とよく似ています。
+- `counts` は `tcache_entry` のリスト上にある空きチャンクの数を記録します。各リストには最大 7 個のチャンクを置けます。
 
-用图表示大概是：
+図で表すとおおよそ次のようになります。
 
 ![](https://i0.wp.com/tvax1.sinaimg.cn/large/006AWYXBly1fw87zlnrhtj30nh0ciglz.jpg)
 
 
-## 基本工作方式
-- 第一次 malloc 时，会先 malloc 一块内存用来存放 `tcache_perthread_struct` 。
-- free 内存，且 size 小于 small bin size 时
-  - tcache 之前会放到 fastbin 或者 unsorted bin 中
-  - tcache 后：
-    - 先放到对应的 tcache 中，直到 tcache 被填满（默认是 7 个）
-    - tcache 被填满之后，再次 free 的内存和之前一样被放到 fastbin 或者 unsorted bin 中
-    - tcache 中的 chunk 不会合并（不取消 inuse bit）
-- malloc 内存，且 size 在 tcache 范围内
-  - 先从 tcache 取 chunk，直到 tcache 为空
-  - tcache 为空后，从 bin 中找
-  - tcache 为空时，如果 `fastbin/smallbin/unsorted bin` 中有 size 符合的 chunk，会先把 `fastbin/smallbin/unsorted bin` 中的 chunk 放到 tcache 中，直到填满。之后再从 tcache 中取；因此 chunk 在 bin 中和 tcache 中的顺序会反过来
+## 基本的な動作
 
-## 源码分析
+- 最初の malloc では、まず `tcache_perthread_struct` を格納するためのメモリを malloc します。
+- メモリを free し、size が small bin のサイズ未満のとき
+  - tcache 導入前は fastbin または unsorted bin に入れられていました
+  - tcache 導入後:
+    - まず対応する tcache に入れ、tcache がいっぱいになる(デフォルトは 7 個)まで続けます
+    - tcache がいっぱいになった後に free したメモリは、従来どおり fastbin または unsorted bin に入れられます
+    - tcache 内のチャンクは統合(consolidation)されません(inuse bit を落としません)
+- メモリを malloc し、size が tcache の範囲内のとき
+  - まず tcache からチャンクを取り出し、tcache が空になるまで続けます
+  - tcache が空になったら bin から探します
+  - tcache が空のとき、`fastbin/smallbin/unsorted bin` に size が合致するチャンクがあれば、まず `fastbin/smallbin/unsorted bin` のチャンクを tcache がいっぱいになるまで tcache に移します。その後、tcache から取り出します。そのため、チャンクの順序は bin 内と tcache 内で逆になります
 
-接下来从源码的角度分析一下 tcache。
+## ソースコード解析
+
+ここからは、ソースコードの観点から tcache を解析します。
 
 ### __libc_malloc
-第一次 malloc 时，会进入到 `MAYBE_INIT_TCACHE ()`
+最初の malloc では `MAYBE_INIT_TCACHE ()` に入ります。
 
 [source code](https://code.woboq.org/userspace/glibc/malloc/malloc.c.html#3010)
 ```C
@@ -89,17 +90,17 @@ __libc_malloc (size_t bytes)
 #if USE_TCACHE
   /* int_free also calls request2size, be careful to not pad twice.  */
   size_t tbytes;
-  // 根据 malloc 传入的参数计算 chunk 实际大小，并计算 tcache 对应的下标
+  // malloc に渡された引数からチャンクの実際のサイズを計算し、tcache に対応するインデックスを計算する
   checked_request2size (bytes, tbytes);
   size_t tc_idx = csize2tidx (tbytes);
 
-  // 初始化 tcache
+  // tcache を初期化する
   MAYBE_INIT_TCACHE ();
   DIAG_PUSH_NEEDS_COMMENT;
-  if (tc_idx < mp_.tcache_bins  // 根据 size 得到的 idx 在合法的范围内
+  if (tc_idx < mp_.tcache_bins  // size から得た idx が正当な範囲内にある
       /*&& tc_idx < TCACHE_MAX_BINS*/ /* to appease gcc */
       && tcache
-      && tcache->entries[tc_idx] != NULL) // tcache->entries[tc_idx] 有 chunk
+      && tcache->entries[tc_idx] != NULL) // tcache->entries[tc_idx] にチャンクがある
     {
       return tcache_get (tc_idx);
     }
@@ -111,7 +112,7 @@ __libc_malloc (size_t bytes)
 ```
 
 ### __tcache_init()
-其中 `MAYBE_INIT_TCACHE ()` 在 tcache 为空（即第一次 malloc）时调用了 `tcache_init()`，直接查看 `tcache_init()`
+このうち `MAYBE_INIT_TCACHE ()` は、tcache が空(つまり最初の malloc)のときに `tcache_init()` を呼び出します。そこで `tcache_init()` を直接見てみましょう。
 
 [source code](https://code.woboq.org/userspace/glibc/malloc/malloc.c.html#tcache_init)
 
@@ -123,8 +124,8 @@ tcache_init(void)
   const size_t bytes = sizeof (tcache_perthread_struct);
   if (tcache_shutting_down)
     return;
-  arena_get (ar_ptr, bytes); // 找到可用的 arena
-  victim = _int_malloc (ar_ptr, bytes); // 申请一个 sizeof(tcache_perthread_struct) 大小的 chunk
+  arena_get (ar_ptr, bytes); // 利用可能な arena を探す
+  victim = _int_malloc (ar_ptr, bytes); // sizeof(tcache_perthread_struct) のサイズのチャンクを確保する
   if (!victim && ar_ptr != NULL)
     {
       ar_ptr = arena_get_retry (ar_ptr, bytes);
@@ -137,7 +138,7 @@ tcache_init(void)
      typically do this very early, so either there is sufficient
      memory, or there isn't enough memory to do non-trivial
      allocations anyway.  */
-  if (victim) // 初始化 tcache
+  if (victim) // tcache を初期化する
     {
       tcache = (tcache_perthread_struct *) victim;
       memset (tcache, 0, sizeof (tcache_perthread_struct));
@@ -145,22 +146,22 @@ tcache_init(void)
 }
 ```
 
-`tcache_init()` 成功返回后，`tcache_perthread_struct` 就被成功建立了。
+`tcache_init()` が正常に戻ると、`tcache_perthread_struct` の作成は成功しています。
 
-### 申请内存
-接下来将进入申请内存的步骤
+### メモリの確保
+次に、メモリを確保するステップに進みます。
 ```C
-  // 从 tcache list 中获取内存
-  if (tc_idx < mp_.tcache_bins // 由 size 计算的 idx 在合法范围内
+  // tcache list からメモリを取得する
+  if (tc_idx < mp_.tcache_bins // size から計算した idx が正当な範囲内にある
       /*&& tc_idx < TCACHE_MAX_BINS*/ /* to appease gcc */
       && tcache
-      && tcache->entries[tc_idx] != NULL) // 该条 tcache 链不为空
+      && tcache->entries[tc_idx] != NULL) // その tcache のリストが空でない
     {
       return tcache_get (tc_idx);
     }
   DIAG_POP_NEEDS_COMMENT;
 #endif
-  // 进入与无 tcache 时类似的流程
+  // tcache がない場合と似た流れに入る
   if (SINGLE_THREAD_P)
     {
       victim = _int_malloc (&main_arena, bytes);
@@ -170,10 +171,10 @@ tcache_init(void)
     }
 
 ```
-在 `tcache->entries` 不为空时，将进入 `tcache_get()` 的流程获取 chunk，否则与 tcache 机制前的流程类似，这里主要分析第一种 `tcache_get()`。这里也可以看出 tcache 的优先级很高，比 fastbin 还要高（ fastbin 的申请在没进入 tcache 的流程中）。
+`tcache->entries` が空でないときは `tcache_get()` の流れに入ってチャンクを取得し、そうでなければ tcache 機構導入前と似た流れになります。ここでは主に前者の `tcache_get()` を解析します。ここから、tcache の優先度が非常に高く、fastbin よりも高いことも分かります(fastbin からの確保は、tcache の流れに入らなかった場合に行われます)。
 
 ### tcache_get()
-看一下 `tcache_get()`
+`tcache_get()` を見てみましょう。
 
 [source code](https://code.woboq.org/userspace/glibc/malloc/malloc.c.html#tcache_get)
 ```C
@@ -186,14 +187,14 @@ tcache_get (size_t tc_idx)
   assert (tc_idx < TCACHE_MAX_BINS);
   assert (tcache->entries[tc_idx] > 0);
   tcache->entries[tc_idx] = e->next;
-  --(tcache->counts[tc_idx]); // 获得一个 chunk，counts 减一
+  --(tcache->counts[tc_idx]); // チャンクを1つ取得したので counts を1減らす
   return (void *) e;
 }
 ```
-`tcache_get()` 就是获得 chunk 的过程了。可以看出这个过程还是很简单的，从 `tcache->entries[tc_idx]` 中获得第一个 chunk，`tcache->counts` 减一，几乎没有任何保护。
+`tcache_get()` がチャンクを取得する処理です。この処理は非常に単純で、`tcache->entries[tc_idx]` の先頭のチャンクを取得して `tcache->counts` を1減らすだけであり、保護はほとんどありません。
 
 ### __libc_free()
-看完申请，再看看有 tcache 时的释放
+確保を見終えたので、次は tcache がある場合の解放を見てみましょう。
 
 [source code](https://code.woboq.org/userspace/glibc/malloc/malloc.c.html#3068)
 ```C
@@ -207,10 +208,10 @@ __libc_free (void *mem)
   _int_free (ar_ptr, p, 0);
 }
 ```
-`__libc_free()` 没有太多变化，`MAYBE_INIT_TCACHE ()` 在 tcache 不为空失去了作用。
+`__libc_free()` に大きな変化はありません。tcache が空でない場合、`MAYBE_INIT_TCACHE ()` は意味を失います。
 
 ### _int_free()
-跟进 `_int_free()`
+`_int_free()` に進みます。
 
 [source code](https://code.woboq.org/userspace/glibc/malloc/malloc.c.html#4123)
 ```C
@@ -234,7 +235,7 @@ _int_free (mstate av, mchunkptr p, int have_lock)
   ......
   ......
 ```
-判断 `tc_idx` 合法，`tcache->counts[tc_idx]` 在 7 个以内时，就进入 `tcache_put()`，传递的两个参数是要释放的 chunk 和该 chunk 对应的 size 在 tcache 中的下标。
+`tc_idx` が正当で、`tcache->counts[tc_idx]` が 7 個以内のとき、`tcache_put()` に入ります。渡される2つの引数は、解放するチャンクと、そのチャンクの size に対応する tcache 内のインデックスです。
 
 
 ### tcache_put()
@@ -254,7 +255,7 @@ tcache_put (mchunkptr chunk, size_t tc_idx)
   ++(tcache->counts[tc_idx]);
 }
 ```
-`tcache_puts()` 完成了把释放的 chunk 插入到 `tcache->entries[tc_idx]` 链表头部的操作，也几乎没有任何保护。并且 **没有把 p 位置零**。
+`tcache_puts()` は、解放されたチャンクを `tcache->entries[tc_idx]` のリストの先頭に挿入する処理を行います。こちらもほとんど保護がありません。しかも、**p のビットをクリアしません**。
 
 
 

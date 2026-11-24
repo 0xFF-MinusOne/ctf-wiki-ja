@@ -13,9 +13,9 @@ NTSTATUS WINAPI NtQueryInformationProcess(
 
 ## ProcessDebugPort
 
-未公开的`ntdll`的`NtQueryInformationProcess()`函数接受一个信息类的参数用于查询. `ProcessDebugPort(7)`是其中的一个信息类. `kernel32`的`CheckRemoteDebuggerPresent()`函数内部通过调用`NtQueryInformationProcess()`来检测调试, 而`NtQueryInformationProcess`内部则是查询`EPROCESS`结构体的`DebugPort`字段, 当进程正在被调试时, 返回值为`0xffffffff`. 
+`ntdll` の未公開の `NtQueryInformationProcess()` 関数は、問い合わせのために情報クラスの引数を受け取ります。`ProcessDebugPort(7)` はその情報クラスの1つです。`kernel32` の `CheckRemoteDebuggerPresent()` 関数は、内部で `NtQueryInformationProcess()` を呼び出してデバッグを検出しており、`NtQueryInformationProcess` は内部で `EPROCESS` 構造体の `DebugPort` フィールドを調べます。プロセスがデバッグされているとき、戻り値は `0xffffffff` になります。
 
-可以用以下32位代码在32位环境进行检测:
+32ビット環境では、次の32ビットコードで検出できます。
 
 ``` asm
 push eax
@@ -31,7 +31,7 @@ inc eax
 je being_debugged
 ```
 
-用以下64位代码在64位环境进行检测:
+64ビット環境では、次の64ビットコードで検出します。
 
 ``` asm
 xor ebp, ebp
@@ -49,13 +49,13 @@ test ebp, ebp
 jne being_debugged
 ```
 
-由于信息传自内核, 所以在用户模式下的代码没有轻松的方法阻止该函数检测调试器. 
+情報はカーネルから渡されるため、ユーザーモードのコードには、この関数によるデバッガの検出を簡単に防ぐ方法がありません。
 
 ## ProcessDebugObjectHandle
 
-Windows XP引入了`debug对象`, 当一个调试会话启动, 会同时创建一个`debug`对象以及与之关联的句柄. 我们可以使用`ProcessDebugObjectHandle (0x1e)`类来查询这个句柄的值
+Windows XP では `デバッグオブジェクト` が導入され、デバッグセッションが開始されると、`debug` オブジェクトとそれに関連付けられたハンドルが同時に作成されます。`ProcessDebugObjectHandle (0x1e)` クラスを使って、このハンドルの値を問い合わせられます。
 
-可以用以下32位代码在32位环境进行检测:
+32ビット環境では、次の32ビットコードで検出できます。
 
 ``` asm
 push 0
@@ -71,7 +71,7 @@ test eax, eax
 jne being_debugged
 ```
 
-用以下64位代码在64位环境进行检测:
+64ビット環境では、次の64ビットコードで検出します。
 
 ``` asm
 xor ebp, ebp
@@ -91,9 +91,9 @@ jne being_debugged
 
 ## ProcessDebugFlags
 
-`ProcessDebugFlags (0x1f)`类返回`EPROCESS`结构体的`NoDebugInherit`的相反数. 意思是, 当调试器存在时, 返回值为`0`, 不存在时则返回`1`. 
+`ProcessDebugFlags (0x1f)` クラスは、`EPROCESS` 構造体の `NoDebugInherit` の反転した値を返します。つまり、デバッガが存在するときの戻り値は `0`、存在しないときは `1` です。
 
-可以用以下32位代码在32位环境进行检测:
+32ビット環境では、次の32ビットコードで検出できます。
 
 ``` asm
 push eax
@@ -109,7 +109,7 @@ test eax, eax
 je being_debugged
 ```
 
-用以下64位代码在64位环境进行检测:
+64ビット環境では、次の64ビットコードで検出します。
 
 ``` asm
 xor ebp, ebp

@@ -1,4 +1,4 @@
-# malloc_state 相关函数
+# malloc_state 関連の関数
 
 ## malloc_init_state
 
@@ -27,9 +27,9 @@ static void malloc_init_state(mstate av) {
 #endif
         set_noncontiguous(av);
     if (av == &main_arena) set_max_fast(DEFAULT_MXFAST);
-    // 设置 flags 标记目前没有fast chunk
+    // flags を設定し、現在 fast chunk がないことを示す
     av->flags |= FASTCHUNKS_BIT;
-    // 就是 unsorted bin
+    // つまり unsorted bin
     av->top = initial_top(av);
 }
 ```
@@ -38,14 +38,14 @@ static void malloc_init_state(mstate av) {
 
 ## malloc_consolidate
 
-该函数主要有两个功能
+この関数には主に 2 つの機能があります。
 
-1. 若 fastbin 未初始化，即 global_max_fast 为0，那就初始化 malloc_state。
-2. 如果已经初始化的话，就合并 fastbin 中的 chunk。
+1. fastbin が初期化されていない、つまり global_max_fast が 0 であれば、malloc_state を初期化する。
+2. すでに初期化されていれば、fastbin の chunk を統合する。
 
-基本的流程如下
+基本的な流れは次のとおりです。
 
-### 初始
+### 初期
 
 ```c
 static void malloc_consolidate(mstate av) {
@@ -66,17 +66,17 @@ static void malloc_consolidate(mstate av) {
     mchunkptr       fwd;
 ```
 
-### 合并 chunk
+### chunk の統合
 
 ```c
     /*
       If max_fast is 0, we know that av hasn't
       yet been initialized, in which case do so below
     */
-	// 说明 fastbin 已经初始化
+	// fastbin がすでに初期化されていることを意味する
     if (get_max_fast() != 0) {
-        // 清空 fastbin 标记
-        // 因为要合并 fastbin 中的 chunk 了。
+        // fastbin のフラグをクリアする
+        // これから fastbin の chunk を統合するため。
         clear_fastchunks(av);
         //
         unsorted_bin = unsorted_chunks(av);
@@ -88,7 +88,7 @@ static void malloc_consolidate(mstate av) {
           until malloc is sure that chunks aren't immediately going to be
           reused anyway.
         */
-        // 按照 fd 顺序遍历 fastbin 的每一个 bin，将 bin 中的每一个 chunk 合并掉。
+        // fd の順に fastbin の各 bin を走査し、bin 中の各 chunk を統合する。
         maxfb = &fastbin(av, NFASTBINS - 1);
         fb    = &fastbin(av, 0);
         do {
@@ -112,14 +112,14 @@ static void malloc_consolidate(mstate av) {
                     }
 
                     if (nextchunk != av->top) {
-                        // 判断 nextchunk 是否是空闲的。
+                        // nextchunk が空きかどうかを判断する。
                         nextinuse = inuse_bit_at_offset(nextchunk, nextsize);
 
                         if (!nextinuse) {
                             size += nextsize;
                             unlink(av, nextchunk, bck, fwd);
                         } else
-                         // 设置 nextchunk 的 prev inuse 为0，以表明可以合并当前 fast chunk。
+                         // nextchunk の prev inuse を 0 に設定し、現在の fast chunk を統合できることを示す。
                             clear_inuse_bit_at_offset(nextchunk, 0);
 
                         first_unsorted     = unsorted_bin->fd;
@@ -148,14 +148,14 @@ static void malloc_consolidate(mstate av) {
         } while (fb++ != maxfb);
 ```
 
-### 初始化
+### 初期化
 
-说明 fastbin 还没有初始化。
+fastbin がまだ初期化されていないことを意味します。
 
 ```c
     } else {
         malloc_init_state(av);
-        // 在非调试情况下没有什么用，在调试情况下，做一些检测。
+        // デバッグ時以外は何の役にも立たず、デバッグ時にはいくつかの検査を行う。
         check_malloc_state(av);
     }
 ```

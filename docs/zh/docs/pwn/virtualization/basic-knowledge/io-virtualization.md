@@ -1,52 +1,52 @@
-# IO 虚拟化
+# IO 仮想化
 
-现实的外设资源往往是有限的，同时我们有的时候并不需要让 VM 直接接触到现实存在的外设资源，有的时候我们还想为 VM 提供一些不存在实体设备的设备，因此 Hypervisor 需要通过 IO 虚拟化的方式来为 VM 提供**虚拟的设备资源**。
+現実の周辺機器リソースは限られていることが多く、また VM に実在する周辺機器リソースを直接触らせる必要がない場合もあれば、実体のないデバイスを VM に提供したい場合もあります。そのため Hypervisor は、IO 仮想化によって VM に**仮想的なデバイスリソース**を提供する必要があります。
 
-从处理器的角度而言，我们与外设之间的交互主要是通过 MMIO 与 Port IO 来完成的，因而针对外设的虚拟化称之为 **I/O 虚拟化**。
+プロセッサの観点では、周辺機器とのやり取りは主に MMIO と Port IO で行われるため、周辺機器に対する仮想化を **I/O 仮想化**と呼びます。
 
-I/O 虚拟化需要实现以下三个任务：
+I/O 仮想化では、次の 3 つのタスクを実現する必要があります。
 
-- 访问截获：Hypervisor 需要截获 VM 对外设的访问操作。
-- 提供设备接口：Hypervisor 需要为 VM 提供虚拟/直通设备的接口。
-- 实现设备功能：Hypervisor 需要实现虚拟设备的功能。
+- アクセスの捕捉:Hypervisor は、VM による周辺機器へのアクセス操作を捕捉する必要がある。
+- デバイスインターフェースの提供:Hypervisor は、VM に仮想/パススルーデバイスのインターフェースを提供する必要がある。
+- デバイス機能の実現:Hypervisor は、仮想デバイスの機能を実現する必要がある。
 
-## 基本模型
+## 基本モデル
 
-### 平台设备模拟（Platform device emulation）
+### プラットフォームデバイスエミュレーション(Platform device emulation)
 
-**平台设备模拟**即由 Hypervisor 负责模拟虚拟设备的功能，不同的虚拟化软件对于模拟设备的实现方式不同。
+**プラットフォームデバイスエミュレーション**では、Hypervisor が仮想デバイスの機能のエミュレーションを担当します。仮想化ソフトウェアごとに、エミュレートするデバイスの実装方法は異なります。
 
-**基于 hypervisor 的设备模拟**（Hypervisor-based device emulation）是 VMware workstation 系列产品较为常用的一种方式：在 hypervisor 中有着对一般设备的仿真供 guest OS 进行共享，包括虚拟磁盘、虚拟网络适配器与其他的必要元素，这种模型如下图所示：
+**Hypervisor ベースのデバイスエミュレーション**(Hypervisor-based device emulation)は、VMware workstation シリーズの製品でよく使われる方式です。hypervisor 内に一般的なデバイスのエミュレーションがあり、仮想ディスク、仮想ネットワークアダプタなどの必要な要素を含めて、guest OS が共有します。このモデルを下図に示します。
 
 ![](./figure/vmm-base-vdev.png)
 
-第二种架构称为**用户空间设备模拟**（User space device emulation），其虚拟设备的模拟在用户空间进行。QEMU 在用户空间中独立进行设备模拟，虚拟设备被其他的 VM 通过 hypervisor 提供的接口进行调用。由于设备的模拟是独立于 hypervisor 的，因此我们可以模拟任何设备，且该模拟设备可以在其他 hypervisor 间进行共享。
+2 つ目のアーキテクチャは**ユーザー空間デバイスエミュレーション**(User space device emulation)と呼ばれ、仮想デバイスのエミュレーションをユーザー空間で行います。QEMU はユーザー空間で独立してデバイスをエミュレートし、仮想デバイスは、ほかの VM から hypervisor が提供するインターフェースを通じて呼び出されます。デバイスのエミュレーションは hypervisor から独立しているため、任意のデバイスをエミュレートでき、そのエミュレートされたデバイスはほかの hypervisor 間でも共有できます。
 
 ![](./figure/usr-emu-dev.png)
 
-### 设备直通（Device passthrough）
+### デバイスパススルー(Device passthrough)
 
-上面的这两种模型或多或少都存在着一定的性能开销，如果该设备需要被多个 VM 共享，那这种开销或许是值得的，但如果该设备并不需要共享，那么我们其实可以使用一种更为高效的方法——设备直通（Device passthrough）。
+上記の 2 つのモデルには、多かれ少なかれ一定の性能オーバーヘッドがあります。そのデバイスを複数の VM で共有する必要があるなら、このオーバーヘッドは見合うかもしれませんが、共有する必要がないなら、より効率的な方法であるデバイスパススルー(Device passthrough)を使えます。
 
-设备直通可以理解为设备独占的设备模拟：直接将设备**隔离**给到指定的 VM 上，以便该设备可以由该 VM 独占使用。**这提供了接近于原生设备的性能**，例如对于一些需要大量 IO 的设备（例如网络设备等），使用设备直通能提供相当完美的性能。
+デバイスパススルーは、デバイスを占有するデバイスエミュレーションと理解できます。デバイスを指定した VM に直接**隔離**して割り当て、その VM が専有して使えるようにします。**これによりネイティブのデバイスに近い性能が得られます**。たとえば、大量の IO を必要とするデバイス(ネットワークデバイスなど)では、デバイスパススルーによってほぼ完璧な性能が得られます。
 
 ![](./figure/pci-passthrough.png)
 
-## 软件半虚拟化 - virtio
+## ソフトウェア準仮想化 - virtio
 
-`virtio` 这个概念来自于一篇非常古老的虚拟化领域的论文：[virtio: towards a de-facto standard for virtual I/O devices](https://ozlabs.org/~rusty/virtio-spec/virtio-paper.pdf)，主要是为了解决设备虚拟化的问题而**提供了一套通用的虚拟化设备模型**，Guest OS 只需要实现一套统一的 virtio 驱动便能以统一的方式访问虚拟化设备，从而避免了各种虚拟化驱动分裂的问题。
+`virtio` という概念は、仮想化分野のかなり古い論文[virtio: towards a de-facto standard for virtual I/O devices](https://ozlabs.org/~rusty/virtio-spec/virtio-paper.pdf)に由来します。主にデバイス仮想化の問題を解決するために、**汎用的な仮想化デバイスモデルを提供する**ものです。Guest OS は統一された virtio ドライバを 1 組実装するだけで、仮想化デバイスに統一的な方法でアクセスでき、さまざまな仮想化ドライバが乱立する問題を避けられます。
 
 ![](./figure/virtio.png)
 
-### VirtQueue：传输层抽象
+### VirtQueue:転送層の抽象
 
-`virtqueue` 为 virtio 中用以进行数据传输的关键结构，其本身表示一个**数据队列**：由一方向队列中添加 buffer，另一方从队列中取出 buffer——通过这样的方式实现了 Guest 与 Host 之间基本的数据传输模型。
+`virtqueue` は、virtio でデータ転送を行うための重要な構造で、それ自体が**データキュー**を表します。一方がキューに buffer を追加し、もう一方がキューから buffer を取り出します。この方法で、Guest と Host の間の基本的なデータ転送モデルを実現しています。
 
-为了减少模型的复杂性，通常我们使用 virtqueue 的传输都是单向的，因此一个最简单的模型就是我们就可以使用两个 virtqueue 来实现 Guest 与 Host 之间的双向通信：tx queue（发送队列） & rx queue（接收队列）。
+モデルの複雑さを抑えるため、通常 virtqueue を使った転送は単方向です。そのため最も単純なモデルは、2 つの virtqueue を使って Guest と Host の間の双方向通信を実現するものです。tx queue(送信キュー)と rx queue(受信キュー)です。
 
 ![](./figure/virtqueue.png)
 
-对于 virtqueue 的操作，在论文中抽象成一个函数表 `virtqueue_ops`：
+virtqueue に対する操作は、論文では関数テーブル `virtqueue_ops` として抽象化されています。
 
 ```c
 struct virtqueue_ops {
@@ -63,35 +63,35 @@ struct virtqueue_ops {
 };
 ```
 
--  `add_buf`：向 virtqueue 中添加一个 buffer
--  `kick` ：通知另一方新到达了一个 buffer
--  `get_buf` 从 virtqueue 中获取一个 buffer
--  `disable_cb`：通知另一方关闭 buffer 到达的提示
--  `enable_cb`：通知另一方开启 buffer 到达的提示
+-  `add_buf`:virtqueue に buffer を 1 つ追加する
+-  `kick`:新しい buffer が到着したことを相手側に通知する
+-  `get_buf`:virtqueue から buffer を 1 つ取得する
+-  `disable_cb`:buffer 到着の通知を無効にするよう相手側に通知する
+-  `enable_cb`:buffer 到着の通知を有効にするよう相手側に通知する
 
-### VRing：virtqueue 的基本结构
+### VRing:virtqueue の基本構造
 
-virtqueue 核心的数据结构便是 `vring`，这是一个**环形缓冲区队列**，其由三部分组成：
+virtqueue の中核となるデータ構造は `vring` で、これは**リングバッファキュー**です。次の 3 つの部分で構成されます。
 
-- 描述符表（Desc）
-- 可用描述符数组（Avail）
-- 已用描述符数组（Used）
+- ディスクリプタテーブル(Desc)
+- 利用可能ディスクリプタ配列(Avail)
+- 使用済みディスクリプタ配列(Used)
 
 ![](./figure/vring.png)
 
-一个描述符（Descriptor）为如下结构，表示了一块 buffer 的基本属性，需要注意的是一个 Avail/Used 表项通常是多个 descriptor 串联的 buffer——这便是 next 域的作用：
+ディスクリプタ(Descriptor)は次のような構造で、1 つの buffer の基本的な属性を表します。注意点として、Avail/Used の 1 つのエントリは、通常は複数の descriptor が連結された buffer です。これが next フィールドの役割です。
 
 ```c
 struct vring_desc
 {
     __u64 addr;		// Guest Physical Addresses
-    __u32 len;		// 长度
+    __u32 len;		// 長さ
     __u16 flags;	// 属性
-    __u16 next;		// 下一个描述符的 idx
+    __u16 next;		// 次のディスクリプタの idx
 };
 ```
 
-**Avail** 数组用来存储当前可用的描述符：
+**Avail** 配列は、現在利用可能なディスクリプタを格納します。
 
 ```c
 struct vring_avail
@@ -102,7 +102,7 @@ struct vring_avail
 };
 ```
 
-**Used** 数组则用来存储已经被使用的描述符：
+**Used** 配列は、すでに使用されたディスクリプタを格納します。
 
 ```c
 struct vring_used_elem
@@ -119,26 +119,26 @@ struct vring_used
 };
 ```
 
-Avail 数组与 Used 数组同样是一个**环形队列**，不过这两个数组分别由通信的两方进行使用：
+Avail 配列と Used 配列も**リングキュー**ですが、この 2 つの配列は通信する双方がそれぞれ使います。
 
-- 数据**发送方**准备好数据后从 `Avail 队列` 中获取可用的表项，更新描述符表，并在 `Used 队列` 中插入新的表项，通知接收方有数据到达。
-- 数据**接收方**从 `Used 队列` 中取出表项，读取描述符表以获取数据，完成处理后将表项插入到 `Avail 队列` 中。
+- データの**送信側**は、データを準備した後、`Avail キュー` から利用可能なエントリを取得し、ディスクリプタテーブルを更新し、`Used キュー` に新しいエントリを挿入して、データが到着したことを受信側に通知します。
+- データの**受信側**は、`Used キュー` からエントリを取り出し、ディスクリプタテーブルを読んでデータを取得し、処理が終わったらエントリを `Avail キュー` に挿入します。
 
-下图为由 Guest 向 Host 发送数据的一个 vring 示例：
+下図は、Guest から Host へデータを送信するときの vring の例です。
 
 ![](./figure/vring_example.png)
 
-### virtio 配置操作抽象
+### virtio の設定操作の抽象
 
-结合 virtqueue，我们现在可以抽象出一个虚拟 PCI 设备的基本操作：
+virtqueue と組み合わせて、仮想 PCI デバイスの基本操作を次のように抽象化できます。
 
-- 获取 feature bits
-- 读写配置空间
-- 读写 status bits
-- 设备重置
-- 创建/销毁 virtqueue
+- feature bits の取得
+- 設定空間の読み書き
+- status bits の読み書き
+- デバイスのリセット
+- virtqueue の作成/破棄
 
-我们将其抽象成一张函数表：`virtio_config_ops`。
+これを関数テーブル `virtio_config_ops` として抽象化します。
 
 ```c
 struct virtio_config_ops
@@ -158,37 +158,37 @@ struct virtio_config_ops
 };
 ```
 
-- `feature`：获取设备对应的 feature bit。
-- `get & set` ：读写设备的配置空间。
-- `get_status & set_status`：读写设备的 status bits。
-- `reset`：重置设备。
-- `find_vq`：获取/创建 virtqueue。
-- `del_vq`：销毁 virtqueue。
+- `feature`:デバイスに対応する feature bit を取得する。
+- `get & set`:デバイスの設定空間を読み書きする。
+- `get_status & set_status`:デバイスの status bits を読み書きする。
+- `reset`:デバイスをリセットする。
+- `find_vq`:virtqueue を取得/作成する。
+- `del_vq`:virtqueue を破棄する。
 
 ## IOMMU
 
- IOMMU 即 **Input/Output Memory Management Unit**，其功能类似于 CPU 中的 MMU，是一个**向设备侧提供地址翻译功能的单元**。
+ IOMMU とは **Input/Output Memory Management Unit** のことで、その機能は CPU の MMU に似ており、**デバイス側にアドレス変換機能を提供するユニット**です。
 
 ![](./figure/iommu.png)
 
-IOMMU 通常被集成于北桥中，其提供面向设备端的两个功能：
+IOMMU は通常ノースブリッジに統合されており、デバイス側に向けて次の 2 つの機能を提供します。
 
-- **DMA 重映射**（ **DMA remapping**）：有着 DMA 功能的设备可以使用虚拟地址，通过 IOMMU 转换为物理地址进行直接内存访问。
-- **中断重映射**（**Interrupt remapping**）：IOMMU 会拦截设备产生的中断，根据中断重映射表产生新的中断请求发送给 LAPIC。
+- **DMA リマッピング**(**DMA remapping**):DMA 機能を持つデバイスは仮想アドレスを使用でき、IOMMU によって物理アドレスに変換されてダイレクトメモリアクセスを行います。
+- **割り込みリマッピング**(**Interrupt remapping**):IOMMU はデバイスが発生させた割り込みを横取りし、割り込みリマッピングテーブルに従って新しい割り込み要求を生成して LAPIC に送ります。
 
 ![](./figure/dma_intr_remap.png)
 
-### DMA 重映射
+### DMA リマッピング
 
-DMA 重映射即面向设备侧的地址访问重翻译，如下图所示，左侧是 CPU 对内存的虚拟化：MMU 利用进程页表将进程要访问的虚拟地址翻译为物理地址，从而实现在两个进程中访问同一个虚拟地址实际上访问到不同的物理地址——DMA 重映射也是类似的原理，如下图右侧所示，当外设想要进行 DMA 时，IOMMU 会根据“设备页表”进行地址翻译，从而使得两个设备各自感知访问的是同一个地址，但实际上访问到了不同的物理地址。
+DMA リマッピングとは、デバイス側のアドレスアクセスに対する再変換です。下図の左側は CPU によるメモリの仮想化で、MMU がプロセスのページテーブルを使って、プロセスがアクセスする仮想アドレスを物理アドレスに変換します。これにより、2 つのプロセスが同じ仮想アドレスにアクセスしても、実際には異なる物理アドレスにアクセスします。DMA リマッピングも同様の原理で、下図の右側のように、周辺機器が DMA を行おうとすると、IOMMU が「デバイスページテーブル」に従ってアドレスを変換します。これにより、2 つのデバイスはそれぞれ同じアドレスにアクセスしているつもりでも、実際には異なる物理アドレスにアクセスします。
 
 ![](./figure/dma_addr_trans.png)
 
-### IOMMU 与虚拟化
+### IOMMU と仮想化
 
-虽然 IOMMU 的引入增加了与外设通信间的开销，但 IOMMU 解决了系统虚拟化技术的一个难点：对于非纯模拟的设备而言，其并不知道 GPA 与 HPA 之间的映射关系，当其按 Guest OS 提供的地址进行 DMA 时**会直接访问到 Host 的内存**。
+IOMMU の導入は周辺機器との通信のオーバーヘッドを増やしますが、システム仮想化技術の難点の 1 つを解決します。純粋なエミュレーションではないデバイスは、GPA と HPA の対応関係を知らないため、Guest OS が提供したアドレスで DMA を行うと、**Host のメモリに直接アクセスしてしまいます**。
 
-当引入了 IOMMU 之后，IOMMU 可以根据 Host 侧提供的 GPA 到 HPA 之间的地址转换表，进行**DMA remapping**，这样外设就能正常地访问到 Guest 的物理内存，而不会错误地访问到 Host 对应的物理内存区域。
+IOMMU を導入すると、IOMMU は Host 側が提供する GPA から HPA へのアドレス変換テーブルに従って **DMA remapping** を行えます。これにより、周辺機器は Guest の物理メモリに正しくアクセスでき、Host の対応する物理メモリ領域に誤ってアクセスすることがなくなります。
 
 ## REFERENCE
 
@@ -202,7 +202,7 @@ DMA 重映射即面向设备侧的地址访问重翻译，如下图所示，左�
 
 [知乎 - IOMMU DMA 重映射](https://zhuanlan.zhihu.com/p/349225786)
 
-《系统虚拟化——原理与实现》——Intel 开源软件技术中心
+『システム仮想化——原理と実装』——Intel オープンソースソフトウェア技術センター
 
 [A Tour Beyond BIOS: Using IOMMU for DMA Protection in UEFI Firmware](https://www.intel.com/content/dam/develop/external/us/en/documents/intel-whitepaper-using-iommu-for-dma-protection-in-uefi.pdf)
 

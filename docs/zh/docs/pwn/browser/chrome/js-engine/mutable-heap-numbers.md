@@ -1,6 +1,6 @@
 # Mutable Heap Numbers
 
-**堆数量不可变** 机制是 2025 年 V8 团队公开的优化机制，其思路来源于于 `async-fs` 这一 JS 文件系统实现在 `Math.random` 上的运行瓶颈，例如对于下面的这样一段代码：
+**ヒープ数量不変**の仕組みは、2025 年に V8 チームが公開した最適化の仕組みです。発想は、JS のファイルシステム実装 `async-fs` が `Math.random` で遭遇した実行時のボトルネックに由来します。たとえば次のようなコードがあります。
 
 ```javascript
 let seed;
@@ -17,36 +17,36 @@ Math.random = (function() {
 })();
 ```
 
-变量 `seed` 在每次调用 `Math.random` 时都会发生变动，从而生成一个伪随机序列，关键的一点是 `seed` 被存放在一个 `ScriptContext` 当中，该结构用以表示特定脚本内可访问值的存储位置（说人话就是 **一个 JS 脚本的上下文** ），该结构内部是一个 V8 的标记值的数组：
+変数 `seed` は `Math.random` を呼び出すたびに変化し、擬似乱数列を生成します。重要な点は、`seed` が `ScriptContext` の中に格納されていることです。この構造体は、特定のスクリプト内でアクセス可能な値の格納場所を表すもので(平たく言うと**JS スクリプトのコンテキスト**です)、内部は V8 のタグ付き値の配列になっています。
 
-- ScopeInfo：上下文元数据。
-- NativeContext：全局对象。
-- Slot 0 ～ Slot n：其他各种各样的值。
+- ScopeInfo:コンテキストのメタデータ。
+- NativeContext:グローバルオブジェクト。
+- Slot 0 ～ Slot n:その他のさまざまな値。
 
-这些 Slot 的值通常为 32 位，每个值的最低有效位用作标记，因此使用时都会将该值右移 1 位：
+これらの Slot の値は通常 32 ビットで、各値の最下位ビットがタグとして使われるため、使用時には値を 1 ビット右シフトします。
 
-- 0：31 位小整数（small interger，SMI）。
-- 1：31 位指针。
+- 0:31 ビットの小さな整数(small interger、SMI)。
+- 1:31 ビットのポインタ。
 
-相应地，大于 31 位的数据都会存放在堆上，由 ScriptContext 的 Slot 存储指向这些对象的指针，例如对于简单的数值类型据而言会使用一个 `HeapNumber` 对象存放，对于复杂对象则是 `JSObject` 结构体一类的。
+これに応じて、31 ビットを超えるデータはヒープ上に置かれ、ScriptContext の Slot にはそれらのオブジェクトへのポインタが格納されます。たとえば、単純な数値型のデータには `HeapNumber` オブジェクトが使われ、複雑なオブジェクトには `JSObject` 構造体のようなものが使われます。
 
 ![](https://s2.loli.net/2025/03/11/BEhSayrC24XJ6Tq.png)
 
-那么瓶颈就来了：
+するとボトルネックが生じます。
 
-- **HeapNumber allocation**： 上面的 JS 代码中 `seed` 变量存放在一个 `HeapNumber` 对象当中，那么每次 `Math.random` 函数调用时都会进行内存分配与释放。
-- **Floating-point arthmetic** ：虽然 `Math.random` 全程使用整型操作，但 `seed` 存放在一个通用的 `HeapNumber` 当中，从而导致编译器生成较慢的浮点数操作指令，以及在编译器已知这可能是一个 32 位整型的情况下仍会需要潜在的 64 位浮点到 32 位整型的转换以及精度损失检查。
+- **HeapNumber allocation**: 上の JS コードでは `seed` 変数が `HeapNumber` オブジェクトに格納されているため、`Math.random` 関数を呼び出すたびにメモリの確保と解放が行われます。
+- **Floating-point arthmetic**: `Math.random` では終始整数演算が使われているものの、`seed` は汎用の `HeapNumber` に格納されているため、コンパイラは遅い浮動小数点演算の命令を生成します。また、コンパイラがこれは 32 ビット整数かもしれないと分かっている場合でも、64 ビット浮動小数点から 32 ビット整数への変換や、精度損失のチェックが潜在的に必要になります。
 
-如何破局？V8 团队采用了两部分优化：
+どう打開するのでしょうか。V8 チームは 2 つの最適化を採用しました。
 
-- **Slot type tracking / mutable heap number slots** ：V8 团队扩展了 [script context const value tracking](https://issues.chromium.org/u/2/issues/42203515) 以包含类型信息，从而追踪一个 slot value 是一个常量、`SMI`、`HeapNumber` 还是通用标记值，并在脚本上下文中引入了`JSObjects` 的 [mutable heap number fields](https://v8.dev/blog/react-cliff#smi-heapnumber-mutableheapnumber) 概念的 **不可变堆数量** 的概念：slot value 从指向一个变化的 `HeapNumber` 变为 **持有一个 HeapNumber** ——从而消除了代码优化更新时的堆重分配。
-- **Mutable heap Int32** ：V8 团队增强了 script context slot 类型以追踪一个数字值是否在 Int32 的范围内，若是则 `HeapNumber` 将其存放为一个纯 `Int32` ，若需要扩展为 `double` 则不会需要重分配 `HeapNumber` 的空间；在这种情况下，上面例子中的 `Math.random` 在编译器观察下便知道这是一个持续更新的整型值，因而将对应的 slot 标记为一个 mutable `Int32` 。
+- **Slot type tracking / mutable heap number slots**: V8 チームは [script context const value tracking](https://issues.chromium.org/u/2/issues/42203515) を拡張して型情報を含めました。これにより、slot value が定数か、`SMI` か、`HeapNumber` か、汎用のタグ付き値かを追跡します。また、スクリプトコンテキストに、`JSObjects` の [mutable heap number fields](https://v8.dev/blog/react-cliff#smi-heapnumber-mutableheapnumber) という概念の**不変ヒープ数量**という概念を導入しました。slot value は、変化する `HeapNumber` を指す状態から、**HeapNumber を保持する**状態になり、コードの最適化による更新時のヒープの再確保がなくなりました。
+- **Mutable heap Int32**: V8 チームは script context slot の型を拡張して、数値が Int32 の範囲内かどうかを追跡するようにしました。範囲内であれば `HeapNumber` はそれを純粋な `Int32` として格納し、`double` への拡張が必要になった場合でも `HeapNumber` の領域を再確保する必要がありません。この場合、上の例の `Math.random` は、コンパイラの観察により、継続的に更新される整数値であることが分かるため、対応する slot を mutable `Int32` としてマークします。
 
-需要注意的是这样的优化引入了对 context slot 的值的代码依赖，若是 slot 的类型发生了改变（如变为字符串），则该优化会被回退，因此保证 slot 的类型稳定性至关重要（ ~~言外之意就是别老给一个 JS 变量换类型~~ ）。
+注意すべきは、この最適化が context slot の値に対するコード依存を生む点です。slot の型が変わった場合(文字列になるなど)、この最適化は取り消されます。そのため、slot の型の安定性を保つことが非常に重要です( ~~要するに、JS の変数の型をしょっちゅう変えるなということです~~ )。
 
-最终，对于 `Math.random` 的优化结果如下：
+最終的に、`Math.random` の最適化結果は次のとおりです。
 
-- **No allocation / fast in-place updates** ：`seed` 的更新不需要重复分配新的堆对象。
-- **Integer operations** ：编译器已知其类型为 `Int32` ，故避免了生成低效的浮点运算。
+- **No allocation / fast in-place updates**: `seed` の更新で、新しいヒープオブジェクトを繰り返し確保する必要がなくなりました。
+- **Integer operations**: コンパイラが型を `Int32` と把握しているため、非効率な浮動小数点演算の生成を避けられます。
 
-最终 `async-fs` 的基准测试速度提升了 2.5 倍 ，在 [JetStream2](https://browserbench.org/JetStream2.1/) 这一基准测试上提升了约 `1.6%` 的整体分数，还是很有效果的。
+最終的に、`async-fs` のベンチマークの速度は 2.5 倍になり、[JetStream2](https://browserbench.org/JetStream2.1/) というベンチマークでも全体のスコアが約 `1.6%` 向上しました。なかなか効果があります。

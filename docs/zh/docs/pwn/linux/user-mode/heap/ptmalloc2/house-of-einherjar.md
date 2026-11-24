@@ -1,16 +1,16 @@
 #  House Of Einherjar
 
-## 介绍
+## はじめに
 
-house of einherjar 是一种堆利用技术，由 `Hiroki Matsukuma` 提出。该堆利用技术可以强制使得 `malloc` 返回一个几乎任意地址的 chunk 。其主要在于滥用 `free` 中的后向合并操作（合并低地址的chunk），从而使得尽可能避免碎片化。
+house of einherjar は `Hiroki Matsukuma` によって提唱されたヒープ攻撃手法です。この手法を使うと、`malloc` に、ほぼ任意のアドレスの chunk を強制的に返させることができます。要点は、`free` における後方統合(低位アドレス側の chunk との統合)の動作を悪用することにあり、この動作は本来、断片化をできるだけ避けるためのものです。
 
-此外，需要注意的是，在一些特殊大小的堆块中，off by one 不仅可以修改下一个堆块的 prev_size，还可以修改下一个堆块的 PREV_INUSE 比特位。
+また、特定のサイズのチャンクでは、off by one によって次のチャンクの prev_size だけでなく、次のチャンクの PREV_INUSE ビットも書き換えられる点に注意が必要です。
 
 ## 原理
 
-### 后向合并操作
+### 後方統合の動作
 
-`free` 函数中的后向合并核心操作如下
+`free` 関数における後方統合の中心的な処理は次のとおりです。
 
 ```c
         /* consolidate backward */
@@ -22,47 +22,47 @@ house of einherjar 是一种堆利用技术，由 `Hiroki Matsukuma` 提出。�
         }
 ```
 
-这里借用原作者的一张图片说明
+ここでは原作者の図を借りて説明します。
 
 ![](./figure/backward_consolidate.png)
 
-关于整体的操作，请参考 `深入理解堆的实现` 那一章节。
+全体の動作については、「ヒープ実装の深い理解」の章を参照してください。
 
-### 利用原理
+### 攻撃の原理
 
-这里我们就介绍该利用的原理。首先，在之前的堆的介绍中，我们可以知道以下的知识
+ここで、この攻撃の原理を説明します。まず、これまでのヒープの説明から、次のことがわかっています。
 
-- 两个物理相邻的 chunk 会共享 `prev_size`字段，尤其是当低地址的 chunk 处于使用状态时，高地址的chunk的该字段便可以被低地址的 chunk 使用。因此，我们有希望可以通过写低地址 chunk 覆盖高地址 chunk 的 `prev_size` 字段。
-- 一个 chunk PREV_INUSE 位标记了其物理相邻的低地址 chunk 的使用状态，而且该位是和 prev_size 物理相邻的。
-- 后向合并时，新的 chunk 的位置取决于 `chunk_at_offset(p, -((long) prevsize))` 。
+- 物理的に隣接する 2 つの chunk は `prev_size` フィールドを共有します。特に低位アドレスの chunk が使用中の場合、高位アドレスの chunk のこのフィールドは低位アドレスの chunk が使えます。したがって、低位アドレスの chunk に書き込むことで、高位アドレスの chunk の `prev_size` フィールドを上書きできる可能性があります。
+- chunk の PREV_INUSE ビットは、物理的に隣接する低位アドレスの chunk の使用状態を示しており、このビットは prev_size と物理的に隣接しています。
+- 後方統合の際、新しい chunk の位置は `chunk_at_offset(p, -((long) prevsize))` によって決まります。
 
-**那么如果我们可以同时控制一个chunk prev_size 与 PREV_INUSE 字段，那么我们就可以将新的 chunk 指向几乎任何位置。**
+**したがって、ある chunk の prev_size と PREV_INUSE の両方のフィールドを制御できれば、新しい chunk をほぼ任意の位置に向けることができます。**
 
-### 利用过程
+### 攻撃の流れ
 
-#### 溢出前
+#### オーバーフロー前
 
-假设溢出前的状态如下
+オーバーフロー前の状態が次のようであるとします。
 
 ![](./figure/einherjar_before_overflow.png)
 
-#### 溢出
+#### オーバーフロー
 
-这里我们假设 p0 堆块一方面可以写prev_size字段，另一方面，存在off by one的漏洞，可以写下一个 chunk 的PREV_INUSE 部分，那么
+ここでは、p0 のチャンクが一方で prev_size フィールドに書き込め、他方で off by one の脆弱性があって次の chunk の PREV_INUSE 部分に書き込めると仮定します。すると次のようになります。
 
 ![](./figure/einherjar_overflowing.png)
 
-#### 溢出后
+#### オーバーフロー後
 
-**假设我们将 p1的 prev_size 字段设置为我们想要的目的 chunk 位置与p1的差值**。在溢出后，我们释放p1，则我们所得到的新的 chunk 的位置 `chunk_at_offset(p1, -((long) prevsize))` 就是我们想要的 chunk 位置了。
+**p1 の prev_size フィールドに、目的の chunk の位置と p1 との差を設定するとします**。オーバーフロー後に p1 を解放すると、得られる新しい chunk の位置 `chunk_at_offset(p1, -((long) prevsize))` は、まさに目的の chunk の位置になります。
 
-当然，需要注意的是，由于这里会对新的 chunk 进行 unlink ，因此需要确保在对应 chunk 位置构造好了fake chunk 以便于绕过 unlink 的检测。
+もちろん、ここで新しい chunk に対して unlink が行われるため、unlink の検査を回避できるよう、対応する chunk の位置に fake chunk を作っておく必要があります。
 
 ![](./figure/einherjar_after_overflow.png)
 
-### 攻击过程示例
+### 攻撃例
 
-可以进行 House Of Einherjar 攻击的代码：
+House Of Einherjar 攻撃が可能なコードは次のとおりです。
 
 ```c
 #include <stdio.h>
@@ -70,14 +70,14 @@ house of einherjar 是一种堆利用技术，由 `Hiroki Matsukuma` 提出。�
 #include <unistd.h>
 
 int main(void){
-    char* s0 = malloc(0x200);　//构造fake chunk
+    char* s0 = malloc(0x200);　//fake chunk を構築
     char* s1 = malloc(0x18);
     char* s2 = malloc(0xf0);　
-    char* s3 = malloc(0x20); //为了不让s2与top chunk 合并
+    char* s3 = malloc(0x20); //s2 が top chunk と統合されないようにするため
     printf("begin\n");
     printf("%p\n", s0);
     printf("input s0\n");
-    read(0, s0, 0x200); //读入fake chunk
+    read(0, s0, 0x200); //fake chunk を読み込む
     printf("input s1\n");
     read(0, s1, 0x19); //Off By One
     free(s2);
@@ -85,7 +85,7 @@ int main(void){
 }
 ```
 
-攻击代码如下：
+攻撃コードは次のとおりです。
 
 ```python
 from pwn import *
@@ -111,81 +111,81 @@ p.recvall()
 p.close()
 ```
 
-**注意这里绕过unlink检查的方法跟之前利用unlink漏洞时采用的方法不一样**
+**ここで unlink の検査を回避する方法は、以前 unlink の脆弱性を利用したときの方法とは異なることに注意してください**
 
-利用unlink漏洞的时候：
+unlink の脆弱性を利用するときは次のようにしました。
 
 ```c
  p->fd = &p-3*4
  p->bk = &p-2*4
 ```
 
-在这里利用时，因为没有办法找到 `&p`  ,所以直接让：
+今回の攻撃では `&p` を知る方法がないため、直接次のようにします。
 
 ```c
 p->fd = p
 p->bk = p
 ```
 
-**这里需要注意一个点：**
+**ここで注意すべき点があります。**
 
 ```python
 payload = p64(0) + p64(0x101) + p64(address) * 2 + "A"*0xe0
 ```
 
-其实修改为下面这样也是可以的:
+実は、次のように変更しても構いません。
 
 ```python
 payload = p64(0) + p64(0x221) + p64(address) * 2 + "A"*0xe0
 ```
 
-按照道理来讲 fake chunk 的 size 是 `0x221`  才合理，但是为什么  `0x101` 也可以呢？这是因为对 size 和 prev_size 的验证只发生在 unlink 里面，而 unlink 里面是这样验证的:
+理屈からいえば fake chunk の size は `0x221` が妥当ですが、なぜ `0x101` でもよいのでしょうか。これは、size と prev_size の検証が unlink の中でしか行われないためで、unlink の中では次のように検証されます。
 
 ```c
 if (__builtin_expect (chunksize(P) != prev_size (next_chunk(P)), 0))      \
       malloc_printerr ("corrupted size vs. prev_size");
 ```
 
-所以只需要再伪造 fake chunk 的 next chunk 的 prev_size 字段就好了。
+したがって、fake chunk の next chunk の prev_size フィールドさえ偽造すれば十分です。
 
-### 总结
+### まとめ
 
-这里我们总结下这个利用技术需要注意的地方
+この攻撃手法で注意すべき点をまとめます。
 
-- 需要有溢出漏洞可以写物理相邻的高地址的 prev_size 与 PREV_INUSE 部分。
-- 我们需要计算目的 chunk 与 p1 地址之间的差，所以需要泄漏地址。
-- 我们需要在目的 chunk 附近构造相应的 fake chunk，从而绕过 unlink 的检测。
+- 物理的に隣接する高位アドレス側の prev_size と PREV_INUSE の部分に書き込めるオーバーフローの脆弱性が必要です。
+- 目的の chunk と p1 のアドレスの差を計算する必要があるため、アドレスのリークが必要です。
+- 目的の chunk の近くに対応する fake chunk を作り、unlink の検査を回避する必要があります。
 
 
-其实，该技术与 chunk extend/shrink 技术比较类似。
+実は、この手法は chunk extend/shrink の手法とかなり似ています。
 
 
 ## 2016 Seccon tinypad
-[题目链接](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/house-of-einherjar/2016_seccon_tinypad)
+[問題へのリンク](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/house-of-einherjar/2016_seccon_tinypad)
 
-### 基本功能分析
+### 基本機能の分析
 
-首先，可以看出，程序以来一个核心的读取函数，即读取指定长度字节的字符串，然而，当读取的长度恰好为指定的长度时，会出现 **off by one 的漏洞**。
+まず、このプログラムは中核となる読み込み関数、つまり指定した長さのバイト列を読み込む関数に依存していることがわかります。ところが、読み込む長さがちょうど指定した長さのとき、**off by one の脆弱性**が生じます。
 
-通过分析程序，我们不难看出，这个程序的基本功能是操作一个 tinypad，主要有以下操作
+プログラムを分析すると、基本機能は tinypad の操作であり、主に次の操作があることがわかります。
 
-- 开头，程序每次开头依次判断每个 memo 的指针来判断是否为空，如果不为空，进而利用 strlen 求得其相应的长度，将 memo 的内容输出。从这里，我们也可以看出最多有 4 个 memo。
-- 添加 memo，遍历存储 memo 的变量tinypad，根据 tinypad 的存储的大小判断 memo 是否在使用，然后还有的话，分配一个 memo。从这里我们可以知道，程序只是从 tinypad 起始偏移16*16=256 处才开始使用，每个 memo 存储两个字段，一个是该 memo 的大小，另一个是该 memo 对应的指针。所以我们可以创建一个新的结构体，并修改 ida 识别的 tinypad，使之更加可读（但是其实 ida 没有办法帮忙智能识别。）。同时，由于该添加功能依赖于读取函数，所以存在 off by one 的漏洞。此外，我们可以看出，用户申请的 chunk 的大小最大为 256 字节，和 tinypad 前面的未使用的 256 字节恰好一致。
-- 删除，根据存储 memo 的大小判断 memo 是否在被使用，同时将相应 memo 大小设置为0，但是并没有将指针设置为 NULL，有可能会导致 Use After Free。**即在程序开头时，就有可能输出一些相关的内容，这其实就是我们泄漏一些基地址的基础**。
-- 编辑。在编辑时，程序首先根据之前存储的 memo 的内容将其拷贝到 tinypad 的前 256 个字节中，但正如我们之前所说的，当 memo 存储了 256 个字节时，就会存在 off by one漏洞。与此同时，程序利用 strlen 判断复制之后的 tinypad 的内容长度，并将其输出。之后程序继续利用 strlen 求得 memo 的长度，并读取指定长度内容到 tinypad 中，根据读取函数，这里必然出现了 `\x00`。最后程序将读取到 tinypad 前 256 字节的内容放到对应 memo 中。
-- 退出
+- 冒頭。プログラムは毎回の冒頭で、各 memo のポインタを順に調べて空かどうかを判断し、空でなければ strlen で対応する長さを求めて memo の内容を出力します。ここから、memo は最大 4 つであることもわかります。
+- memo の追加。memo を格納する変数 tinypad を走査し、tinypad に格納されたサイズから memo が使用中かどうかを判断し、空きがあれば memo を 1 つ確保します。ここから、プログラムは tinypad の先頭から 16*16=256 のオフセットの位置からしか使っていないことがわかります。各 memo は 2 つのフィールドを格納し、1 つはその memo のサイズ、もう 1 つは対応するポインタです。そのため、新しい構造体を作り、IDA が認識した tinypad を修正して読みやすくできます(ただし実際には IDA が賢く認識してくれるわけではありません)。また、この追加機能は読み込み関数に依存しているため、off by one の脆弱性があります。さらに、ユーザーが要求する chunk の最大サイズは 256 バイトで、tinypad の前方の未使用の 256 バイトとちょうど一致します。
+- 削除。memo のサイズから memo が使用中かどうかを判断し、対応する memo のサイズを 0 にしますが、ポインタは NULL にしないため、Use After Free になる可能性があります。**つまり、プログラムの冒頭で関連する内容が出力される可能性があり、これがベースアドレスをリークする足がかりになります**。
+- 編集。編集時、プログラムはまず、保存してある memo の内容を tinypad の先頭 256 バイトにコピーしますが、前述のとおり、memo が 256 バイトを格納している場合は off by one の脆弱性が生じます。同時に、プログラムは strlen でコピー後の tinypad の内容の長さを判断して出力します。その後、プログラムは再び strlen で memo の長さを求め、指定した長さの内容を tinypad に読み込みます。読み込み関数の仕様上、ここで必ず `\x00` が現れます。最後に、プログラムは tinypad の先頭 256 バイトに読み込んだ内容を、対応する memo に格納します。
+- 終了
 
-### 利用
+### 攻撃
 
-基本利用思路如下
+基本的な攻撃の方針は次のとおりです。
 
-1. 利用删除时没有将指针置为NULL的 UAF 漏洞，泄漏堆的基地址
-2. 再次利用 UAF 漏洞泄漏 libc 的基地址。
-3. 利用 house of einherjar 方法在 tinypad 的前 256 字节中伪造 chunk。当我们再次申请时，那么就可以控制4个 memo 的指针和内容了。
-4. 这里虽然我们的第一想法可能是直接覆盖 malloc_hook 为 one_gadget 地址，但是，由于当编辑时，程序是利用 strlen 来判读可以读取多少长度，而 malloc_hook 则在初始时为 0。所以我们直接覆盖，所以这里采用其他方法，即修改程序的 main 函数的返回地址为 one_gadget，之所以可以行得通，是因为返回地址往往是 7f 开头的，长度足够长，可以覆盖为one_gadget。所以我们还是需要泄漏 main 函数的返回地址，由于 libc 中存储了 main 函数 environ 指针的地址，所以我们可以先泄露出environ 的地址，然后在得知存储 main 函数的返回地址的地址。这里选取 environ 符号是因为 environ 符号在 libc 中会导出，而像 argc 和 argv 则不会导出，相对来说会比较麻烦一点。
-5. 最后修改 main 函数的返回地址为 one_gadget 地址获取shell。
+1. 削除時にポインタを NULL にしない UAF の脆弱性を利用して、ヒープのベースアドレスをリークする
+2. 再び UAF の脆弱性を利用して、libc のベースアドレスをリークする。
+3. house of einherjar の手法で、tinypad の先頭 256 バイトの中に chunk を偽造する。再び確保すると、4 つの memo のポインタと内容を制御できるようになる。
+4. 最初に思いつくのは malloc_hook を one_gadget のアドレスで直接上書きすることかもしれませんが、編集時にプログラムは strlen で読み込める長さを判断しており、malloc_hook は初期状態で 0 です。そのため直接は上書きできないので、ここでは別の方法、つまりプログラムの main 関数のリターンアドレスを one_gadget に書き換える方法をとります。これが成り立つのは、リターンアドレスが 7f で始まることが多く、長さが十分あって one_gadget で上書きできるからです。そのため main 関数のリターンアドレスをリークする必要があります。libc には main 関数の environ ポインタのアドレスが格納されているので、まず environ のアドレスをリークし、それから main 関数のリターンアドレスを格納しているアドレスを知ることができます。ここで environ シンボルを選ぶのは、environ が libc でエクスポートされているのに対し、argc や argv はエクスポートされず、比較的面倒になるためです。
+5. 最後に main 関数のリターンアドレスを one_gadget のアドレスに書き換えて shell を取得する。
 
-具体利用脚本如下
+具体的な攻撃スクリプトは次のとおりです。
 
 ```python
 from pwn import *

@@ -2,19 +2,19 @@
 
 ## __ro_after_init
 
-### 介绍
+## 概要
 
-Linux 内核中有很多数据都只会在 `__init` 阶段被初始化，而且之后不会被改变。使用 `__ro_after_init` 标记的内存，在 init 阶段结束后，不能够被再次修改。
+Linux カーネルのデータの多くは `__init` フェーズでのみ初期化され、その後は変更されません。`__ro_after_init` でマークされたメモリは、init フェーズの終了後は再び変更できなくなります。
 
-### 攻击
+## 攻撃
 
-我们可以使用 `set_memory_rw(unsigned long addr, int numpages)` 来修改对应页的权限。
+`set_memory_rw(unsigned long addr, int numpages)` を使うと、対応するページの権限を変更できます。
 
 ## mmap_min_addr
 
-mmap_min_addr 是用来对抗 NULL Pointer Dereference 的，指定用户进程通过 mmap 可以使用的最低的虚拟内存地址。
+mmap_min_addr は NULL Pointer Dereference への対策で、ユーザープロセスが mmap で使用できる最小の仮想メモリアドレスを指定します。
 
-## 参考
+## 参考文献
 
 - https://lwn.net/Articles/676145/
 - https://lwn.net/Articles/666550/

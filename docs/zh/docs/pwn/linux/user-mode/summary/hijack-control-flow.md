@@ -1,28 +1,28 @@
-# 控制程序执行流
+# プログラムの実行フローの制御
 
-在控制程序执行流的过程中，我们可以考虑如下方式。
+プログラムの実行フローを制御するには、次のような方法が考えられます。
 
-## 直接控制 EIP
+## EIP を直接制御する
 
 
 
-## 返回地址
+## リターンアドレス
 
-即控制程序栈上的返回地址。
+スタック上のリターンアドレスを制御します。
 
-## 跳转指针
+## ジャンプポインタ
 
-这里我们可以考虑如下方式
+ここでは次のような方法が考えられます。
 
-- call 
+- call
 - jmp
 
-## 函数指针
+## 関数ポインタ
 
-常见的函数指针具有
+一般的な関数ポインタには次のものがあります。
 
-- vtable,  function table，如 IO_FILE 的 vtable，printf function table。
-- hook  指针，如 `malloc_hook`，`free_hook`。
+- vtable、function table。たとえば IO_FILE の vtable、printf function table。
+- hook ポインタ。たとえば `malloc_hook`、`free_hook`。
 - handler
 
-## 修改控制流相关变量
+## 制御フローに関係する変数を変更する

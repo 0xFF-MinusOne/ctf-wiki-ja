@@ -1,27 +1,27 @@
-# 编写 QEMU 模拟设备
+# QEMU のエミュレートデバイスを書く
 
-本节我们将介绍如何在 QEMU 中编写一个新的模拟设备。
+この節では、QEMU に新しいエミュレートデバイスを書く方法を紹介します。
 
-> 注1：在开始之前你可能需要补充一些[PCI 设备的基础知识](https://arttnba3.cn/2022/08/30/HARDWARE-0X00-PCI_DEVICE/)
+> 注 1:始める前に、[PCI デバイスの基礎知識](https://arttnba3.cn/2022/08/30/HARDWARE-0X00-PCI_DEVICE/)を補っておくとよいでしょう。
 >
-> 注2：qemu 官方在 `hw/misc/edu.c` 中也提供了一个教学用的设备样例，red hat 则在 `hw/misc/pci-testdev.c` 中提供了一个测试设备，我们可以参考这两个设备来构建我们的设备
+> 注 2:qemu 公式は `hw/misc/edu.c` に教育用のデバイスのサンプルを、red hat は `hw/misc/pci-testdev.c` にテスト用デバイスを提供しています。この 2 つのデバイスを参考にして自分のデバイスを作れます。
 
 ## QEMU Object Model
 
-在 Qemu 当中有着一套叫做 **Qemu Object Model** 的东西来实现面向对象，主要由这四个组件构成：
+Qemu には、オブジェクト指向を実現するための **Qemu Object Model** と呼ばれる仕組みがあり、主に次の 4 つのコンポーネントで構成されています。
 
-- `Type`：用来定义一个「类」的基本属性，例如类的名字、大小、构造函数等。
-- `Class`：用来定义一个「类」的静态内容，例如类中存储的静态数据、方法函数指针等。
-- `Object`：动态分配的一个「类」的具体的实例（instance），储存类的动态数据。
-- `Property`：动态对象数据的访问器（accessor），可以通过监视器接口进行检查。
+- `Type`:「クラス」の基本的な属性を定義するもの。たとえばクラス名、サイズ、コンストラクタなど。
+- `Class`:「クラス」の静的な内容を定義するもの。たとえばクラスに格納される静的データ、メソッドの関数ポインタなど。
+- `Object`:動的に確保される「クラス」の具体的なインスタンス(instance)で、クラスの動的なデータを格納する。
+- `Property`:動的なオブジェクトデータのアクセサ(accessor)で、モニタインターフェースから確認できる。
 
-类似于 Golang，在 QOM 当中使用成员嵌套的方式来完成类的继承，父类作为类结构体的第一个成员 `parent` 而存在，因此也不支持多继承。
+Golang と同様に、QOM ではメンバの埋め込みによってクラスの継承を実現し、親クラスはクラス構造体の最初のメンバ `parent` として存在します。そのため多重継承もサポートされません。
 
-> 参见[这个ppt](https://www.linux-kvm.org/images/f/f6/2012-forum-QOM_CPU.pdf)
+> [この ppt](https://www.linux-kvm.org/images/f/f6/2012-forum-QOM_CPU.pdf) を参照
 
-### I、TypeInfo - 类的基本属性
+### I、TypeInfo - クラスの基本的な属性
 
-`TypeInfo` 这一结构体用来定义一个 `类` 的基本属性，该结构体定义于 `include/qom/object.h` 当中：
+`TypeInfo` 構造体は `クラス` の基本的な属性を定義するためのもので、`include/qom/object.h` で定義されています。
 
 ```c
 /**
@@ -73,7 +73,7 @@ struct TypeInfo
 };
 ```
 
-当我们在 Qemu 中要定义一个**类**的时候，我们实际上需要定义一个 `TypeInfo` 类型的变量，以下是一个在 Qemu 定义一个自定义类的例子：
+Qemu で**クラス**を定義するときは、実際には `TypeInfo` 型の変数を定義する必要があります。以下は、Qemu で独自のクラスを定義する例です。
 
 ```c
 static const TypeInfo a3_type_info = {
@@ -91,13 +91,13 @@ static void a3_register_types(void) {
 type_init(a3_register_types);
 ```
 
-`type_init()` 其实就是 `constructor` 这一 gcc attribute 的封装，其作用就是将一个函数加入到一个 `init_array` 当中，在 Qemu 程序启动时在进入到 main 函数之前会先调用 `init_array` 中的函数，因此这里会调用我们自定义的函数，其作用便是调用 `type_register_static()` 将我们自定义的类型 `a3_type_info` 注册到全局的类型表中。
+`type_init()` は実は gcc の `constructor` 属性のラッパーで、その役割は関数を `init_array` に追加することです。Qemu プログラムの起動時、main 関数に入る前に `init_array` 内の関数が先に呼び出されるため、ここで自分で定義した関数が呼び出されます。その関数が `type_register_static()` を呼び出し、自分で定義した型 `a3_type_info` をグローバルな型テーブルに登録します。
 
-### II、Class - 类的静态内容
+### II、Class - クラスの静的な内容
 
-当我们通过一个 `TypeInfo` 结构体定义了一个类之后，我们还需要定义一个 Class 结构体来定义这个类的静态内容，包括函数表、静态成员等，其应当继承于对应的 Class 结构体类型，例如我们若是要定义一个新的机器类，则其 Class 应当继承于 `MachineClass`。
+`TypeInfo` 構造体でクラスを定義した後は、そのクラスの静的な内容(関数テーブル、静的メンバなど)を定義する Class 構造体も定義する必要があります。これは対応する Class 構造体型を継承する必要があり、たとえば新しいマシンクラスを定義するなら、その Class は `MachineClass` を継承しなければなりません。
 
-所有 Class 结构体类型的最终的父类都是 `ObjectClass` 结构体：
+すべての Class 構造体型の最終的な親は `ObjectClass` 構造体です。
 
 ```c
 /**
@@ -120,7 +120,7 @@ struct ObjectClass
 };
 ```
 
-下面是一个最简单的示例：
+以下は最も単純な例です。
 
 ```c
 struct A3Class
@@ -130,13 +130,13 @@ struct A3Class
 }
 ```
 
-完成 Class 的定义之后我们还应当在前面定义的 `a3_type_info` 中添加上 Class size 与 Class 的构造函数：
+Class の定義が終わったら、先ほど定義した `a3_type_info` に、Class size と Class のコンストラクタを追加する必要があります。
 
 ```c
 static void a3_class_init(ObjectClass *oc, void *data)
 {
-    // 这里的 oc 参数便是新创建的 Class，全局只有一个该实例
-    // 我们应当 cast 为我们自己的 Class 类型，之后再进行相应操作
+    // この oc 引数が新しく作成された Class で、グローバルにこのインスタンスは 1 つだけ
+    // 自分の Class 型にキャストしてから、必要な操作を行う
     // do something
 }
 
@@ -151,11 +151,11 @@ static const TypeInfo a3_type_info = {
 }
 ```
 
-### III、Object - 类的实例对象
+### III、Object - クラスのインスタンスオブジェクト
 
-我们还需要定义一个相应的 Object 类型来表示一个实例对象，其包含有这个类实际的具体数据，且应当继承于对应的 Object 结构体类型，例如我们若是要定义一个新的机器类型，其实例类型应当继承自 `MachineState`
+インスタンスオブジェクトを表すために、対応する Object 型も定義する必要があります。これはそのクラスの実際の具体的なデータを保持し、対応する Object 構造体型を継承する必要があります。たとえば新しいマシン型を定義するなら、そのインスタンス型は `MachineState` を継承しなければなりません。
 
-所有 Object 结构体类型的最终的父类都是 `Object` 结构体：
+すべての Object 構造体型の最終的な親は `Object` 構造体です。
 
 ```c
 /**
@@ -179,7 +179,7 @@ struct Object
 };
 ```
 
-下面是一个示例：
+以下は例です。
 
 ```c
 struct A3Object
@@ -189,12 +189,12 @@ struct A3Object
 }
 ```
 
-完成 Object 的定义之后我们还应当在前面定义的 `a3_type_info` 中添加上 Object size 与 Object 的构造函数：
+Object の定義が終わったら、先ほど定義した `a3_type_info` に、Object size と Object のコンストラクタを追加する必要があります。
 
 ```c
 static void a3_object_init(Object *obj)
 {
-    // 这里的 obj 参数便是动态创建的类型实例
+    // この obj 引数が動的に作成された型のインスタンス
     // do something
 }
 
@@ -211,13 +211,13 @@ static const TypeInfo a3_type_info = {
 }
 ```
 
-### IV、类的创建与释放
+### IV、クラスの作成と解放
 
-类似于在 C++ 当中使用 `new` 与 `delete` 来创建与释放一个类实例，在 QOM 中我们应当使用 `object_new()` 与 `object_delete()` 来创建与销毁一个 QOM 类实例，本质上就是 `分配/释放类空间 + 显示调用构造/析构函数`
+C++ で `new` と `delete` を使ってクラスのインスタンスを作成・解放するのと同様に、QOM では `object_new()` と `object_delete()` を使って QOM クラスのインスタンスを作成・破棄します。本質的には `クラス領域の確保/解放 + コンストラクタ/デストラクタの明示的な呼び出し` です。
 
-QOM 判断创建类实例的类型是通过类的名字，即 `TypeInfo->name`，当创建类实例时 Qemu 会遍历所有的 TypeInfo 并寻找名字匹配的那个，从而调用到对应的构造函数，并将其基类 `Object->class` 指向对应的 class
+QOM がクラスのインスタンスを作成するときの型の判定は、クラスの名前、つまり `TypeInfo->name` で行います。インスタンスを作成するとき、Qemu はすべての TypeInfo を走査して名前が一致するものを探し、対応するコンストラクタを呼び出して、その基底クラスの `Object->class` を対応する class に向けます。
 
-下面是一个示例：
+以下は例です。
 
 ```c
 // create a QOM object
@@ -226,11 +226,11 @@ A3Object *a3obj = object_new("a3_type");
 object_delete(a3obj);
 ```
 
-## Qemu 中 PCI 设备的编写
+## Qemu での PCI デバイスの作成
 
-在补充了这么多的 Qemu 相关的知识之后，现在我们可以开始在 Qemu 中编写 PCI 设备了，这里笔者将编写一个最简单的 Qemu 设备，并将源码放在 `hw/misc/a3dev.c` 中
+ここまで Qemu 関連の知識を補ったので、いよいよ Qemu で PCI デバイスを書き始められます。ここでは筆者が最も単純な Qemu デバイスを書き、そのソースコードを `hw/misc/a3dev.c` に置きます。
 
-Qemu 当中 PCI 设备实例的基类是 `PCIDevice`，因此我们应当创建一个继承自 `PCIDevice` 的类来表示我们的设备实例，这里笔者仅声明了两个 `MemoryRegion` 用作 MMIO 与 PMIO，以及一个用作数据存储的 buffer：
+Qemu における PCI デバイスのインスタンスの基底クラスは `PCIDevice` なので、デバイスのインスタンスを表すために `PCIDevice` を継承したクラスを作成する必要があります。ここでは、MMIO と PMIO 用の `MemoryRegion` を 2 つと、データを格納する buffer を 1 つ宣言しているだけです。
 
 ```c
 #define A3DEV_BUF_SIZE 0x100
@@ -246,7 +246,7 @@ typedef struct A3PCIDevState {
 } A3PCIDevState;
 ```
 
-以及定义一个空的 Class 模板，继承自 PCI 设备的静态类型 `PCIDeviceClass`，不过这一步并不是必须的，事实上我们可以直接用 `PCIDeviceClass` 作为我们设备类的 Class：
+また、PCI デバイスの静的な型 `PCIDeviceClass` を継承した空の Class テンプレートを定義します。ただしこの手順は必須ではなく、実際には `PCIDeviceClass` をそのままデバイスクラスの Class として使えます。
 
 ```c
 typedef struct A3PCIDevClass {
@@ -255,7 +255,7 @@ typedef struct A3PCIDevClass {
 } A3PCIDevClass;
 ```
 
-以及两个将父类转为子类的宏，因为 QOM 基本函数传递的大都是父类指针，所以我们需要一个宏来进行类型检查 + 转型，这也是 Qemu 中惯用的做法：
+さらに、親クラスを子クラスに変換するマクロを 2 つ定義します。QOM の基本的な関数が受け渡すのは多くが親クラスのポインタなので、型チェック + キャストを行うマクロが必要になります。これは Qemu で慣用的なやり方です。
 
 ```c
 #define TYPE_A3DEV_PCI "a3dev-pci"
@@ -267,7 +267,7 @@ typedef struct A3PCIDevClass {
     OBJECT_CLASS_CHECK(A3PCIDevClass, klass, TYPE_A3DEV_PCI)
 ```
 
-下面我们开始定义 MMIO 与 PMIO 的操作函数，这里笔者就简单地设置为读写设备内部的 buffer，并声明上两个 MemoryRegion 对应的函数表，需要注意的是这里传入的 `hwaddr` 类型参数其实为相对地址而非绝对地址：
+続いて、MMIO と PMIO の操作関数を定義します。ここでは単純に、デバイス内部の buffer を読み書きするだけにして、2 つの MemoryRegion に対応する関数テーブルを宣言します。ここで渡される `hwaddr` 型の引数は、絶対アドレスではなく相対アドレスである点に注意してください。
 
 ```c
 static uint64_t
@@ -337,7 +337,7 @@ static const MemoryRegionOps a3dev_pmio_ops = {
 };
 ```
 
-然后是设备实例的初始化函数，在 `PCIDeviceClass` 当中定义了一个名为 `realize` 的函数指针，当 PCI 设备被载入时便会调用这个函数指针指向的函数来初始化，所以这里我们也定义一个自己的初始化函数，不过我们需要做的工作其实基本上就只有初始化两个 `MemoryRegion`，`memory_region_init_io()` 会为这两个 `MemoryRegion` 进行初始化的工作，并设置函数表为我们指定的函数表，`pci_register_bar()` 则用来注册 BAR：
+次はデバイスインスタンスの初期化関数です。`PCIDeviceClass` には `realize` という関数ポインタが定義されており、PCI デバイスがロードされるときにこの関数ポインタが指す関数が呼び出されて初期化されます。そこで自前の初期化関数を定義しますが、やるべきことは基本的に 2 つの `MemoryRegion` の初期化だけです。`memory_region_init_io()` がこの 2 つの `MemoryRegion` を初期化し、関数テーブルを指定したものに設定します。`pci_register_bar()` は BAR の登録に使います。
 
 ```c
 static void a3dev_realize(PCIDevice *pci_dev, Error **errp)
@@ -353,7 +353,7 @@ static void a3dev_realize(PCIDevice *pci_dev, Error **errp)
 }
 ```
 
-最后是 Class 与 Object（也就是 instance）的初始化函数，这里需要注意的是在 Class 的初始化函数中我们应当设置父类 `PCIDeviceClass` 的一系列基本属性（也就是 PCI 设备的基本属性）：
+最後は Class と Object(つまり instance)の初期化関数です。Class の初期化関数では、親クラス `PCIDeviceClass` の一連の基本属性(つまり PCI デバイスの基本属性)を設定する必要がある点に注意してください。
 
 ```c
 static void a3dev_instance_init(Object *obj)
@@ -377,7 +377,7 @@ static void a3dev_class_init(ObjectClass *oc, void *data)
 }
 ```
 
-最后就是为我们的 PCI 设备类型注册 TypeInfo 了，这里别忘了**我们的接口中应当增加上 PCI 的接口**：
+最後に、PCI デバイス型の TypeInfo を登録します。ここで、**インターフェースに PCI のインターフェースを追加する**ことを忘れないでください。
 
 ```c
 static const TypeInfo a3dev_type_info = {
@@ -400,13 +400,13 @@ static void a3dev_register_types(void) {
 type_init(a3dev_register_types);
 ```
 
-最后我们在 meson 构建系统中加入我们新增的这个设备，在 `hw/misc/meson.build` 中加入如下语句：
+最後に、新しく追加したこのデバイスを meson ビルドシステムに追加します。`hw/misc/meson.build` に次の文を追加します。
 
 ```meson
 softmmu_ss.add(when: 'CONFIG_PCI_A3DEV', if_true: files('a3dev.c'))
 ```
 
-并在 `hw/misc/Kconfig` 中添加如下内容，这表示我们的设备会在 `CONFIG_PCI_DEVICES=y` 时编译：
+さらに `hw/misc/Kconfig` に次の内容を追加します。これは、`CONFIG_PCI_DEVICES=y` のときにこのデバイスをビルドすることを意味します。
 
 ```kconfig
 config PCI_A3DEV
@@ -415,13 +415,13 @@ config PCI_A3DEV
     depends on PCI
 ```
 
-之后编译 Qemu 并附加上 `-device a3dev-pci` ，之后随便起一个 Linux 系统，此时使用 `lspci` 指令我们便能看到我们新添加的 pci 设备：
+その後、Qemu をビルドして `-device a3dev-pci` を付け、適当な Linux システムを起動します。このとき `lspci` コマンドを使うと、新しく追加した pci デバイスが見えます。
 
 ![使用 lspci 查看新添加的 pci 设备](./figure/new-qemu-dev-lspci.png)
 
-我们可以使用如下程序来测试我们的设备的输入输出，需要注意的是这需要 root 权限：
+次のプログラムで、デバイスの入出力をテストできます。root 権限が必要な点に注意してください。
 
-> PMIO，使用 iopl 更改端口权限后便能通过 in/out 类指令读写端口
+> PMIO は、iopl でポートの権限を変更した後、in/out 系の命令でポートを読み書きできます。
 
 ```c
 #include <stdio.h>
@@ -468,7 +468,7 @@ int main(int argc, char **argv, char **envp)
 }
 ```
 
-> MMIO，使用 mmap 映射 `sys` 目录下设备的 `resource0` 文件即可直接读写
+> MMIO は、`sys` ディレクトリ配下のデバイスの `resource0` ファイルを mmap でマップすれば、直接読み書きできます。
 
 ```c
 #include <stdio.h>

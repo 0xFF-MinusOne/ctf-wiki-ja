@@ -1,18 +1,18 @@
-# 内部隔离
+# 内部隔離
 
-## 堆块隔离
+## ヒープチャンクの隔離
 
-### GFP\_KERNEL & GFP\_KERNEL\_ACCOUNT 的隔离
+### GFP\_KERNEL と GFP\_KERNEL\_ACCOUNT の隔離
 
-`GFP_KERNEL` 与 `GFP_KERNEL_ACCOUNT`  是内核中最为常见与通用的分配 flag，常规情况下他们的分配都来自同一个 `kmem_cache` ——即通用的 `kmalloc-xx`。
+`GFP_KERNEL` と `GFP_KERNEL_ACCOUNT` はカーネルで最も一般的で汎用的な確保用フラグで、通常はどちらも同じ `kmem_cache`、つまり汎用の `kmalloc-xx` から確保されます。
 
-在 5.9 版本之前`GFP_KERNEL` 与 `GFP_KERNEL_ACCOUNT` 存在隔离机制，在 [这个 commit](https://github.com/torvalds/linux/commit/10befea91b61c4e2c2d1df06a2e978d182fcf792) 中取消了隔离机制，自内核版本 5.14 起，在 [这个 commit](https://github.com/torvalds/linux/commit/494c1dfe855ec1f70f89552fce5eadf4a1717552) 当中又重新引入：
+5.9 より前のバージョンでは `GFP_KERNEL` と `GFP_KERNEL_ACCOUNT` の間に隔離機構がありましたが、[この commit](https://github.com/torvalds/linux/commit/10befea91b61c4e2c2d1df06a2e978d182fcf792) で隔離機構は廃止されました。その後、カーネルバージョン 5.14 以降では [この commit](https://github.com/torvalds/linux/commit/494c1dfe855ec1f70f89552fce5eadf4a1717552) で再び導入されています。
 
-- 对于开启了 `CONFIG_MEMCG_KMEM` 编译选项的 kernel 而言（默认开启），其会为使用 `GFP_KERNEL_ACCOUNT` 进行分配的通用对象**创建一组独立的 `kmem_cache` ——名为 `kmalloc-cg-*`** ，从而导致使用这两种 flag 的 object 之间的隔离。
+- `CONFIG_MEMCG_KMEM` コンパイルオプションが有効なカーネル(デフォルトで有効)では、`GFP_KERNEL_ACCOUNT` で確保される汎用オブジェクトのために、**独立した `kmem_cache` の組(名前は `kmalloc-cg-*`)が作られます**。これにより、2 種類のフラグを使うオブジェクト同士が隔離されます。
 
 ### SLAB_ACCOUNT
 
-根据描述，如果在使用 `kmem_cache_create` 创建一个 cache 时，传递了 `SLAB_ACCOUNT` 标记，那么这个 cache 就会单独存在，不会与其它相同大小的 cache 合并。
+説明によると、`kmem_cache_create` で cache を作成する際に `SLAB_ACCOUNT` フラグを渡すと、その cache は独立して存在し、同じサイズの他の cache と統合されません。
 
 ```
 Currently, if we want to account all objects of a particular kmem cache,
@@ -29,7 +29,7 @@ SLAB_ACCOUNT, i.e. using this flag will probably reduce the number of
 merged slabs even if kmem accounting is not used (only compiled in).
 ```
 
-在早期，许多结构体（如 **cred 结构体**）对应的堆块并不单独存在，会和相同大小的堆块使用相同的 cache。在 Linux 4.5 版本引入了这个 flag 后，许多结构体就单独使用了自己的 cache。然而，根据上面的描述，这一特性似乎最初并不是为了安全性引入的。
+初期の頃は、多くの構造体(**cred 構造体**など)に対応するヒープチャンクは独立して存在せず、同じサイズのヒープチャンクと同じ cache を使っていました。Linux 4.5 でこのフラグが導入されると、多くの構造体が自前の cache を使うようになりました。ただし、上の説明によれば、この特性はもともとセキュリティのために導入されたものではないようです。
 
 ```
 Mark those kmem allocations that are known to be easily triggered from
@@ -61,7 +61,7 @@ everything" approach (simply because it did not account everything in
 fact).
 ```
 
-### 参考
+### 参考文献
 
 - https://lore.kernel.org/patchwork/patch/616610/
 - https://github.com/torvalds/linux/commit/5d097056c9a017a3b720849efb5432f37acabbac#diff-3cb5667a88a24e8d5abc7042f5c4193698d6b962157f637f9729e61198eec63a

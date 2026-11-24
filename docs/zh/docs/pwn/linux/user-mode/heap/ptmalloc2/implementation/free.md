@@ -1,25 +1,25 @@
-# 释放内存块
+# メモリブロックの解放
 
 ## __libc_free
 
-类似于 malloc，free 函数也有一层封装，命名格式与 malloc 基本类似。代码如下
+malloc と同様に、free 関数にも 1 層のラッパーがあり、命名形式は malloc とほぼ同じです。コードは次のとおりです。
 
 ```c++
 void __libc_free(void *mem) {
     mstate    ar_ptr;
     mchunkptr p; /* chunk corresponding to mem */
-    // 判断是否有钩子函数 __free_hook
+    // フック関数 __free_hook があるかを判断する
     void (*hook)(void *, const void *) = atomic_forced_read(__free_hook);
     if (__builtin_expect(hook != NULL, 0)) {
         (*hook)(mem, RETURN_ADDRESS(0));
         return;
     }
-    // free NULL没有作用
+    // free NULL は何もしない
     if (mem == 0) /* free(0) has no effect */
         return;
-    // 将mem转换为chunk状态
+    // mem を chunk の状態に変換する
     p = mem2chunk(mem);
-    // 如果该块内存是mmap得到的
+    // このメモリブロックが mmap で得られたものである場合
     if (chunk_is_mmapped(p)) /* release mmapped memory. */
     {
         /* See if the dynamic brk/mmap threshold needs adjusting.
@@ -35,16 +35,16 @@ void __libc_free(void *mem) {
         munmap_chunk(p);
         return;
     }
-    // 根据chunk获得分配区的指针
+    // chunk から arena のポインタを取得する
     ar_ptr = arena_for_chunk(p);
-    // 执行释放
+    // 解放を実行する
     _int_free(ar_ptr, p, 0);
 }
 ```
 
 ## _int_free
 
-函数初始时刻定义了一系列的变量，并且得到了用户想要释放的 chunk 的大小
+関数の冒頭で一連の変数が定義され、ユーザーが解放しようとしている chunk のサイズが得られます。
 
 ```c++
 static void _int_free(mstate av, mchunkptr p, int have_lock) {
@@ -63,15 +63,15 @@ static void _int_free(mstate av, mchunkptr p, int have_lock) {
     size = chunksize(p);
 ```
 
-### 简单的检查
+### 簡単な検査
 
 ```c++
     /* Little security check which won't hurt performance: the
        allocator never wrapps around at the end of the address space.
        Therefore we can exclude some size values which might appear
        here by accident or by "design" from some intruder.  */
-    // 指针不能指向非法的地址, 必须小于等于-size，为什么？？？
-    // 指针必须得对齐，2*SIZE_SZ 这个对齐得仔细想想
+    // ポインタは不正なアドレスを指してはならず、-size 以下でなければならない。なぜか?
+    // ポインタはアラインされていなければならない。2*SIZE_SZ のアラインについてはよく考える必要がある
     if (__builtin_expect((uintptr_t) p > (uintptr_t) -size, 0) ||
         __builtin_expect(misaligned_chunk(p), 0)) {
         errstr = "free(): invalid pointer";
@@ -82,16 +82,16 @@ static void _int_free(mstate av, mchunkptr p, int have_lock) {
     }
     /* We know that each chunk is at least MINSIZE bytes in size or a
        multiple of MALLOC_ALIGNMENT.  */
-    // 大小没有最小的chunk大，或者说，大小不是MALLOC_ALIGNMENT的整数倍
+    // サイズが最小の chunk より小さい、または MALLOC_ALIGNMENT の整数倍でない
     if (__glibc_unlikely(size < MINSIZE || !aligned_OK(size))) {
         errstr = "free(): invalid size";
         goto errout;
     }
-    // 检查该chunk是否处于使用状态，非调试状态下没有作用
+    // この chunk が使用中かどうかを検査する。デバッグ時以外は効果がない
     check_inuse_chunk(av, p);
 ```
 
-其中
+このうち
 
 ```c
 /* Check if m has acceptable alignment */
@@ -107,7 +107,7 @@ static void _int_free(mstate av, mchunkptr p, int have_lock) {
 
 ### fast bin
 
-如果上述检查都合格的话，判断当前的 bin 是不是在 fast bin 范围内，在的话就插入到 **fastbin 头部**，即成为对应 fastbin 链表的**第一个 free chunk**。
+上記の検査がすべて合格した場合、現在の bin が fast bin の範囲内かどうかを判断し、範囲内であれば **fastbin の先頭**に挿入します。つまり、対応する fastbin リストの**最初の free chunk** になります。
 
 ```c++
     /*
@@ -122,14 +122,14 @@ static void _int_free(mstate av, mchunkptr p, int have_lock) {
       If TRIM_FASTBINS set, don't place chunks
       bordering top into fastbins
         */
-       //默认 #define TRIM_FASTBINS 0，因此默认情况下下面的语句不会执行
-       // 如果当前chunk是fast chunk，并且下一个chunk是top chunk，则不能插入
+       //デフォルトでは #define TRIM_FASTBINS 0 なので、デフォルトでは以下の文は実行されない
+       // 現在の chunk が fast chunk で、次の chunk が top chunk なら、挿入できない
         && (chunk_at_offset(p, size) != av->top)
 #endif
             ) {
-        // 下一个chunk的大小不能小于两倍的SIZE_SZ,并且
-        // 下一个chunk的大小不能大于system_mem， 一般为132k
-        // 如果出现这样的情况，就报错。
+        // 次の chunk のサイズは SIZE_SZ の 2 倍以下であってはならず、かつ
+        // 次の chunk のサイズは system_mem 以上であってはならない。通常は 132k
+        // このような場合はエラーとする。
         if (__builtin_expect(
                 chunksize_nomask(chunk_at_offset(p, size)) <= 2 * SIZE_SZ, 0) ||
             __builtin_expect(
@@ -153,17 +153,17 @@ static void _int_free(mstate av, mchunkptr p, int have_lock) {
                 locked = 0;
             }
         }
-        // 将chunk的mem部分全部设置为perturb_byte
+        // chunk の mem 部分をすべて perturb_byte に設定する
         free_perturb(chunk2mem(p), size - 2 * SIZE_SZ);
-        // 设置fast chunk的标记位
+        // fast chunk のフラグビットを設定する
         set_fastchunks(av);
-        // 根据大小获取fast bin的索引
+        // サイズから fast bin のインデックスを取得する
         unsigned int idx = fastbin_index(size);
-        // 获取对应fastbin的头指针，被初始化后为NULL。
+        // 対応する fastbin の先頭ポインタを取得する。初期化後は NULL
         fb               = &fastbin(av, idx);
 
         /* Atomically link P to its fastbin: P->FD = *FB; *FB = P;  */
-        // 使用原子操作将P插入到链表中
+        // アトミック操作で P をリストに挿入する
         mchunkptr    old     = *fb, old2;
         unsigned int old_idx = ~0u;
         do {
@@ -171,7 +171,7 @@ static void _int_free(mstate av, mchunkptr p, int have_lock) {
                add
                (i.e., double free).  */
             // so we can not double free one fastbin chunk
-            // 防止对 fast bin double free
+            // fast bin に対する double free を防ぐ
             if (__builtin_expect(old == p, 0)) {
                 errstr = "double free or corruption (fasttop)";
                 goto errout;
@@ -185,7 +185,7 @@ static void _int_free(mstate av, mchunkptr p, int have_lock) {
             p->fd = old2 = old;
         } while ((old = catomic_compare_and_exchange_val_rel(fb, p, old2)) !=
                  old2);
-        // 确保fast bin的加入前与加入后相同
+        // fast bin への追加の前後で同じであることを確認する
         if (have_lock && old != NULL && __builtin_expect(old_idx != idx, 0)) {
             errstr = "invalid fastbin entry (free)";
             goto errout;
@@ -193,18 +193,18 @@ static void _int_free(mstate av, mchunkptr p, int have_lock) {
     }
 ```
 
-### 合并非 mmap 的空闲 chunk
+### mmap でない空き chunk の統合
 
-**只有不是 fast bin 的情况下才会触发unlink**
+**fast bin でない場合にのみ unlink が発動します**
 
-首先我们先说一下为什么会合并chunk，这是为了避免heap中有太多零零碎碎的内存块，合并之后可以用来应对更大的内存块请求。合并的主要顺序为
+まず、なぜ chunk を統合するのかを説明します。これは、ヒープ中に細々としたメモリブロックが多くなりすぎるのを避けるためで、統合後はより大きなメモリブロックの要求に対応できます。統合の順序は主に次のとおりです。
 
-- 先考虑物理低地址空闲块
-- 后考虑物理高地址空闲块
+- まず、物理的に低位アドレスの空きブロックを考慮する
+- 次に、物理的に高位アドレスの空きブロックを考慮する
 
-**合并后的 chunk 指向合并的 chunk 的低地址。**
+**統合後の chunk は、統合された chunk の低位アドレスを指します。**
 
-在没有锁的情况下，先获得锁。
+ロックを取得していない場合は、まずロックを取得します。
 
 ```c++
     /*
@@ -219,17 +219,17 @@ static void _int_free(mstate av, mchunkptr p, int have_lock) {
         nextchunk = chunk_at_offset(p, size);
 ```
 
-#### 轻量级的检测
+#### 軽量な検査
 
 ```c++
         /* Lightweight tests: check whether the block is already the
            top block.  */
-        // 当前free的chunk不能是top chunk
+        // 現在 free する chunk は top chunk であってはならない
         if (__glibc_unlikely(p == av->top)) {
             errstr = "double free or corruption (top)";
             goto errout;
         }
-        // 当前free的chunk的下一个chunk不能超过arena的边界
+        // 現在 free する chunk の次の chunk は arena の境界を越えてはならない
         /* Or whether the next chunk is beyond the boundaries of the arena.  */
         if (__builtin_expect(contiguous(av) &&
                                  (char *) nextchunk >=
@@ -238,17 +238,17 @@ static void _int_free(mstate av, mchunkptr p, int have_lock) {
             errstr = "double free or corruption (out)";
             goto errout;
         }
-        // 当前要free的chunk的使用标记没有被标记，double free
+        // 現在 free しようとする chunk の使用フラグが立っていない。double free
         /* Or whether the block is actually not marked used.  */
         if (__glibc_unlikely(!prev_inuse(nextchunk))) {
             errstr = "double free or corruption (!prev)";
             goto errout;
         }
-        // 下一个chunk的大小
+        // 次の chunk のサイズ
         nextsize = chunksize(nextchunk);
         // next chunk size valid check
-        // 判断下一个chunk的大小是否不大于2*SIZE_SZ，或者
-        // nextsize是否大于系统可提供的内存
+        // 次の chunk のサイズが 2*SIZE_SZ 以下か、または
+        // nextsize がシステムの提供できるメモリ以上かを判断する
         if (__builtin_expect(chunksize_nomask(nextchunk) <= 2 * SIZE_SZ, 0) ||
             __builtin_expect(nextsize >= av->system_mem, 0)) {
             errstr = "free(): invalid next size (normal)";
@@ -256,14 +256,14 @@ static void _int_free(mstate av, mchunkptr p, int have_lock) {
         }
 ```
 
-#### 释放填充
+#### 解放時のパディング
 
 ```c++
-        //将指针的mem部分全部设置为perturb_byte
+        //ポインタの mem 部分をすべて perturb_byte に設定する
 		free_perturb(chunk2mem(p), size - 2 * SIZE_SZ);
 ```
 
-#### 后向合并-合并低地址 chunk
+#### 後方統合: 低位アドレスの chunk を統合
 
 ```c++
         /* consolidate backward */
@@ -275,17 +275,17 @@ static void _int_free(mstate av, mchunkptr p, int have_lock) {
         }
 ```
 
-#### 下一块不是top chunk-前向合并-合并高地址chunk
+#### 次のブロックが top chunk でない場合: 前方統合、高位アドレスの chunk を統合
 
-需要注意的是，如果下一块不是 top chunk ，则合并高地址的 chunk ，并将合并后的 chunk 放入到unsorted bin中。
+次のブロックが top chunk でない場合は、高位アドレスの chunk を統合し、統合後の chunk を unsorted bin に入れることに注意してください。
 
 ```c++
-		// 如果下一个chunk不是top chunk
+		// 次の chunk が top chunk でない場合
 		if (nextchunk != av->top) {
             /* get and clear inuse bit */
-            // 获取下一个 chunk 的使用状态
+            // 次の chunk の使用状態を取得する
             nextinuse = inuse_bit_at_offset(nextchunk, nextsize);
-            // 如果不在使用，合并，否则清空当前chunk的使用状态。
+            // 使用中でなければ統合し、そうでなければ現在の chunk の使用状態をクリアする。
             /* consolidate forward */
             if (!nextinuse) {
                 unlink(av, nextchunk, bck, fwd);
@@ -298,17 +298,17 @@ static void _int_free(mstate av, mchunkptr p, int have_lock) {
           not placed into regular bins until after they have
           been given one chance to be used in malloc.
             */
-            // 把 chunk 放在 unsorted chunk 链表的头部
+            // chunk を unsorted chunk リストの先頭に置く
             bck = unsorted_chunks(av);
             fwd = bck->fd;
-            // 简单的检查
+            // 簡単な検査
             if (__glibc_unlikely(fwd->bk != bck)) {
                 errstr = "free(): corrupted unsorted chunks";
                 goto errout;
             }
             p->fd = fwd;
             p->bk = bck;
-            // 如果是 large chunk，那就设置nextsize指针字段为NULL。
+            // large chunk なら、nextsize ポインタフィールドを NULL に設定する。
             if (!in_smallbin_range(size)) {
                 p->fd_nextsize = NULL;
                 p->bk_nextsize = NULL;
@@ -323,14 +323,14 @@ static void _int_free(mstate av, mchunkptr p, int have_lock) {
         }
 ```
 
-#### 下一块是 top chunk-合并到 top chunk
+#### 次のブロックが top chunk の場合: top chunk に統合
 
 ```c++
         /*
           If the chunk borders the current high end of memory,
           consolidate into top
         */
-        // 如果要释放的chunk的下一个chunk是top chunk，那就合并到 top chunk
+        // 解放する chunk の次の chunk が top chunk なら、top chunk に統合する
         else {
             size += nextsize;
             set_head(p, size | PREV_INUSE);
@@ -339,7 +339,7 @@ static void _int_free(mstate av, mchunkptr p, int have_lock) {
         }
 ```
 
-#### 向系统返还内存
+#### システムへのメモリの返還
 
 ```c++
         /*
@@ -354,20 +354,20 @@ static void _int_free(mstate av, mchunkptr p, int have_lock) {
           consolidation is performed if FASTBIN_CONSOLIDATION_THRESHOLD
           is reached.
         */
-         // 如果合并后的 chunk 的大小大于FASTBIN_CONSOLIDATION_THRESHOLD
-         // 一般合并到 top chunk 都会执行这部分代码。
-         // 那就向系统返还内存
+         // 統合後の chunk のサイズが FASTBIN_CONSOLIDATION_THRESHOLD 以上の場合
+         // top chunk に統合した場合は、通常この部分のコードが実行される。
+         // システムにメモリを返還する
         if ((unsigned long) (size) >= FASTBIN_CONSOLIDATION_THRESHOLD) {
-            // 如果有 fast chunk 就进行合并
+            // fast chunk があれば統合する
             if (have_fastchunks(av)) malloc_consolidate(av);
-            // 主分配区
+            // メイン arena
             if (av == &main_arena) {
 #ifndef MORECORE_CANNOT_TRIM
-                // top chunk 大于当前的收缩阙值
+                // top chunk が現在の縮小しきい値以上の場合
                 if ((unsigned long) (chunksize(av->top)) >=
                     (unsigned long) (mp_.trim_threshold))
                     systrim(mp_.top_pad, av);
-#endif      // 非主分配区，则直接收缩heap
+#endif      // メインでない arena なら、直接 heap を縮小する
             } else {
                 /* Always try heap_trim(), even if the top chunk is not
                    large, because the corresponding heap might go away.  */
@@ -384,7 +384,7 @@ static void _int_free(mstate av, mchunkptr p, int have_lock) {
         }
 ```
 
-### 释放 mmap 的chunk
+### mmap された chunk の解放
 
 ```c++
     } else {

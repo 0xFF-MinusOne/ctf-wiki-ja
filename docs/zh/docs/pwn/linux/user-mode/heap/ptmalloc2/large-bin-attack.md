@@ -1,12 +1,12 @@
 # Large Bin Attack
 
-分配跟 large bin 有关的 chunk，要经过 fastbin，unsorted bin，small bin 的分配，建议在学习 large bin attack 之前搞清楚 fastbin，unsorted bin 分配的流程。
+large bin に関係するチャンクの確保では、fastbin、unsorted bin、small bin からの確保を経由します。large bin attack を学ぶ前に、fastbin と unsorted bin の確保の流れを理解しておくことをお勧めします。
 
 ## large bin attack
 
-这种攻击方式主要利用的是 chunk 进入 bin 中的操作，在 malloc 的时候，遍历 unsorted bin 时，对每一个 chunk，若无法 exact-fit 分配或不满足切割分配的条件，就会将该 chunk 置入相应的 bin 中，而此过程中缺乏对 largebin 的跳表指针的检测。
+この攻撃手法が主に利用するのは、チャンクが bin に入るときの操作です。malloc の際に unsorted bin を走査するとき、各チャンクについて exact-fit での確保ができず、分割しての確保の条件も満たさない場合、そのチャンクは対応する bin に置かれます。この過程では、largebin のスキップリストのポインタに対するチェックが欠けています。
 
-以 2.33 版本的 libc 为例，从 4052 行开始就是对 largebin chunk 的入 bin 操作
+2.33 版の libc を例にすると、4052 行目から largebin のチャンクを bin に入れる処理が始まります。
 
 ```cpp
 else
@@ -61,16 +61,16 @@ else
                 }
 ```
 
-在 2.29 及以下的版本中，根据 unsorted chunk 的大小不同
+2.29 以下のバージョンでは、unsorted chunk の大きさによって次のどちらかが実行されます。
 
 ```cpp
 fwd->fd->bk_nextsize = victim->bk_nextsize->fd_nextsize = victim;
 victim->bk_nextsize->fd_nextsize = victim;
 ```
 
-在 unsorted chunk 小于链表中最小的 chunk 的时候会执行前一句，反之执行后一句。
+unsorted chunk がリスト中で最小のチャンクより小さいときは前の1行が、そうでないときは後ろの1行が実行されます。
 
-由于两者大小相同的时候只会使用如下的方法插入，所以此时无法利用。
+両者のサイズが同じときは次の方法でしか挿入されないため、この場合は利用できません。
 
 ```cpp
 if ((unsigned long) size
@@ -79,22 +79,22 @@ if ((unsigned long) size
                         fwd = fwd->fd;
 ```
 
-所以有两种利用方法。
+したがって、利用方法は2通りあります。
 
-在 2.30 版本新加入了对 largebin 跳表的完整性检查，使 unsorted chunk 大于链表中最小的 chunk 时的利用失效，必须使 unsorted chunk 小于链表中最小的 chunk，通过
+2.30 版では largebin のスキップリストに対する整合性チェックが新たに加わり、unsorted chunk がリスト中で最小のチャンクより大きい場合の利用はできなくなりました。unsorted chunk をリスト中で最小のチャンクより小さくし、次の処理によって利用する必要があります。
 
 ```cpp
 victim->bk_nextsize->fd_nextsize = victim;
 ```
 
-实现利用，也就是将本 chunk 的地址写到 `bk_nextsize + 0x20` 处。
+これは、このチャンクのアドレスを `bk_nextsize + 0x20` に書き込むことに相当します。
 
-## 通过实例学习 large bin attack 的原理
+## 実例で学ぶ large bin attack の原理
 
-这里我们拿 how2heap 中的 large bin attack 中的源码来分析
+ここでは how2heap の large bin attack のソースコードを使って解析します。
 
 ```c
-// 主要漏洞在这里
+// 主な脆弱性はここにある
 /*
 
     This technique is taken from
@@ -213,13 +213,13 @@ int main()
 
 
 
-编译完以后，注意！一定要用 glibc2.25 的 loader，改变 loader 的方法可以看这里：https://www.jianshu.com/p/1a966b62b3d4
+コンパイルしたら、注意してください。必ず glibc2.25 の loader を使う必要があります。loader を変更する方法はこちらを参照してください: https://www.jianshu.com/p/1a966b62b3d4
 
 
 
 
 
-pwngdb 走起，开始我们的分析之旅：
+pwngdb を起動して、解析を始めましょう。
 
 
 
@@ -229,7 +229,7 @@ pwngdb 走起，开始我们的分析之旅：
 
 
 
-先跳到这个语句：（比 how2heap 源文件多添加了一个 p4 变量）
+まずこの文までジャンプします(how2heap の元ファイルより p4 変数が1つ増えています)。
 
 
 
@@ -237,17 +237,17 @@ pwngdb 走起，开始我们的分析之旅：
 
 
 
-由于刚 free() 掉了两个 chunk。现在的 unsorted bin 有两个空闲的 chunk
+2つのチャンクを free() したばかりなので、現在 unsorted bin には2つの空きチャンクがあります。
 
 
 
 ![](./figure/large_bin_attack/large_bin_attack3.png)
 
-要注意的是：
+注意すべき点は次のとおりです。
 
 
 
-p1 的大小是 `0x330 < 0x3f0` 大小属于 small bin，而 p2 的大小是 `0x410` 属于large bin
+p1 のサイズは `0x330 < 0x3f0` で small bin に属し、p2 のサイズは `0x410` で large bin に属します。
 
 
 
@@ -255,19 +255,19 @@ p1 的大小是 `0x330 < 0x3f0` 大小属于 small bin，而 p2 的大小是 `0x
 
 
 
-75 行做了很多事情，我来概述一下：
+75 行目では多くのことが行われています。概要を説明します。
 
 
 
-+ 从 unsorted bin 中拿出最后一个  chunk（p1 属于 small bin 的范围）
-+ 把这个 chunk 放入 small bin 中，并标记这个 small bin 有空闲的 chunk
-+ 再从 unsorted bin 中拿出最后一个 chunk（p2 属于 large bin 的范围）
-+ 把这个 chunk 放入 large bin 中，并标记这个 large bin 有空闲的 chunk
-+ 现在 unsorted bin 为空，从 small bin （p1）中分配一个小的 chunk 满足请求 0x90，并把剩下的 chunk（0x330 - 0xa0）放入 unsorted bin 中
++ unsorted bin から最後のチャンクを取り出す(p1 は small bin の範囲に属する)
++ このチャンクを small bin に入れ、この small bin に空きチャンクがあるとマークする
++ 再び unsorted bin から最後のチャンクを取り出す(p2 は large bin の範囲に属する)
++ このチャンクを large bin に入れ、この large bin に空きチャンクがあるとマークする
++ この時点で unsorted bin は空になる。small bin(p1)から小さなチャンクを確保して要求 0x90 を満たし、残りのチャンク(0x330 - 0xa0)を unsorted bin に入れる
 
 
 
-也就是说，现在：
+つまり、現在の状態は次のとおりです。
 
 
 
@@ -275,15 +275,15 @@ p1 的大小是 `0x330 < 0x3f0` 大小属于 small bin，而 p2 的大小是 `0x
 
 
 
-unsorted bin 中有一个 chunk 大小是 `0x330 - 0xa0 = 0x290`
+unsorted bin には、サイズが `0x330 - 0xa0 = 0x290` のチャンクが1つあります。
 
 
 
-large bin 某一个序列的 bin 中有一个 chunk 大小是 `0x410`
+large bin のあるインデックスの bin には、サイズが `0x410` のチャンクが1つあります。
 
 
 
-**好我们继续调试**：
+**では、デバッグを続けましょう**。
 
 
 
@@ -291,11 +291,11 @@ large bin 某一个序列的 bin 中有一个 chunk 大小是 `0x410`
 
 
 
-又 free 了一个大小为 0x410 的 large bin chunk。也就是说现在 unsorted bin 有两个空闲的 chunk，末尾是大小 `0x290` 大小的 chunk，第一个是 size 为 `0x410` 的 chunk。
+さらにサイズ 0x410 の large bin チャンクを free しました。つまり、現在 unsorted bin には2つの空きチャンクがあり、末尾はサイズ `0x290` のチャンク、先頭は size が `0x410` のチャンクです。
 
 
 
-接着开始构造：
+続いて、細工を始めます。
 
 
 
@@ -303,13 +303,13 @@ large bin 某一个序列的 bin 中有一个 chunk 大小是 `0x410`
 
 
 
-修改 p2（large bin chunk），修改结果如下：
+p2(large bin チャンク)を変更します。変更結果は次のとおりです。
 
 
 
 ![](./figure/large_bin_attack/large_bin_attack8.png)
 
-再来看看`malloc(0x90)`做了什么：
+次に、`malloc(0x90)` が何をするかを見てみましょう。
 
 
 
@@ -319,26 +319,26 @@ large bin 某一个序列的 bin 中有一个 chunk 大小是 `0x410`
 
 
 
-中间的过程概述一下，待会详细说重点：
+途中の過程を概説します。重要な点は後で詳しく説明します。
 
 
 
-与第一次 `malloc(0x90)` 过程类似：
+1回目の `malloc(0x90)` の過程と似ています。
 
 
 
-+ 从 unsorted bin 中拿出最后一个 chunk（size = 0x290），放入 small bin 中，标记该序列的 small bin 有空闲 chunk
-+ 再从 unsorted bin 中拿出最后一个 chunk（size = 0x410）
++ unsorted bin から最後のチャンク(size = 0x290)を取り出して small bin に入れ、そのインデックスの small bin に空きチャンクがあるとマークする
++ 再び unsorted bin から最後のチャンク(size = 0x410)を取り出す
 
 ![](./figure/large_bin_attack/large_bin_attack10.png)
 
 
 
-**重点来了：**
+**ここからが重要です。**
 
 
 
-由于这次拿的是属于 large bin chunk，进入了 else 分支：
+今回取り出したのは large bin のチャンクなので、else 分岐に入ります。
 
 
 
@@ -346,27 +346,27 @@ large bin 某一个序列的 bin 中有一个 chunk 大小是 `0x410`
 
 
 
-我们继续：
+続けます。
 
 ![](./figure/large_bin_attack/large_bin_attack12.png)
 
 
 
-**在一个序列的 large bin chunk 中 fd_nextsize 的方向是 size 变小的方向。这个循环的意思是找到一个比当前 fwd 指的 chunk 要大的地址，存入 fwd 中**。
+**あるインデックスの large bin のチャンクでは、fd_nextsize の向きは size が小さくなる方向です。このループの意味は、現在の fwd が指すチャンクより大きいものを見つけ、fwd に格納することです。**
 
 
 
-由于当前 fwd 的 size 被我们修改过=`0x3f0`，所以没有进入循环。在这里就有一个漏洞的限制，放在后面说。
+現在の fwd の size は私たちが `0x3f0` に変更してあるため、ループには入りません。ここにこの脆弱性の制約が1つあります。これは後で説明します。
 
 
 
 ![](./figure/large_bin_attack/large_bin_attack13.png)
 
-这个原本的意思是把从 unsorted bin 中来的 chunk 插入这个序列中，但是这里没有检查合法性。这里存在这一个利用：
+これは本来、unsorted bin から来たチャンクをこのインデックスのリストに挿入する処理ですが、ここでは正当性がチェックされていません。ここに1つの利用方法があります。
 
 
 
-之前做的构造，把 fwd 的 bk_nextsize 指向了另一个地址
+先ほどの細工で、fwd の bk_nextsize を別のアドレスに向けました。
 
 
 
@@ -378,23 +378,23 @@ victim->bk_nextsize->fd_nextsize = victim;
 
 
 
-也就是：
+つまり次のようになります。
 
 
 
 ```c
 addr2->fd_nextsize = victim;
-// 等价于
+// と等価
 *(addr2+4) = victim;
 ```
 
 
 
-所以修改了 `stack_var2` 的值。
+こうして `stack_var2` の値が書き換えられます。
 
 
 
-接着还存着另外一个利用：
+続いて、もう1つの利用方法があります。
 
 ```c
 bck = fwd->bk;
@@ -413,34 +413,34 @@ bck->fd = victim;
 
 ```c
 bck->fd = victim;
-// 等价于
+// と等価
 (fwd->bk)->fd = victim;
-// 等价于
+// と等価
 *(addr1+2) = victim;
 ```
 
 
 
-修改了 `stack_var1` 的值。
+`stack_var1` の値が書き換えられます。
 
 
 
-至此利用完毕。由于最后分配的还是 small bin 中的 chunk，与 large bin 中的 chunk 也无关了。
+これで利用は完了です。最後に確保されるのは small bin のチャンクであり、large bin のチャンクとはもう無関係です。
 
 
 
-## 总结  large bin attack 的利用方法
+## large bin attack の利用方法のまとめ
 
 
 
-how2heap 中也说了，large bin attack 是未来更深入的利用。现在我们来总结一下利用的条件：
+how2heap でも述べられているように、large bin attack はこの先のさらに踏み込んだ攻撃のための足がかりです。ここで、利用の条件をまとめます。
 
 
 
-+ 可以修改一个 large bin chunk 的 data
-+ 从 unsorted bin 中来的 large bin chunk 要紧跟在被构造过的 chunk 的后面
-+ 通过 large bin attack 可以辅助 Tcache Stash Unlink+ 攻击
-+ 可以修改 _IO_list_all 便于伪造 _IO_FILE 结构体进行 FSOP。
++ large bin チャンクの data を変更できること
++ unsorted bin から来る large bin チャンクが、細工済みのチャンクのすぐ後ろに続いていること
++ large bin attack は Tcache Stash Unlink+ 攻撃の補助にもなる
++ _IO_list_all を変更でき、_IO_FILE 構造体を偽造して FSOP を行いやすくなる
 
 
 

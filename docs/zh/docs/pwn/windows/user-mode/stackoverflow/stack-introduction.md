@@ -1,4 +1,3 @@
-# 栈介绍
+# スタック入門
 
-[可以参考这篇文章](https://ctf-wiki.org/pwn/linux/user-mode/stackoverflow/x86/stack-intro/)
-
+[こちらの記事を参照してください](https://ctf-wiki.org/pwn/linux/user-mode/stackoverflow/x86/stack-intro/)

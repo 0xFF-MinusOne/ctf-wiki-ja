@@ -1,86 +1,86 @@
-# 基础知识
+# 基礎知識
 
-> 如果你对操作系统基本理论并不熟悉，那笔者其实更推荐 [从 Linux kernel 这一个开源宏内核进行入门](https://arttnba3.cn/2021/02/21/OS-0X00-LINUX-KERNEL-PART-I/)，本文基本不会涉及操作系统基础概念。
+> オペレーティングシステムの基本理論に詳しくない場合、筆者としては、[オープンソースのモノリシックカーネルである Linux kernel から入門する](https://arttnba3.cn/2021/02/21/OS-0X00-LINUX-KERNEL-PART-I/)ことをむしろおすすめします。この文章では、オペレーティングシステムの基本概念にはほとんど触れません。
 
-Windows 操作系统全称为**新技术视窗**（Windows New Technology，简称 **Windows NT**），其 _曾经_ 声称采用的是**微内核架构**（micro kernel），即**大部分系统组件都以用户态形式存在，仅有部分必要组件以内核态形式存在**，但实际上现在 Windows 往内核态塞了不少东西，所以现在的 NT kernel 更偏向于 _混合内核_ （hybrid kernel）。
+Windows オペレーティングシステムの正式名称は**新技術ウィンドウズ**(Windows New Technology、略して **Windows NT**)で、_かつては_**マイクロカーネルアーキテクチャ**(micro kernel)を採用していると称していました。つまり、**大部分のシステムコンポーネントはユーザーモードで存在し、一部の必須コンポーネントだけがカーネルモードで存在する**というものです。しかし実際には、現在の Windows はカーネルモードに多くのものを詰め込んでいるため、現在の NT kernel はむしろ_ハイブリッドカーネル_(hybrid kernel)に近いと言えます。
 
-![Windows 内核架构总览](https://s2.loli.net/2025/02/01/o9DzrNqSvLxIfdR.png)
+![Windows カーネルアーキテクチャの全体像](https://s2.loli.net/2025/02/01/o9DzrNqSvLxIfdR.png)
 
-本篇博客我们主要介绍 **64 位** Windows NT kernel 的基本运行原理以及一些基本组件，主要以 Windows 10 作为案例进行讲解， _不会涉及与 32 位相关的内容_ 。
+このブログ記事では、主に **64 ビット** Windows NT kernel の基本的な動作原理といくつかの基本コンポーネントを紹介します。主に Windows 10 を例に説明し、_32 ビットに関する内容は扱いません_。
 
-> 关于 Windows 内核一些结构体的定义可以参见 [这个网站](https://www.vergiliusproject.com/kernels)
+> Windows カーネルのいくつかの構造体の定義は、[このサイト](https://www.vergiliusproject.com/kernels)で参照できます。
 
-## 一、用户态部分
+## 一、ユーザーモードの部分
 
-Windows NT 操作系统在用户态主要分为四个部分：
+Windows NT オペレーティングシステムは、ユーザーモードでは主に次の 4 つの部分に分かれます。
 
-- 系统进程（System Processes）
-- 服务（Services）
-- 应用（Applications）
-- 环境子系统（Environment Subsystem）
+- システムプロセス(System Processes)
+- サービス(Services)
+- アプリケーション(Applications)
+- 環境サブシステム(Environment Subsystem)
 
-Windows 下所有用户态程序对系统资源的获取最终都要通过 `ntdll.dll` 提供的系统调用接口完成。
+Windows のすべてのユーザーモードプログラムは、システムリソースの取得を最終的に `ntdll.dll` が提供するシステムコールインターフェースを通じて行います。
 
-## 二、内核态部分
+## 二、カーネルモードの部分
 
- NT kernel 并不存在硬件意义上的分层（都跑在 ring0），但在设计上存在分层依赖的概念，可以分为如图所示的三层：
+NT kernel にはハードウェア的な意味での階層(すべて ring0 で動作する)はありませんが、設計上は階層的な依存関係の考え方があり、図のような 3 つの層に分けられます。
 
-![Windows 系统架构层次](https://s2.loli.net/2025/02/01/ZwtEYSgi8UPr7Wx.png)
+![Windows システムアーキテクチャの階層](https://s2.loli.net/2025/02/01/ZwtEYSgi8UPr7Wx.png)
 
-### 上层：执行体 （Executive）
+### 上層:エグゼクティブ(Executive)
 
-**执行体**（Executive）是 NT kernel 的核心部分， **本质上就是传统的操作系统内核本体**，比较核心的一些子系统如下：
+**エグゼクティブ**(Executive)は NT kernel の中核部分で、**本質的には従来のオペレーティングシステムのカーネル本体**です。比較的中核となるサブシステムは次のとおりです。
 
-- **对象管理器**（Object Manager）：对象管理器是 **执行体的底层部分** ，在内核中 **所有的资源都是一个对象** （object），对象管理器便负责管理所有的内核对象。
-- 输入输出管理器（I/O Manager）：负责接收用户态程序的 I/O 请求（如访问磁盘），将其转换为对相关设备的调用。
-- 安全引用监视器（Security Reference Monitor）：Windows 使用**访问控制列表**（Access Control List）来确定对象的安全性，该子系统便负责实行安全规则。
-- 进程间通信管理器（IPC Manager）：负责处理不同进程间的通信请求。
-- 虚拟内存管理器（Virtual Memory Manager）：负责从内核层面进行整个操作系统的内存管理。
-- 进程管理器（Process Manager）：负责进程与线程的创建与销毁， _不负责直接调度_。
-- 即插即用管理器（Plug and Play Manager）：负责处理设备动态载入与卸载时进行检测及提供相应服务，大部分实际上在用户态的 `Plug and Play` 中实现。
-- 电源管理器（Power Manager）：负责处理电源相关事件（关机、睡眠等），并通知相关联的驱动程序。
-- 图形设备接口（Graphic Device Interface）：负责所有基本的绘图功能，自 NT 4.0 起移入内核态中运行（此前在用户态）。
+- **オブジェクトマネージャ**(Object Manager):オブジェクトマネージャは**エグゼクティブの下層部分**で、カーネル内では**すべてのリソースがオブジェクト**(object)であり、オブジェクトマネージャがすべてのカーネルオブジェクトの管理を担当します。
+- 入出力マネージャ(I/O Manager):ユーザーモードプログラムの I/O 要求(ディスクへのアクセスなど)を受け取り、関連するデバイスへの呼び出しに変換します。
+- セキュリティリファレンスモニタ(Security Reference Monitor):Windows は**アクセス制御リスト**(Access Control List)を使ってオブジェクトのセキュリティを判定します。このサブシステムがセキュリティルールの実施を担当します。
+- プロセス間通信マネージャ(IPC Manager):異なるプロセス間の通信要求を処理します。
+- 仮想メモリマネージャ(Virtual Memory Manager):カーネルレベルでオペレーティングシステム全体のメモリ管理を担当します。
+- プロセスマネージャ(Process Manager):プロセスとスレッドの作成と破棄を担当し、_直接のスケジューリングは担当しません_。
+- プラグアンドプレイマネージャ(Plug and Play Manager):デバイスの動的なロードとアンロードの際の検出と、対応するサービスの提供を担当します。大部分は実際にはユーザーモードの `Plug and Play` で実装されています。
+- 電源マネージャ(Power Manager):電源関連のイベント(シャットダウン、スリープなど)を処理し、関連するドライバに通知します。
+- グラフィックデバイスインターフェース(Graphic Device Interface):すべての基本的な描画機能を担当します。NT 4.0 からカーネルモードに移され、動作しています(それ以前はユーザーモードでした)。
 
-执行体相关的代码位于 `ntoskrnl.exe` 中，其向用户态导出的接口位于 `ntdll.dll` 中。
+エグゼクティブ関連のコードは `ntoskrnl.exe` にあり、ユーザーモードに公開されるインターフェースは `ntdll.dll` にあります。
 
-### 中层：（微）内核（Kernel）
+### 中層:(マイクロ)カーネル(Kernel)
 
-**内核**（Kernel）在 NT kernel 中**仅**负责多处理器间同步、线程直接调度、中断/异常分发等最基本的 _硬件侧职能_ ，符合“微内核”架构的基本思想。
+**カーネル**(Kernel)は NT kernel では、マルチプロセッサ間の同期、スレッドの直接スケジューリング、割り込み/例外のディスパッチなど、最も基本的な_ハードウェア側の機能_**だけ**を担当し、「マイクロカーネル」アーキテクチャの基本的な考え方に合致しています。
 
-内核相关代码位于 `ntoskrnl.exe` 中。
+カーネル関連のコードは `ntoskrnl.exe` にあります。
 
-### 中层：内核模式驱动（Kernel Mode Driver）
+### 中層:カーネルモードドライバ(Kernel Mode Driver)
 
-Windows 下的驱动有两种：用户模式驱动和内核模式驱动，后者负责向前者提供对应的接口，并将数据传递给更为底层的驱动程序。
+Windows のドライバには、ユーザーモードドライバとカーネルモードドライバの 2 種類があります。後者は前者に対応するインターフェースを提供し、データをさらに下層のドライバに渡します。
 
-内核模式驱动可以分为如图所示的三层，越贴近底层越靠近详细具体的硬件结构：
+カーネルモードドライバは図のような 3 つの層に分けられ、下層に近いほど詳細で具体的なハードウェア構造に近くなります。
 
 ![](https://s2.loli.net/2025/02/01/KeypmW8xGPViXQH.png)
 
-内核模式驱动被实现为离散的模块化组件，而非位于某个特定的 PE 文件中（有点像 LKM？）。
+カーネルモードドライバは独立したモジュール型のコンポーネントとして実装されており、特定の PE ファイルの中にあるわけではありません(LKM に少し似ている?)。
 
-### 下层：硬件抽象层（Hardware Abstract Layer）
+### 下層:ハードウェア抽象化レイヤ(Hardware Abstract Layer)
 
-**硬件抽象层**（Hardware Abstract Layer）负责隐藏与屏蔽底层不同硬件的各种细节，从而向上层内核提供**统一的抽象硬件接口**，例如 IO 接口、中断控制器等硬件行为的统一抽象。
+**ハードウェア抽象化レイヤ**(Hardware Abstract Layer)は、下層のさまざまなハードウェアの細部を隠蔽し、上層のカーネルに**統一された抽象ハードウェアインターフェース**を提供します。たとえば IO インターフェースや割り込みコントローラなどのハードウェアの振る舞いを統一的に抽象化します。
 
-HAL 的目的主要是消除硬件架构间的差异，从而方便操作系统与驱动开发者为不同硬件平台编写与具体硬件架构无强相关的代码以跨平台运行，从而无需为每个硬件平台都单独编写一套针对性代码。
+HAL の目的は主にハードウェアアーキテクチャ間の差異をなくすことで、オペレーティングシステムやドライバの開発者が、異なるハードウェアプラットフォーム向けに、具体的なハードウェアアーキテクチャへの依存が小さいコードを書いて、クロスプラットフォームで動かしやすくすることです。これによって、ハードウェアプラットフォームごとに専用のコードを個別に書く必要がなくなります。
 
-需要注意的是 HAL 主要负责 IO 等通用资源的抽象，部分驱动的部分操作仍然是绕开 HAL 直接与硬件进行通信的。
+HAL が主に担当するのは IO などの汎用リソースの抽象化であり、一部のドライバの一部の操作は、依然として HAL を迂回して直接ハードウェアと通信することに注意してください。
 
-HAL 相关代码位于 `hal.dll` 中。
+HAL 関連のコードは `hal.dll` にあります。
 
-## “一切皆对象”
+## 「すべてはオブジェクト」
 
-类似于 *NIX 系统中一切皆文件的哲学，在 Windows NT kernel 当中同样有**一切都是一个对象**（object）的说法，文件、设备、同步机制、注册表项等**在内核中都表示为对象**，每个对象有一个 `header` 存储对象基本信息（如名字、类型、位置），以及一个 `body` 存储数据。
+*NIX 系のシステムにおける「すべてはファイル」という思想と同様に、Windows NT kernel にも**すべてはオブジェクト**(object)であるという考え方があります。ファイル、デバイス、同期機構、レジストリキーなどは**カーネル内ではオブジェクトとして表現され**、各オブジェクトはオブジェクトの基本情報(名前、型、位置など)を格納する `header` と、データを格納する `body` を持ちます。
 
-NT kernel 中的对象可以分为两类：
+NT kernel のオブジェクトは 2 種類に分けられます。
 
-- 执行体对象（Executive Objects）：执行体对外暴露的资源对象（如进程、线程、文件等），对用户态可见。
-- 内核对象（Kernel Objects）：最基本的资源对象（如物理设备等），对用户态不可见。
+- エグゼクティブオブジェクト(Executive Objects):エグゼクティブが外部に公開するリソースオブジェクト(プロセス、スレッド、ファイルなど)で、ユーザーモードから見えます。
+- カーネルオブジェクト(Kernel Objects):最も基本的なリソースオブジェクト(物理デバイスなど)で、ユーザーモードから見えません。
 
-### 一、\_OBJECT\_HEADER：对象基本信息
+### 一、\_OBJECT\_HEADER:オブジェクトの基本情報
 
-在 NT kernel 中 `_OBJECT_HEADER` 结构体用来存储对象的基本信息，定义如下：
+NT kernel では、`_OBJECT_HEADER` 構造体がオブジェクトの基本情報を格納します。定義は次のとおりです。
 ```powershell
 kd> dt nt!_OBJECT_HEADER
    +0x000 PointerCount     : Int8B
@@ -108,11 +108,11 @@ kd> dt nt!_OBJECT_HEADER
    +0x030 Body             : _QUAD
 ```
 
-一个对象除了固定的 `_OBJECT_HEADER` 以外**还可以有额外的 optional header 来存储额外的信息**，对应的 optional header 是否存在由 `_OBJECT_HEADER->InfoMask` 掩码决定：
+オブジェクトには、固定の `_OBJECT_HEADER` のほかに、**追加情報を格納するための optional header を持たせることもでき**、対応する optional header が存在するかは `_OBJECT_HEADER->InfoMask` のマスクで決まります。
 
 ![](https://s2.loli.net/2025/02/01/S8hIzlRWCFGjTed.png)
 
-当 `_OBJECT_HEADER->InfoMask` 掩码中存在对应位时则表示 _对应的 optional header 存在_ ，由于 optional header 的存储顺序固定，NT kernel 可以很容易计算出不同 header 对应的偏移，掩码与 header type & size 对应关系如下：
+`_OBJECT_HEADER->InfoMask` のマスクに対応するビットが立っている場合、_対応する optional header が存在する_ ことを表します。optional header の格納順序は固定なので、NT kernel は各 header に対応するオフセットを簡単に計算できます。マスクと header の type & size の対応関係は次のとおりです。
 
 | Bit  |              Type              | Size (on X86) |
 | :--: | :----------------------------: | :-----------: |
@@ -122,7 +122,7 @@ kd> dt nt!_OBJECT_HEADER
 | 0x08 |  nt!_OBJECT_HEADER_QUOTA_INFO  |     0x10      |
 | 0x10 | nt!_OBJECT_HEADER_PROCESS_INFO |     0x08      |
 
-在**NT kernel 19H1 版本以前**，Windows 内核**仅**使用 `Pool Allocator` ，此时对于每个分配的内核池对象都有一个 `_POOL_HEADER` 结构体存储相应的信息：
+**NT kernel の 19H1 より前のバージョン**では、Windows カーネルは `Pool Allocator` **だけ**を使っており、カーネルプールに確保される各オブジェクトに対して、対応する情報を格納する `_POOL_HEADER` 構造体がありました。
 
 ```powershell
 kd> dt nt!_POOL_HEADER
@@ -137,321 +137,321 @@ kd> dt nt!_POOL_HEADER
    +0x00a PoolTagHash      : Uint2B
 ```
 
-由此我们可以得到一个内核对象的基本结构如下图所示：
+これにより、カーネルオブジェクトの基本的な構造は次の図のようになります。
 
 ![](https://s2.loli.net/2025/02/01/rzoqgZXxNSmsa52.png)
 
-### 二、对象管理器与命名空间
+### 二、オブジェクトマネージャと名前空間
 
-NT kernel 中所有的对象通过**对象管理器**（Object Manager）进行管理，用户态对任何对象的访问都需要通过对象管理子系统，对象管理器主要负责如下任务：
+NT kernel のすべてのオブジェクトは**オブジェクトマネージャ**(Object Manager)によって管理され、ユーザーモードからのあらゆるオブジェクトへのアクセスは、オブジェクト管理サブシステムを経由する必要があります。オブジェクトマネージャは主に次のタスクを担当します。
 
-- 管理对象的创建与销毁
-- 维护对象命名空间数据库
-- 追踪分配给进程的资源
-- 追踪特定对象的访问权限
-- 管理对象的生命周期
+- オブジェクトの作成と破棄の管理
+- オブジェクト名前空間のデータベースの維持
+- プロセスに割り当てられたリソースの追跡
+- 特定のオブジェクトに対するアクセス権限の追跡
+- オブジェクトのライフサイクルの管理
 
-对象归属于不同的[命名空间](https://learn.microsoft.com/zh-cn/windows/win32/termserv/kernel-object-namespaces)（Namespace），不同的用户会话（user session）便为不同的命名空间，对象创建时默认归属于当前会话的命名空间，此外还有一个全局共享的**全局命名空间**，从而使得对象可以在不同会话间进行共享。
+オブジェクトは異なる[名前空間](https://learn.microsoft.com/zh-cn/windows/win32/termserv/kernel-object-namespaces)(Namespace)に属します。ユーザーセッション(user session)ごとに別の名前空間になり、オブジェクトは作成時にデフォルトで現在のセッションの名前空間に属します。このほかに、グローバルに共有される**グローバル名前空間**もあり、これによってオブジェクトを異なるセッション間で共有できます。
 
-> 创建对象时可以通过 `"Global\"` 前缀来将该对象创建于全局命名空间中，例如通过如下代码可以创建一个属于全局命名空间的事件对象：
+> オブジェクトの作成時に `"Global\"` プレフィックスを付けると、そのオブジェクトをグローバル名前空間に作成できます。たとえば次のコードで、グローバル名前空間に属するイベントオブジェクトを作成できます。
 >
 > ```cpp
 > CreateEvent( NULL, FALSE, FALSE, "Global\\ARTTNBA3" );
 > ```
 >
-> 也可以通过 `“Local\”` 前缀显式说明对象创建在会话命名空间中。
+> また `"Local\"` プレフィックスによって、オブジェクトをセッション名前空間に作成することを明示することもできます。
 
-### 三、句柄（handler）
+### 三、ハンドル(handler)
 
-> 有点类似于 Linux 下文件描述符的概念，但是扩展到了大部分内核对象。
+> Linux のファイルディスクリプタの概念に少し似ていますが、大部分のカーネルオブジェクトに拡張されています。
 >
-> > 非常不知所谓的翻译，笔者个人感觉翻译成 _引用符_ 可能会更好一些。
+> > 全くわけのわからない訳語で、筆者個人としては _参照子_ と訳したほうがよいと感じます。
 
-**句柄**（handler）是 Windows 下用户态程序用来管理对应内核对象的一个对象描述符，表示形式为一个整数值（32/64 位系统中为 32/64 位整数），用户程序通过其拥有的句柄可以访问内核中相对应的内核对象。
+**ハンドル**(handler)は、Windows のユーザーモードプログラムが対応するカーネルオブジェクトを管理するために使うオブジェクトディスクリプタで、整数値(32/64 ビットシステムでは 32/64 ビット整数)として表されます。ユーザープログラムは、自分が持つハンドルを通じて、カーネル内の対応するカーネルオブジェクトにアクセスできます。
 
-在 Windows 中一共有以下几种存储对象信息的句柄表：
+Windows には、オブジェクト情報を格納するハンドルテーブルが次のように存在します。
 
-- Windows NT kernel 中所有对象的句柄都存放在一个全局的句柄表当中
-- 每个进程有其独立的一个句柄表（其地址存放在进程控制块的 `_EPROCESS->_HANDLER_TABLE->TableCode` 中），**进程所获取到的对象句柄值实际上是【该表对应项的下标索引值x4】**（64 位系统，每个条目 16 字节）
+- Windows NT kernel のすべてのオブジェクトのハンドルは、グローバルなハンドルテーブルに格納される
+- 各プロセスは独自のハンドルテーブルを持つ(そのアドレスはプロセス制御ブロックの `_EPROCESS->_HANDLER_TABLE->TableCode` に格納される)。**プロセスが取得するオブジェクトのハンドル値は、実際には【このテーブルの対応する項目の添字インデックス値 x4】**である(64 ビットシステム、各エントリ 16 バイト)
 
-进程句柄表结构如下图所示，其中第 0 项为保留项，句柄表项为 `_HANDLE_TABLE_ENTRY` 结构，其低 44 位值左移 4 位加上 `0xffff000000000000` 便是对象头地址：
+プロセスのハンドルテーブルの構造は下図のとおりです。第 0 項は予約されており、ハンドルテーブルの項目は `_HANDLE_TABLE_ENTRY` 構造で、その下位 44 ビットの値を 4 ビット左シフトして `0xffff000000000000` を加えたものがオブジェクトヘッダのアドレスです。
 
-> 在 Windows 7 当中进程句柄表实际上仅简单存放对象的地址，但是到了高版本内核一切都开始变得复杂了起来。
+> Windows 7 では、プロセスのハンドルテーブルは実際にはオブジェクトのアドレスを単純に格納するだけでしたが、新しいバージョンのカーネルでは、すべてが複雑になっていきました。
 
-![32 位 NT kernel 中句柄表的结构，64 位下的原理基本一致](https://s2.loli.net/2025/02/01/yZk1NKeIqBcriVS.png)
+![32 ビット NT kernel におけるハンドルテーブルの構造(64 ビットでも原理はほぼ同じ)](https://s2.loli.net/2025/02/01/yZk1NKeIqBcriVS.png)
 
-同时 `TableCode` 使用低 4 位**标识句柄表的结构层次**——即**进程句柄表实际上可以有多层结构**，类似于页表，**仅有最后一层存放对象地址，其他层都用于存放表地址**，每张表的大小为 4096 字节（一张内存页大小）：
+さらに `TableCode` は下位 4 ビットで**ハンドルテーブルの構造の階層を示します**。つまり、**プロセスのハンドルテーブルは実際には多層構造にでき**、ページテーブルに似ており、**最後の層だけがオブジェクトのアドレスを格納し、それ以外の層はテーブルのアドレスを格納します**。各テーブルのサイズは 4096 バイト(メモリページ 1 枚分)です。
 
 ![](https://s2.loli.net/2025/02/01/nU3FkTsiGpPMw8Q.png)
 
-## 内存管理
+## メモリ管理
 
-内存管理是操作系统最核心的一部份之一，不可不品尝。
+メモリ管理はオペレーティングシステムの最も中核的な部分の 1 つであり、味わっておかないわけにはいきません。
 
-### 一、物理内存管理
+### 一、物理メモリ管理
 
-#### 内核地址空间布局
+#### カーネルアドレス空間のレイアウト
 
-首先来一张 64 位 NT kernel 内存布局总览：
+まず、64 ビット NT kernel のメモリレイアウトの全体図を示します。
 
-> 32 位就暂时不考虑研究了，毕竟从 Win11 开始就已经都是纯 64 位了。
+> 32 ビットは、Win11 以降はすべて純粋な 64 ビットになったので、ひとまず研究は考えません。
 
 | **Start**               | **End**                   | **Size**  | **Description**          | Usage                                                  |
 | ----------------------- | ------------------------- | --------- | ------------------------ | ------------------------------------------------------ |
-| FFFF080000000000       | FFFFF67FFFFFFFFF         | 238TB     | Unused System Space      | 不会被用到的空间                                       |
-| FFFFF68000000000       | FFFFF6FFFFFFFFFF         | 512GB     | PTE Space                | 页表所在区域                                           |
-| FFFFF70000000000       | FFFFF77FFFFFFFFF         | 512GB     | HyperSpace               | 用来做临时中转映射                                     |
-| FFFFF78000000000       | FFFFF78000000FFF         | 4K        | Shared System Page       | 共享内存空间，（作为内核入口点？）在每个进程中都有映射 |
-| FFFFF78000001000       | FFFFF7FFFFFFFFFF         | 512GB-4K  | System Cache Working Set | 系统缓存的工作集 |
-| FFFFF80000000000       | FFFFF87FFFFFFFFF         | 512GB     | Initial Loader Mappings  | 最初的内核加载器所用区域                               |
-| FFFFF88000000000       | FFFFF89FFFFFFFFF         | 128GB     | Sys PTEs                 | 系统页表项区域，MDL 映射的虚拟内存和驱动映像都在此处   |
-| FFFFF8a000000000       | FFFFF8bFFFFFFFFF         | 128GB     | Paged Pool Area          | 分页内存区域                                           |
+| FFFF080000000000       | FFFFF67FFFFFFFFF         | 238TB     | Unused System Space      | 使われない領域                                       |
+| FFFFF68000000000       | FFFFF6FFFFFFFFFF         | 512GB     | PTE Space                | ページテーブルがある領域                                           |
+| FFFFF70000000000       | FFFFF77FFFFFFFFF         | 512GB     | HyperSpace               | 一時的な中継マッピングに使う                                     |
+| FFFFF78000000000       | FFFFF78000000FFF         | 4K        | Shared System Page       | 共有メモリ空間。(カーネルのエントリポイント?)各プロセスにマップされている |
+| FFFFF78000001000       | FFFFF7FFFFFFFFFF         | 512GB-4K  | System Cache Working Set | システムキャッシュのワーキングセット |
+| FFFFF80000000000       | FFFFF87FFFFFFFFF         | 512GB     | Initial Loader Mappings  | 最初のカーネルローダが使う領域                               |
+| FFFFF88000000000       | FFFFF89FFFFFFFFF         | 128GB     | Sys PTEs                 | システムページテーブルエントリの領域。MDL でマップされた仮想メモリとドライバイメージはここにある   |
+| FFFFF8a000000000       | FFFFF8bFFFFFFFFF         | 128GB     | Paged Pool Area          | ページング可能なメモリ領域                                           |
 | FFFFF90000000000       | FFFFF97FFFFFFFFF         | 512GB     | Session Space            |                                                        |
-| FFFFF98000000000       | FFFFFa70FFFFFFFF         | 1TB       | Dynamic Kernel VA Space  | 动态内存区域                                           |
-| FFFFFa8000000000       | *nt!MmNonPagedPoolStart-1 | 6TB Max   | PFN Database             | 存储 PFN 相关信息                                      |
-| *nt!MmNonPagedPoolStart | *nt!MmNonPagedPoolEnd     | 512GB Max | Non-Paged Pool           | 非分页内存区域（不会被换到硬盘上）                     |
-| FFFFFFFFFFc00000       | FFFFFFFFFFFFFFFF         | 4MB       | HAL and Loader Mappings  | 硬件抽象层与加载器所用区域                             |
+| FFFFF98000000000       | FFFFFa70FFFFFFFF         | 1TB       | Dynamic Kernel VA Space  | 動的メモリ領域                                           |
+| FFFFFa8000000000       | *nt!MmNonPagedPoolStart-1 | 6TB Max   | PFN Database             | PFN 関連の情報を格納する                                      |
+| *nt!MmNonPagedPoolStart | *nt!MmNonPagedPoolEnd     | 512GB Max | Non-Paged Pool           | ページングされないメモリ領域(ディスクにスワップアウトされない)                     |
+| FFFFFFFFFFc00000       | FFFFFFFFFFFFFFFF         | 4MB       | HAL and Loader Mappings  | ハードウェア抽象化レイヤとローダが使う領域                             |
 
-#### _MMPFN：物理页框
+#### _MMPFN:物理ページフレーム
 
-类似于 Linux kernel 中使用 `page` 结构体数组表示物理内存的方式，在 NT kernel 中使用 `_MMPFN` 结构体来表示**一张物理页**，并通过一个**结构体数组**来管理**所有的物理内存页**，数组下标即为物理页的**页帧号**（Page Frame Number，PFN），该数组即为 `PFN Database` 区域，在全局指针变量 `_MMPFN* MmPfnDatabase`  中存放着该数组的地址：
+Linux kernel が `page` 構造体の配列で物理メモリを表すのと同様に、NT kernel では `_MMPFN` 構造体で**物理ページ 1 枚**を表し、**構造体の配列**で**すべての物理メモリページ**を管理します。配列の添字がそのまま物理ページの**ページフレーム番号**(Page Frame Number、PFN)で、この配列が `PFN Database` 領域です。グローバルなポインタ変数 `_MMPFN* MmPfnDatabase` に、この配列のアドレスが格納されています。
 
 ![](https://s2.loli.net/2025/02/01/DjXOsiKcuGe3F62.png)
 
-根据 Page 的不同用途，非 active 页面对应的`_MMPFN` 会被放入不同的链表当中，链表头为 `_MMPFNLIST` 结构体：
+Page の用途に応じて、active でないページに対応する `_MMPFN` は異なるリストに入れられ、リストの先頭は `_MMPFNLIST` 構造体です。
 
-- `MmZeroedPageListHead` ：清零了的空闲页面链表
-- `MmFreePageListHead`：常规空闲页面链表，系统空闲时会从中取出页面进行清零后放到 `MmZeroedPageListHead`  上
-- `MmStandbyPageListHead`：进程从其工作集（working set，即**进程的虚拟地址空间中驻留在物理内存中的一组页面**）中丢弃页面时，若页未被修改则放入该链表，在 free 链表和 zeroed 链表都为空时会从上分配页面
-- `MmModifiedPageListHead`：进程从其工作集中丢弃页面时，若页被修改且需要写回磁盘则放入该链表，在 modified page writer 完成操作之后会将页面放至 standby 链表
-- `MmModifiedNoWritePageListHead`：进程从其工作集中丢弃页面时，若页被修改且**不**需要写回磁盘则放入该链表，modified page writer 完成操作之后会将页面放至 standby 链表
-- `MmBadPageListHead`：这些页面可能存在一些故障
+- `MmZeroedPageListHead`:ゼロクリア済みの空きページのリスト
+- `MmFreePageListHead`:通常の空きページのリスト。システムがアイドルのときに、ここからページを取り出してゼロクリアし、`MmZeroedPageListHead` に置く
+- `MmStandbyPageListHead`:プロセスがワーキングセット(working set、つまり**プロセスの仮想アドレス空間のうち物理メモリに常駐しているページの集合**)からページを破棄するとき、ページが変更されていなければこのリストに入れる。free リストと zeroed リストがどちらも空のとき、ここからページを確保する
+- `MmModifiedPageListHead`:プロセスがワーキングセットからページを破棄するとき、ページが変更されていて、ディスクへの書き戻しが必要ならこのリストに入れる。modified page writer が処理を終えると、ページは standby リストに置かれる
+- `MmModifiedNoWritePageListHead`:プロセスがワーキングセットからページを破棄するとき、ページが変更されていて、ディスクへの書き戻しが**不要**ならこのリストに入れる。modified page writer が処理を終えると、ページは standby リストに置かれる
+- `MmBadPageListHead`:これらのページには何らかの障害がある可能性がある
 
-> 进程从其工作集中丢弃页面有两种原因，一是原有工作集已满且要引入新页面，二是内存管理器修剪了其工作集（例如内存不够用了）。
+> プロセスがワーキングセットからページを破棄する理由は 2 つあります。1 つは元のワーキングセットがいっぱいで新しいページを取り込む必要があるとき、もう 1 つはメモリマネージャがワーキングセットをトリミングしたとき(たとえばメモリが足りなくなったとき)です。
 >
-> 在进程退出时，所有的页面都会进入 freepagelist 链表中。
+> プロセスの終了時には、すべてのページが freepagelist リストに入ります。
 
 ![](https://s2.loli.net/2025/02/01/F31JSlV7XCruWyT.png)
 
-页面在不同链表间循环的总览图如下：
+ページが異なるリスト間を循環する様子の全体図は次のとおりです。
 
 ![](https://s2.loli.net/2025/02/01/p2amPDjBd34IZYk.png)
 
-在 `_MMPFN` 结构体当中同样用了大量的 union，当页面在不同链表间循环时， `_MMPFN` 不同偏移的字段有着不同含义：
+`_MMPFN` 構造体も多くの union を使っており、ページが異なるリスト間を循環するとき、`_MMPFN` の異なるオフセットのフィールドは異なる意味を持ちます。
 
 ![image.png](https://s2.loli.net/2023/12/29/JqmC3DZRiVpMPbB.png)
 
-#### 页位图
+#### ページビットマップ
 
-> 待施工。
+> 執筆中。
 
-### 二、Pool Memory（before 19H1）
+### 二、Pool Memory(before 19H1)
 
-Windows NT kernel 将页面按照不同的用途分为不同的“**池**”（Pool）来管理，并将这些页面划分为更细粒度的小对象供内核组件使用，池的总类一共有三种：
+Windows NT kernel は、ページを用途に応じて異なる「**プール**」(Pool)に分けて管理し、これらのページをより細かい粒度の小さなオブジェクトに分割してカーネルコンポーネントに使わせます。プールの種類は全部で 3 つあります。
 
-- 非换页池（Non Paged Pool）：该池中的页面常驻物理内存中，不会被换出到磁盘
-- 换页池（Paged Pool）：该池中的页面在内存紧张时可能被换出到磁盘
-- 会话换页池（Session Paged Pool）：该池中的页面在内存紧张时可能被换出到磁盘，不同会话间存在隔离
+- ノンページドプール(Non Paged Pool):このプールのページは物理メモリに常駐し、ディスクにスワップアウトされない
+- ページドプール(Paged Pool):このプールのページは、メモリが逼迫するとディスクにスワップアウトされる可能性がある
+- セッションページドプール(Session Paged Pool):このプールのページは、メモリが逼迫するとディスクにスワップアウトされる可能性があり、セッション間は隔離されている
 
-#### 基本单位：池块（Pool Block）
+#### 基本単位:プールブロック(Pool Block)
 
-池内存中每次内存分配的对象称为一个池块（Pool Block），类似于 ptmalloc2 中的 chunk，每个池块的数据前部有一个 header 存储如下数据：
+プールメモリで 1 回の確保ごとに得られるオブジェクトをプールブロック(Pool Block)と呼びます。ptmalloc2 の chunk に似ており、各プールブロックのデータの前部には、次のデータを格納する header があります。
 
-- Previous Size：相邻低地址池块的大小**右移 4 位的结果**
-- Pool Index：池块归属的池描述符组的索引，多个池描述符组成一个池描述符数组
-- Block Size：池块大小**右移 4 位的结果**
-- Pool Type：池块所属池的类型
-- Pool Tag：调试时用于进行识别的字符
-- （一个Union）：
-    - Process Billed：指向分配了这个池块的进程描述符 `_EPROCESS` 的指针
-    - （一个结构体）
-        - Allocator Back Trace Index：
-        - Pool Tag Hash：
+- Previous Size:隣接する低アドレス側のプールブロックのサイズを**4 ビット右シフトした結果**
+- Pool Index:プールブロックが属するプールディスクリプタグループのインデックス。複数のプールディスクリプタでプールディスクリプタ配列を構成する
+- Block Size:プールブロックのサイズを**4 ビット右シフトした結果**
+- Pool Type:プールブロックが属するプールの種類
+- Pool Tag:デバッグ時に識別に使う文字
+- (union が 1 つ):
+    - Process Billed:このプールブロックを確保したプロセスのディスクリプタ `_EPROCESS` へのポインタ
+    - (構造体が 1 つ)
+        - Allocator Back Trace Index:
+        - Pool Tag Hash:
 
-此外，自 Windows Server 2003 版本起，在 Pool Chunk 尾部引入了 Canary 字段，用于预防潜在的 chunk overflow，这个值会在 （ _暂时没查到更多信息，推测是池块分配与释放时_ ） 时被检查。
+また、Windows Server 2003 から、潜在的な chunk overflow を防ぐために、Pool Chunk の末尾に Canary フィールドが導入されました。この値は ( _これ以上の情報は見つからなかったが、プールブロックの確保と解放の際と推測される_ ) にチェックされます。
 
 ![](https://s2.loli.net/2025/02/01/abBQ3WwxVCvdPj8.png)
 
-> 需要注意的是，Pool Chunk 仅用于请求内存大小不大于 4080 字节的情况（加上 16 字节的 header 刚好一张内存页大小）。
+> Pool Chunk が使われるのは、要求されたメモリサイズが 4080 バイト以下の場合だけです(16 バイトの header を加えるとちょうどメモリページ 1 枚分)。
 
-Pool Chunk 的管理与 ptmalloc2 chunk 非常相似，在 NT kernel 中会复用 Freed Chunk 的 Data 字段来组织 Free Chunk 为单向或双向链表：
+Pool Chunk の管理は ptmalloc2 の chunk と非常によく似ており、NT kernel では Freed Chunk の Data フィールドを再利用して、Free Chunk を単方向または双方向のリストとして構成します。
 
 ![](https://s2.loli.net/2025/02/03/MoOTksItJ6Wvdmr.png)
 
-#### 池描述符：内核共享内存池
+#### プールディスクリプタ:カーネル共有メモリプール
 
-> 这个结构在 Windows 10 数个版本当中也经历了一定的大大小小的变化， 但比较关键的变化是从 1809 版本到 1903 （19H1）版本，自 1903 版本 NT kernel 引入了 Segment Heap 机制作为内核的动态内存分配器，因此这一小节我们主要讲 1809 及以前的仍使用池内存分配器的 64 位版本。
+> この構造は Windows 10 の複数のバージョンの間でも、大小さまざまな変化を経ています。ただし重要な変化は 1809 から 1903(19H1)にかけてのもので、1903 から NT kernel はカーネルの動的メモリアロケータとして Segment Heap の仕組みを導入しました。そのためこの節では、主にプールメモリアロケータをまだ使っていた 1809 以前の 64 ビット版について説明します。
 
-类似于 Linux kernel 中的 `kmem_cache` ，Windows kernel 中单个内存池使用 `_POOL_DESCRIPTOR` 结构进行表示，其结构如下图所示：
+Linux kernel の `kmem_cache` に似て、Windows kernel では 1 つのメモリプールを `_POOL_DESCRIPTOR` 構造で表します。構造は下図のとおりです。
 
 ![](https://s2.loli.net/2025/02/05/lcemqOtFIfyMCVa.png)
 
-池描述符所对应的内存池在整个内核间共享，比较核心的有两个链表：
+プールディスクリプタに対応するメモリプールはカーネル全体で共有され、特に重要なリストは 2 つあります。
 
-- ListHeads 链表数组：存放常规的释放后的池块，使用双向链表进行连接，根据池块大小的不同放入不同的子链表中
-- PendingFrees 链表：当内存池设置了 `DELAY_FREE` 标志位时，池块释放后会先链入该单向链表（大小不限），当链表深度超过指定值时再统一回收
+- ListHeads リスト配列:解放後の通常のプールブロックを格納し、双方向リストで接続されており、プールブロックのサイズに応じて異なるサブリストに入れられる
+- PendingFrees リスト:メモリプールに `DELAY_FREE` フラグが設定されている場合、プールブロックは解放後にまずこの単方向リスト(サイズ無制限)につながれ、リストの深さが指定値を超えたときにまとめて回収される
 
-所有初始的内存池描述符都放在 `nt!PoolVector` 数组当中。
+初期状態のメモリプールディスクリプタは、すべて `nt!PoolVector` 配列に置かれています。
 
-#### 核心独占内存池：Lookaside Lists
+#### コア専用メモリプール:Lookaside Lists
 
-池描述符对应的内存池在所有核心间共享，核心一多效率就灾难了，因此每个核心实际上还有一个独有的内存池，存放在内核态 GS 寄存器指向的 `处理器控制区`（Process Control Region，为 `_KPCR` 结构体，类似于 Linux 下的 `.percpu` 段）当中—— Lookaside Lists 用于优先处理当前核心的池内存请求，只有当其不足以满足需求时才会向共享内存池请求内存。
+プールディスクリプタに対応するメモリプールはすべてのコアで共有されるため、コア数が増えると効率が壊滅的になります。そこで、各コアには実際には専用のメモリプールもあり、カーネルモードの GS レジスタが指す `プロセッサ制御領域`(Process Control Region、`_KPCR` 構造体で、Linux の `.percpu` セクションに似ている)に格納されています。Lookaside Lists は現在のコアのプールメモリ要求を優先的に処理するもので、それで足りない場合にだけ共有メモリプールにメモリを要求します。
 
-LookasideList 的结构如下图所示，根据大小归属数组上不同的链表，每个链表又分为二个子链：一个单向链表（默认，长度有上限，LIFO）与一个双向链表（前者满时放到这），LookasideList 的数组成员数量较少因此仅用于较小的内存分配。
+LookasideList の構造は下図のとおりで、サイズに応じて配列上の異なるリストに属し、各リストはさらに 2 つのサブリストに分かれます。単方向リスト(デフォルト、長さに上限あり、LIFO)と、双方向リスト(前者がいっぱいのときにここに置く)です。LookasideList の配列のメンバ数は少ないため、小さなメモリの確保にだけ使われます。
 
 ![](https://s2.loli.net/2025/02/05/VBuc9hZysC2fbr4.png)
 
-LookasideList 一共有四类（`PP == Per Processsor`）：
+LookasideList は全部で 4 種類あります(`PP == Per Processsor`)。
 
-- PPLookasideList：用于频繁分配与释放的对象的 LookasideList
-- PPNxPagedLookasideList：非换页池的 non-eXecuted 页面的 LookasideList
-- PPNPagedLookasideList：非换页池的 LookasideList
-- PPPagedLookasideList：换页池的 LookasideList
+- PPLookasideList:頻繁に確保・解放されるオブジェクト用の LookasideList
+- PPNxPagedLookasideList:ノンページドプールの non-eXecuted ページの LookasideList
+- PPNPagedLookasideList:ノンページドプールの LookasideList
+- PPPagedLookasideList:ページドプールの LookasideList
 
-> PPLookasideList 和其他 LookasideList 有什么不同？笔者也不知道 ~~，静待 Windows 开源的那一天~~ ......
+> PPLookasideList とほかの LookasideList は何が違うのか。筆者もわかりません ~~、Windows がオープンソースになる日を待ちましょう~~ ......
 
-#### 内存分配基本算法
+#### メモリ確保の基本アルゴリズム
 
-##### 1. 内存请求顺序
+##### 1. メモリ要求の順序
 
-池内存的分配核心函数是 `ExAllocatePoolWithTag(POOL_TYPE PoolType,SIZE_T NumberOfBytes,ULONG Tag)` ，用户需要手动指定分配的池类型、需要的内存大小等信息，内核组件与驱动通常通过该 API 或是更上层的 Wrapper 完成内核中的内存分配请求
+プールメモリの確保の中核となる関数は `ExAllocatePoolWithTag(POOL_TYPE PoolType,SIZE_T NumberOfBytes,ULONG Tag)` で、ユーザーは確保するプールの種類や必要なメモリサイズなどの情報を手動で指定する必要があります。カーネルコンポーネントやドライバは、通常この API か、より上位のラッパーを通じてカーネル内のメモリ確保要求を行います。
 
-- 通用的池内存分配仅适用于小于 4080 字节的内存请求，对于大于这个大小的内存请求则内部会通过 `nt!ExpAllocateBigPool()` 完成
-- 首先会尝试根据请求的池类型从 `_KPCR` 的 LookasideList 区域的不同链表进行内存分配，如果可以满足则直接返回
-- 若 LookasideList 无法满足，锁上对应的池，并尝试从 ListHeads 链表进行分配，若分配的池块大小大于所需则会将其分割为两块，一块返回给用户一块挂回 ListHeads 链表
-- 若无可用池块，则会调用 `nt!MiAllocatePoolPages` 分配内存页，并将其分割为两块，一块返回给用户一块挂回 ListHeads 链表
+- 汎用のプールメモリ確保が使えるのは 4080 バイト未満のメモリ要求だけで、これより大きいメモリ要求は内部で `nt!ExpAllocateBigPool()` によって処理される
+- まず、要求されたプールの種類に応じて、`_KPCR` の LookasideList 領域の各リストからメモリを確保しようとし、満たせればそのまま返す
+- LookasideList で満たせない場合は、対応するプールをロックし、ListHeads リストから確保しようとする。確保したプールブロックが必要なサイズより大きければ 2 つに分割し、1 つをユーザーに返して、もう 1 つを ListHeads リストに戻す
+- 利用可能なプールブロックがない場合は、`nt!MiAllocatePoolPages` を呼び出してメモリページを確保し、2 つに分割して、1 つをユーザーに返し、もう 1 つを ListHeads リストに戻す
 
 
-##### 2. 池块分割方法：非页对齐的块从尾部分割
+##### 2. プールブロックの分割方法:ページ境界にアラインされていないブロックは末尾から分割する
 
-在分割池块时，内核首先会检查池块的地址，若与内存页大小对齐（0x1000）则从头部分割出用户所需的池块，否则从尾部分割下用户所需的池块。
+プールブロックを分割するとき、カーネルはまずプールブロックのアドレスを確認します。メモリページサイズ(0x1000)にアラインされていれば、先頭からユーザーが必要とするプールブロックを分割し、そうでなければ末尾からユーザーが必要とするプールブロックを切り出します。
 
 ![](https://s2.loli.net/2025/02/05/tNK6CdgSholBeq4.png)
 
-#### 内存释放基本算法
+#### メモリ解放の基本アルゴリズム
 
-池内存的释放核心函数是 `ExFreePoolWithTag( PVOID Entry, ULONG Tag)` ，内核组件与驱动通常通过该 API 或是更上层的 Wrapper 完成内核中的内存释放请求。
+プールメモリの解放の中核となる関数は `ExFreePoolWithTag( PVOID Entry, ULONG Tag)` で、カーネルコンポーネントやドライバは、通常この API か、より上位のラッパーを通じてカーネル内のメモリ解放要求を行います。
 
-在 Chunk header 当中存放着该 Chunk 所属的 Pool Type & Index，因此释放时可以直接判断归属的 Pool 与对应的 List，具体释放流程如下：
+Chunk header には、その Chunk が属する Pool Type & Index が格納されているため、解放時に属する Pool と対応する List を直接判断できます。具体的な解放の流れは次のとおりです。
 
-- 首先检查该 Chunk 是否为页的第一个 Chunk （页对齐），若是则尝试调用 `nt!MiFreePoolPages()` 进行回收，成功则直接返回
-- 接下来检查物理相邻高地址 Chunk 的 PrevSize 是否与该 Chunk header 记录的 Size 相等，若否会报错
-- 如果 Size 小于某个特定值，尝试放回相应的 Lookaside List 中
-- 如果对应的 Pool 设置了 `DELAY_FREE` 标志位，放回 PendingFrees List（如果PendingFreeDepth 大于某个特定值，会先调用 `nt!ExDeferredFreePool` 函数清空 PendingFrees List）
-- 检查相邻低地址、高地址 Chunk 状态，合并空闲块，需要注意这里 _不会与下一张内存页的头部 Chunk 合并_ 
-- 最后检查该 Chunk 所在 Page 是否为空闲页，若是则调用 `nt!MiFreePoolPages()` 进行回收，否则放回对应的 ListHeads 链表
+- まず、その Chunk がページの最初の Chunk(ページ境界にアライン)かを確認し、そうなら `nt!MiFreePoolPages()` による回収を試み、成功すればそのまま返す
+- 次に、物理的に隣接する高アドレス側の Chunk の PrevSize が、この Chunk の header に記録された Size と等しいかを確認し、等しくなければエラーとする
+- Size が特定の値より小さければ、対応する Lookaside List に戻すことを試みる
+- 対応する Pool に `DELAY_FREE` フラグが設定されていれば、PendingFrees List に戻す(PendingFreeDepth が特定の値より大きい場合は、先に `nt!ExDeferredFreePool` 関数を呼び出して PendingFrees List を空にする)
+- 隣接する低アドレス側と高アドレス側の Chunk の状態を確認し、空きブロックを統合する。ここでは_次のメモリページの先頭の Chunk とは統合されない_ ことに注意
+- 最後に、その Chunk があるページが空きページかを確認し、そうなら `nt!MiFreePoolPages()` を呼び出して回収し、そうでなければ対応する ListHeads リストに戻す
 
-### 三、Segment Heap in Kernel（from 19H1）
+### 三、Segment Heap in Kernel(from 19H1)
 
-**自 NT kernel 19H1 版本起，用户态 Segment Heap 的分配逻辑被引入内核。**
+**NT kernel 19H1 から、ユーザーモードの Segment Heap の確保ロジックがカーネルに導入されました。**
 
-> 待施工。
+> 執筆中。
 
-## 系统调用
+## システムコール
 
-### 一、系统调用路径
+### 一、システムコールの経路
 
-类似于 Linux 下的系统调用，Windows 下由内核向用户态进程提供的服务称为**系统服务**（system service），所有对系统服务的调用都通过 `ntdll.dll` 来完成进入内核的过程：
+Linux のシステムコールと同様に、Windows ではカーネルがユーザーモードプロセスに提供するサービスを**システムサービス**(system service)と呼び、システムサービスへのすべての呼び出しは、`ntdll.dll` を通じてカーネルに入ります。
 
-![以 Notepad 创建文件为示例的 Windows 系统调用路径](https://s2.loli.net/2025/02/01/cbfeQk6OagNXMZP.png)
+![Notepad によるファイル作成を例にした Windows のシステムコールの経路](https://s2.loli.net/2025/02/01/cbfeQk6OagNXMZP.png)
 
-> 在 `ntdll.dll` 中以 `Nt` 开头的以及以 `Zw` 开头的函数皆为系统调用，本质上没有差别。
+> `ntdll.dll` 内の `Nt` で始まる関数と `Zw` で始まる関数はいずれもシステムコールで、本質的に違いはありません。
 
-以 `NtDeleteFile` 这一系统服务为例，若支持 syscall 指令则通过 `syscall` 指令进入内核，否则通过 `int 0x2E` 软中断走中断门进入内核：
+システムサービス `NtDeleteFile` を例にとると、syscall 命令がサポートされていれば `syscall` 命令でカーネルに入り、そうでなければ `int 0x2E` のソフトウェア割り込みで割り込みゲートを通ってカーネルに入ります。
 
 ![](https://s2.loli.net/2025/02/01/byVx3MwQfCKJavL.png)
 
-> `0x7FFE0000` 这块区域为一块**内核与用户进程共享的内存**（只有内核有写权限），为一个 `KUSER_SHARED_DATA` 结构体，由内核向用户态提供一些信息。
+> `0x7FFE0000` のこの領域は**カーネルとユーザープロセスが共有するメモリ**(書き込み権限はカーネルだけが持つ)で、`KUSER_SHARED_DATA` 構造体であり、カーネルがユーザーモードに情報を提供するために使います。
 >
-> 在偏移 `0x308` 处存放的便是一个布尔值，用来标识该架构是否支持 `syscall` 指令。
+> オフセット `0x308` には、そのアーキテクチャが `syscall` 命令をサポートしているかを示すブール値が格納されています。
 
-Windows 系统调用内核层的入口被设置为 `KiSystemCall64()` 函数，当进行 `syscall` 指令/ `0x2E` 软中断时，CPU 会切换到 ring0 并执行该函数作为统一的系统调用入口点，该函数定义于 `ntoskrnl.exe` 中，根据 `rax` 寄存器指定的系统调用号来调用 SSDT 中对应的内核函数。
+Windows のシステムコールのカーネル側のエントリは `KiSystemCall64()` 関数に設定されています。`syscall` 命令/`0x2E` ソフトウェア割り込みが行われると、CPU は ring0 に切り替わり、この関数を統一的なシステムコールのエントリポイントとして実行します。この関数は `ntoskrnl.exe` で定義されており、`rax` レジスタが指定するシステムコール番号に従って、SSDT 内の対応するカーネル関数を呼び出します。
 
 ![](https://s2.loli.net/2025/02/01/VLWQjOwufy8UnT4.png)
 
-> 注：有的时候系统调用入口为 `kiSystemCall64Shadow()` 函数，不过这个函数最终会跳转到 `kiSystemCall64()` 中的 `KiSystemServiceUser` 标签。
+> 注:システムコールのエントリが `kiSystemCall64Shadow()` 関数になっていることもありますが、この関数も最終的には `kiSystemCall64()` 内の `KiSystemServiceUser` ラベルにジャンプします。
 
-### 二、系统服务描述符表
+### 二、システムサービスディスクリプタテーブル
 
-#### SSDT 基本结构
+#### SSDT の基本構造
 
-逆向分析 `ntoskrnl.exe` 中的  `KiSystemCall64()` 函数，注意到其会引用到 `KeServiceDescriptorTable` 和 `KeServiceDescriptorTable` 这两个变量，这便是**系统服务描述符表**（System Service Descriptor Table，简称 `SSDT` ），用来存储**不同的系统调用号对应的系统调用函数**：
+`ntoskrnl.exe` 内の `KiSystemCall64()` 関数をリバース解析すると、`KeServiceDescriptorTable` と `KeServiceDescriptorTable` の 2 つの変数を参照していることがわかります。これが**システムサービスディスクリプタテーブル**(System Service Descriptor Table、略して `SSDT`)で、**異なるシステムコール番号に対応するシステムコール関数**を格納します。
 
 ![](https://s2.loli.net/2025/02/01/AycmGR8wENvHjeg.png)
 
-其本质上是一个 `tag_SERVICE_DESCRIPTOR_TABLE` 结构体，为由四张子表组成的 `SYSTEM_SERVICE_TABLE` **结构体数组**：
+その本質は `tag_SERVICE_DESCRIPTOR_TABLE` 構造体で、4 つのサブテーブルからなる `SYSTEM_SERVICE_TABLE` **構造体の配列**です。
 
 ```c
 typedef struct tag_SERVICE_DESCRIPTOR_TABLE {
-    SYSTEM_SERVICE_TABLE nt;		// KeServiceDescriptorTable 只有这张表
-    SYSTEM_SERVICE_TABLE win32k;	// KeServiceDescriptorTableShadow 额外多用一个这张表
+    SYSTEM_SERVICE_TABLE nt;		// KeServiceDescriptorTable ではこのテーブルだけ
+    SYSTEM_SERVICE_TABLE win32k;	// KeServiceDescriptorTableShadow ではこのテーブルが追加で使われる
     SYSTEM_SERVICE_TABLE sst3;
     SYSTEM_SERVICE_TABLE sst4;
 } SERVICE_DESCRIPTOR_TABLE;
 ```
 
- `SYSTEM_SERVICE_TABLE` 结构体定义如下，其中的 `ServiceTable` 成员为实质上的系统调用表：
+`SYSTEM_SERVICE_TABLE` 構造体の定義は次のとおりで、そのうち `ServiceTable` メンバが実質的なシステムコールテーブルです。
 
 ```c
 typedef struct tag_SYSTEM_SERVICE_TABLE {
-    PULONG      ServiceTable;	// 实际的系统调用表
+    PULONG      ServiceTable;	// 実際のシステムコールテーブル
     PULONG      CounterTable;	// 
-    ULONG       ServiceLimit;	// 系统调用的数量
-    PCHAR       ArgumentTable;	// 参数数量表
+    ULONG       ServiceLimit;	// システムコールの数
+    PCHAR       ArgumentTable;	// 引数の数のテーブル
 } SYSTEM_SERVICE_TABLE;
 ```
 
 ![](https://s2.loli.net/2025/02/01/vNFWB1j9YVIZEdH.png)
 
-`ServiceTable` 成员 **实际上为一个指向【目标函数到系统调用表偏移】的数组的指针，每一项为 4 字节**，但是实际上计算时会 _将该值先右移四位_ 后再与 _系统调用表起始地址_ 相加获取系统调用实际的地址，即：
+`ServiceTable` メンバは**実際には【対象関数のシステムコールテーブルからのオフセット】の配列へのポインタで、各項目は 4 バイト**です。ただし実際の計算では、_この値をまず 4 ビット右シフトしてから_ _システムコールテーブルの先頭アドレス_ に加算して、システムコールの実際のアドレスを得ます。つまり次のとおりです。
 $$
 Addr_{syscall} = Addr_{ServiceTable} + (ServiceTable[syscall\_nr] >> 4)
 $$
 
-由此我们得到 SSDT 的基本结构如下图所示（以 `NtOpenFile()` 系统调用为例）：
+これにより、SSDT の基本構造は次の図のようになります(`NtOpenFile()` システムコールを例とする)。
 
 ![](https://s2.loli.net/2025/02/01/J4bHB6uQV1nOFMA.png)
 
-在 Windbg 中验证：
+Windbg で確認します。
 
 ![](https://s2.loli.net/2025/02/01/IgC4Fm9ZYnhp7WQ.png)
 
-这里为什么要进行左右移 4 位的神秘操作有以下原因：
+ここで 4 ビットの左右シフトという不思議な操作をする理由は、次のとおりです。
 
-- **出于安全性考虑**，这样使得通过 SSDT 调用到的系统调用范围被限制在 SSDT 附近 4G 偏移处，驱动地址空间之间间隔至少 4GB，而 SSDT 地址又是写死在代码里的，这样可以很好地防止对 SSDT 的劫持，加大攻击难度。
-- **存储栈上参数数量**，NT kernel 很多系统调用参数都远大于 6 个，因此需要使用栈进行传参，此时这 4 bit 便用于记录不同系统调用**使用栈进行传递的参数数量**。
+- **セキュリティ上の理由**:SSDT 経由で呼び出されるシステムコールの範囲が、SSDT 付近の 4G のオフセット内に制限されます。ドライバのアドレス空間の間隔は少なくとも 4GB あり、SSDT のアドレスはコードにハードコードされているため、SSDT のハイジャックをうまく防げ、攻撃の難度が上がります。
+- **スタック上の引数の数の格納**:NT kernel のシステムコールには引数が 6 個を大きく超えるものが多く、スタックで引数を渡す必要があります。この 4 ビットは、各システムコールが**スタックで渡す引数の数**を記録するために使われます。
 
-#### _Shadow SSDT：GUI程序的 SSDT_ 
+#### _Shadow SSDT:GUI プログラム用の SSDT_
 
-**影子系统服务描述符表**（Shadow System Service Descriptor Table，简称 `Shadow SSDT` ）是**GUI 程序所专用的一张 SSDT**，相比起 SSDT 而言其额外多了一张负责图形相关系统调用的子表 `W32pServiceTable` ，位于 `win32k.sys` 即 **图形子系统** 中：
+**シャドウシステムサービスディスクリプタテーブル**(Shadow System Service Descriptor Table、略して `Shadow SSDT`)は、**GUI プログラム専用の SSDT** です。SSDT と比べて、グラフィック関連のシステムコールを担当するサブテーブル `W32pServiceTable` が追加されており、これは `win32k.sys`、つまり**グラフィックサブシステム**にあります。
 
-> SSDT 和 Shadow SSDT 第一张子表都是 `KiServiceTable` ，对应 NT kernel 的常规系统调用。
+> SSDT と Shadow SSDT の最初のサブテーブルはどちらも `KiServiceTable` で、NT kernel の通常のシステムコールに対応します。
 
-![注意这里指向 SystemServiceTable 不是指针而是展开](https://s2.loli.net/2025/02/01/vBinIhjLrtHElw2.png)
+![ここで SystemServiceTable を指しているのはポインタではなく、展開された値であることに注意](https://s2.loli.net/2025/02/01/vBinIhjLrtHElw2.png)
 
-当应用程式在 Windows 下进行系统调用时，线程控制块（`KTHREAD` ）中对应的标志位决定了调用哪一张大表，`eax` 寄存器的 13 ~ 12 位被用来指定调用哪一张子表，低 12 位则被用来指定表中具体的系统调用：
+アプリケーションが Windows でシステムコールを行うとき、どちらの大テーブルを呼び出すかは、スレッド制御ブロック(`KTHREAD`)の対応するフラグが決めます。`eax` レジスタの 13 ~ 12 ビットがどのサブテーブルを呼び出すかの指定に使われ、下位 12 ビットがテーブル内の具体的なシステムコールの指定に使われます。
 
 ![](https://s2.loli.net/2025/02/01/7EsiL5ednOkg1Y8.png)
 
-> #### _扩展阅读：KeServiceDescriptorTableFilter_
+> #### _補足:KeServiceDescriptorTableFilter_
 >
-> 自 Windows 10 开始引入了这张表，当 KTHREAD 中设置了 `RestrictedGuiThread` 标志位时会用该表替代 Shadow SSDT，不过目前该表相关的资料暂时比较少（🕊）
+> このテーブルは Windows 10 から導入されました。KTHREAD に `RestrictedGuiThread` フラグが設定されている場合は、Shadow SSDT の代わりにこのテーブルが使われますが、現時点でこのテーブルに関する資料はまだ少ないです(🕊)
 
-## 进程管理
+## プロセス管理
 
-### 一、NT kernel 中的进程与线程
+### 一、NT kernel のプロセスとスレッド
 
-在 Windows NT kernel 当中使用 `_EPROCESS` 结构体来表示一个进程，类似于 Linux 下的 `task_struct`，该结构体当中存储了 Windows 进程的所有信息，所有进程的 `_EPROCESS` 之间构成一个双向链表。
+Windows NT kernel では、プロセスを `_EPROCESS` 構造体で表します。Linux の `task_struct` に似ており、この構造体に Windows プロセスのすべての情報が格納されます。すべてのプロセスの `_EPROCESS` は双方向リストを構成します。
 
-内核态 GS 寄存器指向 `处理器控制区`（Process Control Region），类似于 Linux 下的 `.percpu` 段，其中存放着指向当前线程控制块的指针，在这其中便又存放着指向当前进程控制块的指针。
+カーネルモードの GS レジスタは `プロセッサ制御領域`(Process Control Region)を指します。これは Linux の `.percpu` セクションに似ており、現在のスレッド制御ブロックへのポインタが格納されていて、その中にさらに現在のプロセス制御ブロックへのポインタが格納されています。
 
 ![](https://s2.loli.net/2025/02/01/a5lbF1fgDAUErcz.png)
 
-### 二、Token：进程权限凭证
+### 二、Token:プロセスの権限クレデンシャル
 
-正如 Linux 在 `task_struct` 当中使用 `cred` 结构体标识进程的权限，NT kernel 中使用 `_Token` 结构体标识进程的权限。
+Linux が `task_struct` の `cred` 構造体でプロセスの権限を表すのと同様に、NT kernel では `_Token` 構造体でプロセスの権限を表します。
 
-> 待施工。
+> 執筆中。
 
 ## Reference
 
@@ -459,7 +459,7 @@ https://arttnba3.cn/
 
 [Microsoft Learn. Spark possibility. ](https://learn.microsoft.com/en-us/)
 
-《windows内核原理与实现》——潘爱民 著
+『Windows カーネルの原理と実装』(原題:windows 内核原理与实现)——潘爱民 著
 
 [CodeMachine - Windows Object Headers](https://codemachine.com/articles/object_headers.html)
 

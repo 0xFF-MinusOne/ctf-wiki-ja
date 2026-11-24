@@ -1,43 +1,43 @@
 # V8 Design History
 
-这一节给大家大概了解一下 V8 的发展历程，仅供大家进行扩展阅读。
+この節では V8 の発展の歴史をおおまかに紹介します。発展的な読み物として参考にしてください。
 
 ### 2008: Full-code Generation + Semi-optimization
 
-此时 V8 刚刚面世，简而言之使用的是全量代码生成的方案： **所有的 JS 代码都进行 JIT 编译生成对应架构的机器码** ，再进行一小部分优化
+この時期の V8 は公開されたばかりで、簡単に言うと全コード生成の方式を使っていました。**すべての JS コードを JIT コンパイルして対応するアーキテクチャのマシンコードを生成し**、そのうえでごく一部の最適化を行います。
 
 ![](https://s2.loli.net/2025/03/11/LeisDWScb2ZVUC1.png)
 
 ### 2010: Full-code Generation + Crankshaft JIT Compiler & Optimizer
 
-修修补补两年后，V8 开发组将原有的代码优化部分拆分出来，作为一个单独的 JIT compiler，称之为 [Crankshaft](https://blog.chromium.org/2010/12/new-crankshaft-for-v8.html) ，JS 代码的编译管线也多了一个到 Crankshaft 的分支，同时 V8 也开始引入了 Deoptimization 的机制：
+2 年ほど手直しを重ねた後、V8 の開発チームは既存のコード最適化部分を切り出して、独立した JIT compiler としました。これが [Crankshaft](https://blog.chromium.org/2010/12/new-crankshaft-for-v8.html) で、JS コードのコンパイルパイプラインにも Crankshaft への分岐が加わりました。同時に V8 は Deoptimization の仕組みも導入し始めました。
 
 ![](https://s2.loli.net/2025/03/11/cd1xWp8gA5wnyhD.png)
 
-> JS 代码生成的 AST 什么时候给到原有的全量代码编译引擎？什么时候给到 Crankshaft？ 这其实主要是根据 chromium 所开启的配置选项决定，此时 chromium 的运行模式可以是先将 JS 给到原有的全量代码生成引擎再给到 Crankshaft 进行优化，也可以是直接给 Crankshaft。
+> JS コードから生成された AST を、既存の全コードコンパイルエンジンに渡すのはいつか、Crankshaft に渡すのはいつか。これは主に chromium が有効にしている設定オプションで決まります。この時期の chromium の動作モードは、JS をまず既存の全コード生成エンジンに渡してから Crankshaft で最適化させる方式でも、直接 Crankshaft に渡す方式でもかまいませんでした。
 
 ### 2014: Full-code Generation + Crankshaft / TurboFan JIT Compiler & Optimizer
 
-又过了四年，全新的名为 [TurboFan](https://v8.dev/docs/turbofan) 的 JavaScript JIT Compiler + Optimizer 横空出世，此时的编译管线变成下面这个样子，原有的管线额外分叉出指向 TurboFan 的路径，TurboFan 和 Crankshaft 并行存在：
+さらに 4 年が経ち、[TurboFan](https://v8.dev/docs/turbofan) という新しい JavaScript JIT Compiler + Optimizer が登場しました。このときのコンパイルパイプラインは次のようになり、既存のパイプラインから TurboFan へ向かう経路が追加で分岐し、TurboFan と Crankshaft が並行して存在していました。
 
 ![](https://s2.loli.net/2025/03/11/7Ptx93koOHsIi12.png)
 
-> JS 代码生成的 AST 什么时候给到原有的全量代码编译引擎？什么时候给到 Crankshaft？什么时候给到 TurboFan？和前面一样，这同样是根据具体的配置选项决定 。
+> JS コードから生成された AST を、既存の全コードコンパイルエンジンに渡すのはいつか、Crankshaft に渡すのはいつか、TurboFan に渡すのはいつか。前と同様に、これも具体的な設定オプションで決まります。
 
 ### 2016: Ignition Interpreter + Full-code Generation + Crankshaft / TurboFan JIT Compiler & Optimizer
 
-又过了两年，名为 [Ignition](https://v8.dev/blog/ignition-interpreter) 的 JS 解释器横空出世，V8 engine **首次引入了解释执行的概念** ，原因是全量代码生成还是太耗时空间也太拖执行效率了，哪怕是有了强大的 TurboFan 的辅助也不如直接解释执行来得快，因此从这一年开始解释执行成为 V8 执行 JS 代码的主要方式：
+さらに 2 年が経ち、[Ignition](https://v8.dev/blog/ignition-interpreter) という JS インタプリタが登場しました。V8 engine は**初めてインタプリタ実行という概念を導入**しました。理由は、全コード生成は依然として時間も空間も消費しすぎ、実行効率も悪かったためです。強力な TurboFan の支援があっても、直接インタプリタで実行するほうが速く、この年から、インタプリタ実行が V8 が JS コードを実行する主な方法になりました。
 
 ![](https://s2.loli.net/2025/03/11/CocnM4vmT8qpXwx.png)
 
-Ignition 此时是一个 _可选特性_ ，对于开启了 Ignition 的 V8，JS AST 会给到 Ignition 生成 bytecode 后进行解释执行，对于运行较多的 bytecode 会给到 TurboFan 进行 JIT 编译生成机器码，或是给到原有的全量代码生成 + Crankshaft 优化的路径；而未开启 Ignition 的 V8 则走的是原来的全量代码生成 + Crankshaft 优化的路径（梦回 2010 了属于是）。
+Ignition はこの時点では_オプション機能_でした。Ignition を有効にした V8 では、JS AST が Ignition に渡されて bytecode が生成された後にインタプリタ実行されます。よく実行される bytecode は TurboFan に渡されて JIT コンパイルされ、マシンコードが生成されるか、あるいは従来の全コード生成 + Crankshaft による最適化の経路に渡されます。一方、Ignition を有効にしていない V8 は、従来の全コード生成 + Crankshaft による最適化の経路を通ります(2010 年に逆戻りしたようなものです)。
 
-> 这个时候的整个编译管线变得又大又麻了，于是新的一轮架构优化便是必有的事情——
+> この時点でコンパイルパイプライン全体は大きく複雑になり、新たなアーキテクチャの最適化が必要になるのは必然でした――
 
 ### 2017: Ignition Interpreter + TurboFan JIT Compiler
 
-又过了一年大家发现有了 Ignition 和 TurboFan 这两个威猛的大家伙之后， _全量代码生成的 JIT Compiler 和老旧的 Crankshaft 似乎没有什么存在的必要了， 于是这两个组件就被直接移除了_  ，**编译管线就变为简洁的 Ignition Interpreter + TurboFan JIT Compiler**，V8 团队为此激动地发了一篇名为 [Launching Ignition and TurboFan](https://v8.dev/blog/launching-ignition-and-turbofan) 的文章，解释执行也最终成为了 V8 Engine 的缺省执行 JS 代码的方式：
+さらに 1 年が経ち、Ignition と TurboFan というこの 2 つの強力な存在ができたことで、_全コード生成の JIT Compiler と古い Crankshaft は存在する必要がなさそうだ_ということになり、この 2 つのコンポーネントは直接削除されました。**コンパイルパイプラインは、すっきりした Ignition Interpreter + TurboFan JIT Compiler になりました**。V8 チームはこれに興奮して [Launching Ignition and TurboFan](https://v8.dev/blog/launching-ignition-and-turbofan) という記事を公開しました。インタプリタ実行も、ついに V8 Engine が JS コードを実行するデフォルトの方法になりました。
 
 ![](https://s2.loli.net/2025/03/11/CX81DoyTBaeV46n.png)
 
-> 后面编译管线就基本没发生过什么变化了，开发者不语只是一味地在这两座大山上继续进行修修补补......
+> その後、コンパイルパイプラインにはほとんど変化がなく、開発者たちは何も言わず、ただこの 2 つの大きな山の手直しを黙々と続けています......
