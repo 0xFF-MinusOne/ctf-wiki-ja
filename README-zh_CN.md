@@ -1,4 +1,11 @@
-> これは [ctf-wiki/ctf-wiki](https://github.com/ctf-wiki/ctf-wiki) の日本語訳(簡体字中国語から翻訳)です。Pwn・Reverse・Executable の部分だけを訳しています。原著と同じ [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/) で提供します。非営利の目的でのみ利用できます。原文から翻訳(変更)しています。
+> **これは日本語訳です。**
+>
+> - 原著: [ctf-wiki/ctf-wiki](https://github.com/ctf-wiki/ctf-wiki)(原著者: ctf-wiki の編集者たち)
+> - ライセンス: CC BY-NC-SA 4.0(**非営利の目的でのみ**利用できます) — 翻訳も同じライセンスです([ライセンス全文](LICENSE))。原文から翻訳(変更)しています
+> - 訳した範囲: Pwn・Reverse・Executable の説明文と、コード内の原著者のコメント(簡体字中国語から翻訳)
+> - 訳していないもの: 暗号・misc・android・blockchain などほかの分野。コードブロック内の図やメモリダンプにある中国語の注釈の一部
+> - 日本語サイト: <https://0xff-minusone.github.io/ctf-wiki-ja/>
+> - 他の日本語訳: [一覧](https://github.com/orgs/0xFF-MinusOne/repositories?q=-ja)
 
 <div align="center">
 
