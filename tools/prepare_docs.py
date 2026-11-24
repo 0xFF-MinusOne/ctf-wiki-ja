@@ -43,6 +43,10 @@ def main() -> None:
     for sub in ("pwn", "reverse", "executable"):
         shutil.copytree(SRC / sub, DST / sub)
     (DST / "index.md").write_text(INDEX, encoding="utf-8")
+    # 本家のロゴと追加 CSS(site-assets/static/ 以下)を、サイトの static/ にコピーする
+    assets = ROOT / "site-assets" / "static"
+    if assets.exists():
+        shutil.copytree(assets, DST / "static")
     js = DST / "javascripts"
     js.mkdir()
     (js / "mathjax.js").write_text(MATHJAX, encoding="utf-8")

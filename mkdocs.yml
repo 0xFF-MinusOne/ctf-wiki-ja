@@ -13,24 +13,23 @@ copyright: >-
 theme:
   name: material
   language: ja
+  # 本家(ctf-wiki.org)のテーマ設定に合わせる: 白を基調に赤のアクセント、上部の固定タブ、Noto Sans
+  palette:
+    primary: white
+    accent: red
+    scheme: preference
+  icon:
+    repo: fontawesome/brands/github-alt
+  logo: static/img/logo.png
   features:
     - navigation.tabs
-    - navigation.top
-    - navigation.indexes
+    - navigation.tabs.sticky
     - search.suggest
     - search.highlight
-    - content.code.copy
-  palette:
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      toggle:
-        icon: material/weather-night
-        name: ダークモードに切り替え
-    - media: "(prefers-color-scheme: dark)"
-      scheme: slate
-      toggle:
-        icon: material/weather-sunny
-        name: ライトモードに切り替え
+    - search.share
+  font:
+    text: Noto Sans
+    code: Source Code Pro
 
 plugins:
   - search:
@@ -44,18 +43,39 @@ extra:
 
 markdown_extensions:
   - admonition
-  - pymdownx.details
-  - pymdownx.superfences
-  - pymdownx.highlight:
-      anchor_linenums: true
-  - pymdownx.inlinehilite
-  - pymdownx.arithmatex:
-      generic: true
-  - attr_list
   - md_in_html
+  - attr_list
   - tables
+  - def_list
+  - footnotes
+  - meta
   - toc:
       permalink: true
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.caret
+  - pymdownx.critic
+  - pymdownx.details
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.keys
+  - pymdownx.magiclink
+  - pymdownx.mark
+  - pymdownx.smartsymbols
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+
+extra_css:
+  - static/css/extra.css
 
 extra_javascript:
   - javascripts/mathjax.js
