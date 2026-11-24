@@ -1,0 +1,382 @@
+site_name: CTF Wiki 日本語訳(Pwn・Reverse・Executable)
+site_description: CTF Wiki の Pwn・Reverse・Executable の日本語訳
+site_url: https://0xff-minusone.github.io/ctf-wiki-ja/
+repo_url: https://github.com/0xff-minusone/ctf-wiki-ja
+repo_name: 0xff-minusone/ctf-wiki-ja
+docs_dir: .site-src
+site_dir: site
+copyright: >-
+  日本語訳(簡体字中国語から翻訳、原文から変更あり)。
+  原著: <a href="https://github.com/ctf-wiki/ctf-wiki">ctf-wiki/ctf-wiki</a>(<a href="https://ctf-wiki.org">ctf-wiki.org</a>)。
+  ライセンス: <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.ja">CC BY-NC-SA 4.0</a>(非営利の目的でのみ利用できます)。
+
+theme:
+  name: material
+  language: ja
+  features:
+    - navigation.tabs
+    - navigation.top
+    - navigation.indexes
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle:
+        icon: material/weather-night
+        name: ダークモードに切り替え
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle:
+        icon: material/weather-sunny
+        name: ライトモードに切り替え
+
+plugins:
+  - search:
+      lang: ja
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/ctf-wiki/ctf-wiki
+      name: 原著(ctf-wiki/ctf-wiki)
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.arithmatex:
+      generic: true
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+
+extra_javascript:
+  - javascripts/mathjax.js
+  - https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-mml-chtml.js
+
+nav:
+- ホーム: index.md
+- 実行ファイル(Executable):
+  - ELF ファイル:
+    - ELF ファイルの基本構造:
+      - ELF ファイル: executable/elf/structure/basic-info.md
+      - Sections: executable/elf/structure/sections.md
+      - Code Section: executable/elf/structure/code-sections.md
+      - Data Related Sections: executable/elf/structure/data-related-sections.md
+      - '.symtab: Symbol Table': executable/elf/structure/symbol-table.md
+      - String Sections: executable/elf/structure/strings-sections.md
+      - Dynamic Sections: executable/elf/structure/dynamic-sections.md
+      - Misc Sections: executable/elf/structure/misc-sections.md
+    - プログラムのロード:
+      - プログラムのロード: executable/elf/program-loading.md
+    - プログラムのリンク:
+      - プログラムのリンク: executable/elf/linking/program-linking.md
+      - Symbol Resolution: executable/elf/linking/symbol-resolve.md
+    - プログラムの実行の流れ:
+      - プログラムの実行の流れ: executable/elf/running-overview.md
+  - PE ファイル形式: executable/pe/pe-excutable.md
+  - エクスポートテーブル: executable/pe/pe-export-table.md
+  - インポートテーブル: executable/pe/pe-import-table.md
+  - ベースリロケーションテーブル: executable/pe/pe-relocation-table.md
+- Reverse:
+  - 概要:
+    - ソフトウェアリバースエンジニアリング入門: reverse/introduction.md
+  - ツール:
+    - 静的解析:
+      - IDA Pro: reverse/tools/static-analyze/ida.md
+      - Ghidra: reverse/tools/static-analyze/ghidra.md
+      - jadx: reverse/tools/static-analyze/jadx.md
+      - dnSpy: reverse/tools/static-analyze/dnspy.md
+    - 動的デバッグ:
+      - gdb: reverse/tools/debug/gdb.md
+      - ollydbg: reverse/tools/debug/ollydbg.md
+      - x64dbg/x32dbg: reverse/tools/debug/xdbg.md
+      - windbg: reverse/tools/debug/windbg.md
+    - 制約ソルバ:
+      - z3: reverse/tools/constraint/z3.md
+    - エミュレーション実行:
+      - angr: reverse/tools/simulate-execution/angr.md
+      - Unicorn Engine: reverse/tools/simulate-execution/unicorn.md
+  - アルゴリズムのリバース:
+    - 一般的な暗号アルゴリズムとエンコードの識別: reverse/identify-encode-encryption/introduction.md
+  - コード難読化:
+    - ジャンクコード(花指令): reverse/obfuscate/junk-code.md
+    - Self-Modified Code: reverse/obfuscate/smc.md
+    - 制御フローフラット化: reverse/obfuscate/control-flow-flatten.md
+    - movofuscator: reverse/obfuscate/movfuscator.md
+  - 迷路のリバース:
+    - 迷路問題: reverse/maze/maze.md
+  - 仮想マシンのリバース:
+    - 仮想マシン(VM)の解析: reverse/vm/vm.md
+  - プラットフォーム別:
+    - Linux のリバース:
+      - LD_PRELOAD: reverse/platform/linux/ld_preload.md
+      - False Disassembly: reverse/platform/linux/false-disasm.md
+      - Detecting Breakpoints: reverse/platform/linux/detect-bp.md
+      - Detecting debugging: reverse/platform/linux/detect-dbg.md
+    - Windows のリバース:
+      - 脱殻技術:
+        - プロテクタ(パッカー)の紹介: reverse/platform/windows/unpack/packer-introduction.md
+        - ステップトレース法: reverse/platform/windows/unpack/trace.md
+        - ESP 法則: reverse/platform/windows/unpack/esp.md
+        - 一気に OEP へ到達する方法: reverse/platform/windows/unpack/direct-oep.md
+        - メモリイメージ法: reverse/platform/windows/unpack/memory.md
+        - 最後の例外の方法: reverse/platform/windows/unpack/last-exception.md
+        - SFX 法: reverse/platform/windows/unpack/sfx.md
+        - DUMP と IAT の再構築: reverse/platform/windows/unpack/fix-iat.md
+        - IAT を手動で探して ImportREC で再構築する: reverse/platform/windows/unpack/manually-fix-iat.md
+        - DLL ファイルのアンパック: reverse/platform/windows/unpack/unpack-dll.md
+      - アンチデバッグ技術:
+        - NtGlobalFlag: reverse/platform/windows/anti-debug/ntglobalflag.md
+        - Heap Flags: reverse/platform/windows/anti-debug/heap-flags.md
+        - The Heap: reverse/platform/windows/anti-debug/the-heap.md
+        - Interrupt 3: reverse/platform/windows/anti-debug/int-3.md
+        - IsDebuggerPresent: reverse/platform/windows/anti-debug/isdebuggerpresent.md
+        - CheckRemoteDebuggerPresent: reverse/platform/windows/anti-debug/checkremotedebuggerpresent.md
+        - NtQueryInformationProcess: reverse/platform/windows/anti-debug/ntqueryinformationprocess.md
+        - ZwSetInformationThread: reverse/platform/windows/anti-debug/zwsetinformationthread.md
+        - ジャンクコード(花指令): reverse/platform/windows/anti-debug/junk-code.md
+        - アンチデバッグ技術の例題: reverse/platform/windows/anti-debug/example.md
+        - Thread Local Storage(TLS): reverse/platform/windows/anti-debug/thread_local_storage.md
+  - 言語別:
+    - はじめに: reverse/language/introduction.md
+    - Python:
+      - Python リバースエンジニアリング入門: reverse/language/python/introduction.md
+    - Rust:
+      - Rust リバースエンジニアリング入門: reverse/language/rust/introduction.md
+    - Golang:
+      - Golang リバースエンジニアリング入門: reverse/language/go/introduction.md
+- Pwn:
+  - Linux プラットフォーム:
+    - ユーザーモード:
+      - 環境構築:
+        - pre-install softwares: pwn/linux/user-mode/environment.md
+      - エクスプロイト:
+        - スタックオーバーフロー:
+          - x86:
+            - スタックの紹介: pwn/linux/user-mode/stackoverflow/x86/stack-intro.md
+            - スタックオーバーフローの原理: pwn/linux/user-mode/stackoverflow/x86/stackoverflow-basic.md
+            - 基本 ROP: pwn/linux/user-mode/stackoverflow/x86/basic-rop.md
+            - 中級 ROP: pwn/linux/user-mode/stackoverflow/x86/medium-rop.md
+            - 高度な ROP:
+              - 高度な ROP: pwn/linux/user-mode/stackoverflow/x86/advanced-rop/advanced-rop.md
+              - ret2dlresolve: pwn/linux/user-mode/stackoverflow/x86/advanced-rop/ret2dlresolve.md
+              - ret2VDSO: pwn/linux/user-mode/stackoverflow/x86/advanced-rop/ret2vdso.md
+              - SROP: pwn/linux/user-mode/stackoverflow/x86/advanced-rop/srop.md
+            - 多彩なスタックオーバーフロー:
+              - 多彩なスタックオーバーフローのテクニック: pwn/linux/user-mode/stackoverflow/x86/fancy-rop.md
+          - ARM:
+            - 環境構築: pwn/linux/user-mode/stackoverflow/arm/environment.md
+            - Arm ROP: pwn/linux/user-mode/stackoverflow/arm/rop.md
+          - MIPS:
+            - mips - ROP: pwn/linux/user-mode/stackoverflow/mips/rop.md
+          - RISC-V:
+            - RISC-V: pwn/linux/user-mode/stackoverflow/risc-v/readme.md
+        - 書式文字列:
+          - 原理の紹介: pwn/linux/user-mode/fmtstr/fmtstr-intro.md
+          - 利用: pwn/linux/user-mode/fmtstr/fmtstr-exploit.md
+          - 例: pwn/linux/user-mode/fmtstr/fmtstr-example.md
+          - 検出: pwn/linux/user-mode/fmtstr/fmtstr-detect.md
+        - ヒープのエクスプロイト:
+          - Ptmalloc2:
+            - ヒープの悪用: pwn/linux/user-mode/heap/ptmalloc2/introduction.md
+            - ヒープ概要: pwn/linux/user-mode/heap/ptmalloc2/heap-overview.md
+            - ヒープ関連のデータ構造: pwn/linux/user-mode/heap/ptmalloc2/heap-structure.md
+            - Ptmalloc2 の深い理解:
+              - ヒープの実装を深く理解する: pwn/linux/user-mode/heap/ptmalloc2/implementation/overview.md
+              - 基本操作: pwn/linux/user-mode/heap/ptmalloc2/implementation/basic.md
+              - ヒープの初期化: pwn/linux/user-mode/heap/ptmalloc2/implementation/heap-init.md
+              - メモリブロックの確保: pwn/linux/user-mode/heap/ptmalloc2/implementation/malloc.md
+              - メモリブロックの解放: pwn/linux/user-mode/heap/ptmalloc2/implementation/free.md
+              - tcache: pwn/linux/user-mode/heap/ptmalloc2/implementation/tcache.md
+              - malloc_state 関連の関数: pwn/linux/user-mode/heap/ptmalloc2/implementation/malloc-state.md
+              - テストのサポート: pwn/linux/user-mode/heap/ptmalloc2/implementation/misc.md
+            - ヒープオーバーフロー: pwn/linux/user-mode/heap/ptmalloc2/heapoverflow-basic.md
+            - ヒープの Off-By-One: pwn/linux/user-mode/heap/ptmalloc2/off-by-one.md
+            - Chunk Extend and Overlapping: pwn/linux/user-mode/heap/ptmalloc2/chunk-extend-overlapping.md
+            - Unlink: pwn/linux/user-mode/heap/ptmalloc2/unlink.md
+            - Use After Free: pwn/linux/user-mode/heap/ptmalloc2/use-after-free.md
+            - Fastbin Attack: pwn/linux/user-mode/heap/ptmalloc2/fastbin-attack.md
+            - Unsorted Bin Attack: pwn/linux/user-mode/heap/ptmalloc2/unsorted-bin-attack.md
+            - Large Bin Attack: pwn/linux/user-mode/heap/ptmalloc2/large-bin-attack.md
+            - define TCACHE_FILL_COUNT 7: pwn/linux/user-mode/heap/ptmalloc2/tcache-attack.md
+            - House Of Einherjar: pwn/linux/user-mode/heap/ptmalloc2/house-of-einherjar.md
+            - House Of Force: pwn/linux/user-mode/heap/ptmalloc2/house-of-force.md
+            - House of Lore: pwn/linux/user-mode/heap/ptmalloc2/house-of-lore.md
+            - House of Orange: pwn/linux/user-mode/heap/ptmalloc2/house-of-orange.md
+            - House of Rabbit: pwn/linux/user-mode/heap/ptmalloc2/house-of-rabbit.md
+            - House of Roman: pwn/linux/user-mode/heap/ptmalloc2/house-of-roman.md
+            - House of Pig: pwn/linux/user-mode/heap/ptmalloc2/house-of-pig.md
+            - ヒープを使った情報漏えい: pwn/linux/user-mode/heap/ptmalloc2/leak-heap.md
+            - ヒープのチェック: pwn/linux/user-mode/heap/ptmalloc2/ptmalloc-check.md
+          - Musl-mallocng:
+            - mallocng: pwn/linux/user-mode/heap/mallocng/readme.md
+        - IO_FILE のエクスプロイト:
+          - FILE 構造体: pwn/linux/user-mode/io-file/introduction.md
+          - 偽の vtable によるプログラムフローのハイジャック: pwn/linux/user-mode/io-file/fake-vtable-exploit.md
+          - FSOP: pwn/linux/user-mode/io-file/fsop.md
+          - glibc 2.24 における IO_FILE の悪用: pwn/linux/user-mode/io-file/exploit-in-libc2.24.md
+        - 整数オーバーフロー:
+          - 整数オーバーフロー: pwn/linux/user-mode/integeroverflow/introduction.md
+        - 型の混同:
+          - 型混同(Type Confusion): pwn/linux/user-mode/type-confusion/readme.md
+        - 未初期化メモリ:
+          - 未初期化メモリ(Uninitialized Memory): pwn/linux/user-mode/uninitialized-memory/readme.md
+        - 競合状態:
+          - Race Condition: pwn/linux/user-mode/race-condition/introduction.md
+          - 問題: pwn/linux/user-mode/race-condition/problem.md
+      - 防御:
+        - Canary: pwn/linux/user-mode/mitigation/canary.md
+      - まとめ:
+        - アドレスの取得: pwn/linux/user-mode/summary/get-address.md
+        - プログラムの実行フローの制御: pwn/linux/user-mode/summary/hijack-control-flow.md
+        - shell 取得のまとめ: pwn/linux/user-mode/summary/get-shell.md
+    - カーネルモード:
+      - 基礎知識:
+        - 基礎知識: pwn/linux/kernel-mode/basic-knowledge.md
+      - 環境構築:
+        - Introduction: pwn/linux/kernel-mode/environment/readme.md
+        - カーネルソースのダウンロードとビルド: pwn/linux/kernel-mode/environment/build-kernel.md
+        - Loadable Kernel Module を書く: pwn/linux/kernel-mode/environment/build-kernel-module.md
+        - カーネル実行環境の構築: pwn/linux/kernel-mode/environment/qemu-emulate.md
+        - Real Device: pwn/linux/kernel-mode/environment/real-device.md
+        - System.map: pwn/linux/kernel-mode/environment/System.map.md
+      - 目的:
+        - Introduction: pwn/linux/kernel-mode/aim/readme.md
+        - 権限昇格:
+          - Introduction: pwn/linux/kernel-mode/aim/privilege-escalation/readme.md
+          - Change Self: pwn/linux/kernel-mode/aim/privilege-escalation/change-self.md
+          - Change Others: pwn/linux/kernel-mode/aim/privilege-escalation/change-others.md
+        - Information Disclosure: pwn/linux/kernel-mode/aim/info-leak.md
+        - DoS: pwn/linux/kernel-mode/aim/dos.md
+      - 防御:
+        - Introduction: pwn/linux/kernel-mode/defense/readme.md
+        - 分離:
+          - Introduction: pwn/linux/kernel-mode/defense/isolation/readme.md
+          - ユーザーとカーネルの分離:
+            - Introduction: pwn/linux/kernel-mode/defense/isolation/user-kernel/readme.md
+            - ユーザーコードの実行禁止: pwn/linux/kernel-mode/defense/isolation/user-kernel/user-code-execution.md
+            - ユーザーデータへのアクセス禁止: pwn/linux/kernel-mode/defense/isolation/user-kernel/user-data-access.md
+            - KPTI - Kernel Page Table Isolation: pwn/linux/kernel-mode/defense/isolation/user-kernel/kpti.md
+          - カーネル内部の分離:
+            - 内部隔離: pwn/linux/kernel-mode/defense/isolation/inner-kernel/heap-chunk.md
+        - アクセス制御:
+          - Introduction: pwn/linux/kernel-mode/defense/access-control/readme.md
+          - 情報漏えい: pwn/linux/kernel-mode/defense/access-control/information-disclosure.md
+          - Misc: pwn/linux/kernel-mode/defense/access-control/misc.md
+        - 検出:
+          - Introduction: pwn/linux/kernel-mode/defense/detection/readme.md
+          - Kernel Stack Canary: pwn/linux/kernel-mode/defense/detection/canary.md
+        - ランダム化:
+          - Introduction: pwn/linux/kernel-mode/defense/randomization/readme.md
+          - KASLR: pwn/linux/kernel-mode/defense/randomization/kaslr.md
+          - FGKASLR: pwn/linux/kernel-mode/defense/randomization/fgkaslr.md
+      - エクスプロイト:
+        - はじめに: pwn/linux/kernel-mode/exploitation/introduction.md
+        - ROP(Return Oriented Programming):
+          - Kernel ROP: pwn/linux/kernel-mode/exploitation/rop/rop.md
+          - Kernel ROP with KPTI bypass: pwn/linux/kernel-mode/exploitation/rop/kpti-bypass.md
+          - ret2usr(過去の手法): pwn/linux/kernel-mode/exploitation/rop/ret2usr.md
+          - bypass-smep (古い情報): pwn/linux/kernel-mode/exploitation/rop/bypass-smep.md
+          - pt\_regs 構造体を利用した汎用 kernel ROP: pwn/linux/kernel-mode/exploitation/rop/ret2ptregs.md
+          - ret2dir: pwn/linux/kernel-mode/exploitation/rop/ret2dir.md
+        - ヒープのエクスプロイト:
+          - カーネルヒープの概要: pwn/linux/kernel-mode/exploitation/heap/heap_overview.md
+          - slub アロケータ:
+            - はじめに: pwn/linux/kernel-mode/exploitation/heap/slub/introduction.md
+            - kernel UAF: pwn/linux/kernel-mode/exploitation/heap/slub/uaf.md
+            - Heap Spray: pwn/linux/kernel-mode/exploitation/heap/slub/spray.md
+            - freelist ハイジャック: pwn/linux/kernel-mode/exploitation/heap/slub/freelist.md
+          - バディシステム:
+            - Cross-Cache Overflow & Page-level Heap Fengshui: pwn/linux/kernel-mode/exploitation/heap/buddy/cross-cache-overflow.md
+            - Cross-Cache UAF: pwn/linux/kernel-mode/exploitation/heap/buddy/cross-cache-uaf.md
+            - Page-level UAF: pwn/linux/kernel-mode/exploitation/heap/buddy/page-uaf.md
+        - 競合状態:
+          - Double Fetch: pwn/linux/kernel-mode/exploitation/race/double-fetch.md
+          - userfaultfd で競合状態を作り出す: pwn/linux/kernel-mode/exploitation/race/userfaultfd.md
+        - テクニック:
+          - メモリ内で直接 flag を検索する: pwn/linux/kernel-mode/exploitation/tricks/initramfs.md
+          - QEMU Monitor で flag を読み出す: pwn/linux/kernel-mode/exploitation/tricks/qemu-monitor.md
+          - ルートファイルシステムを直接書き換える: pwn/linux/kernel-mode/exploitation/tricks/writable-root.md
+          - メモリ溢れで OOM Killer を発動させて root shell を得る: pwn/linux/kernel-mode/exploitation/tricks/out-of-mem-shell.md
+  - Windows プラットフォーム:
+    - 概要: pwn/windows/readme.md
+    - ユーザーモード:
+      - Readme: pwn/windows/user-mode/readme.md
+      - スタックオーバーフロー:
+        - スタック入門: pwn/windows/user-mode/stackoverflow/stack-introduction.md
+        - スタックオーバーフローの原理: pwn/windows/user-mode/stackoverflow/stackoverflow-basic.md
+        - Shellcode の実行: pwn/windows/user-mode/stackoverflow/shellcode-in-stack.md
+        - ret2dll の利用: pwn/windows/user-mode/stackoverflow/ret2dll.md
+    - カーネルモード:
+      - Readme: pwn/windows/kernel-mode/readme.md
+      - 基礎知識:
+        - 基礎知識: pwn/windows/kernel-mode/basic-knowledge/introduction.md
+  - macOS プラットフォーム:
+    - macOS: pwn/macos/readme.md
+  - その他の OS プラットフォーム:
+    - その他の OS: pwn/misc-os/readme.md
+  - サンドボックス脱出:
+    - Python:
+      - Python サンドボックス: pwn/sandbox/python/python-sandbox-escape.md
+    - シェル:
+      - Shell サンドボックス: pwn/sandbox/shell/readme.md
+    - seccomp:
+      - C サンドボックス脱出: pwn/sandbox/seccomp/c-sandbox-escape.md
+    - namespace:
+      - Namespace: pwn/sandbox/namespace/readme.md
+    - chroot:
+      - Chroot: pwn/sandbox/chroot/readme.md
+    - Docker:
+      - Docker: pwn/sandbox/docker/readme.md
+  - 仮想化:
+    - 基礎知識:
+      - 仮想化技術の紹介: pwn/virtualization/basic-knowledge/basic-knowledge.md
+      - CPU 仮想化: pwn/virtualization/basic-knowledge/cpu-virtualization.md
+      - メモリ仮想化: pwn/virtualization/basic-knowledge/mem-virtualization.md
+      - IO 仮想化: pwn/virtualization/basic-knowledge/io-virtualization.md
+    - QEMU:
+      - 基礎知識:
+        - QEMU のメモリ管理: pwn/virtualization/qemu/basic-knowledge/mm.md
+        - QEMU デバイスエミュレーション: pwn/virtualization/qemu/basic-knowledge/dev.md
+      - 環境構築:
+        - QEMU のダウンロードとビルド: pwn/virtualization/qemu/environment/build-qemu.md
+        - QEMU のエミュレートデバイスを書く: pwn/virtualization/qemu/environment/build-qemu-dev.md
+      - エクスプロイト:
+        - QEMU 脱出入門: pwn/virtualization/qemu/exploitation/intro.md
+        - テクニック:
+          - QEMU Monitor を利用した flag の読み取り: pwn/virtualization/qemu/exploitation/tricks/qemu-monitor.md
+        - 境界外読み書き: pwn/virtualization/qemu/exploitation/oob.md
+    - VirtualBox:
+      - VirtualBox: pwn/virtualization/virtualbox/readme.md
+    - VMware:
+      - VMWare: pwn/virtualization/vmware/readme.md
+    - Parallels:
+      - Parallels: pwn/virtualization/parallels/readmd.md
+  - ブラウザ:
+    - Chrome:
+      - Chromium: pwn/browser/chrome/introduction.md
+      - V8 エンジン:
+        - V8 Engine Intro: pwn/browser/chrome/js-engine/v8.md
+        - Ignition Interpreter: pwn/browser/chrome/js-engine/ignition.md
+        - TurboFan JIT Compiler: pwn/browser/chrome/js-engine/turbofan.md
+        - V8 Design History: pwn/browser/chrome/js-engine/history.md
+        - Mutable Heap Numbers: pwn/browser/chrome/js-engine/mutable-heap-numbers.md
+    - Firefox:
+      - Firefox: pwn/browser/firefox/readme.md
+    - Safari:
+      - Safari: pwn/browser/safari/readme.md
+  - ハードウェア:
+    - CPU:
+      - はじめに: pwn/hardware/cpu/readme.md
+      - サイドチャネル攻撃:
+        - prefetch side-channel attack: pwn/hardware/cpu/side-channel/prefetch.md
+    - トラステッドコンピューティング:
+      - 信頼実行環境(TEE): pwn/hardware/trusted-computing/tee.md
