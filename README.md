@@ -15,7 +15,7 @@
 
 <p align="center">
 
-Come and join us, we need you!
+ぜひ参加してください。あなたの力が必要です!
 
 [![](https://img.shields.io/discord/1115906685450596435?style=for-the-badge&color=%237289DA&label=Discord&logo=discord&logoColor=white")](https://discord.gg/ekv7WDa9pq)  [![](https://img.shields.io/github/stars/CTF-Wiki/CTF-Wiki?style=for-the-badge&color=black&label=Stars&logo=github&logoColor=white")](https://github.com/CTF-Wiki/CTF-Wiki/stargazers)
 
@@ -23,46 +23,46 @@ Come and join us, we need you!
 
 </div>
 
-## Introduction
+## はじめに
 
 [中文](./README-zh_CN.md)  [English](./README.md)
 
-Welcome to **CTF Wiki**！
+**CTF Wiki** へようこそ!
 
-**CTF** (Capture The Flag) started from **DEFCON CTF**, a competitive game among computer security enthusiasts, originally hosted in 1996.
+**CTF**(Capture The Flag)は、コンピュータセキュリティ愛好家の競技である **DEFCON CTF** から始まりました。DEFCON CTF は1996年に初めて開催されました。
 
-**CTF** covers a wide range of fields. Along with the evolving security technology, the difficulty of **CTF** challenges is getting harder and harder. As a result, the learning curve for beginners is getting steeper. Most online information is scattered and trivial. Beginners often don't know how to systematically learn **CTF**, which requires a lot of work and effort.
+**CTF** は幅広い分野を扱います。セキュリティ技術の進歩とともに、**CTF** の問題の難易度はどんどん上がっており、その結果、初心者にとって学習の壁は高くなっています。ネット上の情報の多くは散らばっていて、断片的です。初心者は **CTF** を体系的に学ぶ方法が分からないことが多く、それには多くの手間と努力が必要です。
 
-In order to let those people who are interested in **CTF**s start easily, in October 2016, **CTF Wiki** was established on Github. Along with gradually improved content over time, **CTF Wiki** has received lots of appreciation from security enthusiasts, many of those are guys that we think we would never meet.
+**CTF** に興味のある人が気軽に始められるように、2016年10月に **CTF Wiki** が Github 上で立ち上げられました。内容が少しずつ充実するにつれて、**CTF Wiki** はセキュリティ愛好家から多くの感謝の声をいただきました。その多くは、私たちがおそらく一生会うことはないと思っていた人たちです。
 
-As a freedom site, primarily focusing on recent CTFs, **CTF Wiki** introduces the knowledge and techniques in all aspects of **CTF** to make it easier for beginners to learn **CTF**.
+**CTF Wiki** は自由なサイトとして、主に最近の CTF に焦点を当て、**CTF** のあらゆる面の知識と技術を紹介することで、初心者が **CTF** を学びやすくします。
 
-Now, **CTF Wiki** mainly contains the basic skills for **CTF**, but we are working hard to improve the following contents.
+現在、**CTF Wiki** は主に **CTF** の基本的な技術を扱っていますが、次の内容の充実に向けて取り組んでいます。
 
-- Advanced skills used in CTF
-- Special topics appearing in CTF
+- CTF で使われる高度な技術
+- CTF に登場する特別なトピック
 
-For the above-mentioned parts to be improved, please refer to [Projects](https://github.com/ctf-wiki/ctf-wiki/projects) which details what are planned.
+上記の充実させる部分については、計画の詳細が載っている [Projects](https://github.com/ctf-wiki/ctf-wiki/projects) を参照してください。
 
-Although now **CTF Wiki** mainly focus **CTF**, it is not strictly limited to **CTF** topics. In the future, **CTF Wiki** will include
+現在、**CTF Wiki** は主に **CTF** に焦点を当てていますが、**CTF** のトピックだけに厳密に限定されるわけではありません。今後、**CTF Wiki** には次の内容も含まれる予定です。
 
-- Tools used in security research
-- Increased discussion of security in the world
+- セキュリティ研究で使われるツール
+- 世の中のセキュリティについてのより多くの議論
 
-In addition, given the following two points
+加えて、次の2点を踏まえ、
 
-- Information about technology should be openly shared.
-- As new techniques are always being developed, old techniques will start to fade over time and they should be replaced with new techniques.
+- 技術に関する情報は、オープンに共有されるべきです。
+- 新しい技術は常に開発されているため、古い技術は時間とともに廃れていき、新しい技術に置き換えられるべきです。
 
-Therefore, **CTF Wiki** will never publish books.
+したがって、**CTF Wiki** が書籍を出版することは決してありません。
 
-Finally, originating from the community, as an independent organization, **CTF Wiki** advocates **freedom of knowledge**, will **never be commercialized**, and will always maintain the character of **independence and freedom**.
+最後に、コミュニティから生まれた独立した組織として、**CTF Wiki** は**知識の自由**を掲げ、**商業化されることは決してなく**、常に**独立と自由**という性格を保ちます。
 
-## How to build？
+## ビルド方法
 
-CTF Wiki uses [mkdocs](https://github.com/mkdocs/mkdocs) to show its contents. And it is deployed at [https://ctf-wiki.org](https://ctf-wiki.org).
+CTF Wiki は、内容の表示に [mkdocs](https://github.com/mkdocs/mkdocs) を使っています。そして [https://ctf-wiki.org](https://ctf-wiki.org) に公開されています。
 
-It can also be deployed locally, with the following steps:
+次の手順で、ローカルに構築することもできます。
 
 ```shell
 # 1. clone
@@ -75,48 +75,48 @@ python3 scripts/docs.py build-all
 python3 scripts/docs.py serve
 ```
 
-**A local instance of mkdocs is dynamically updated, for instance when a markdown file is modified, the corresponding page will be modified too.**
+**ローカルの mkdocs は動的に更新されます。たとえば、Markdown ファイルを変更すると、対応するページも変更されます。**
 
-If you just want to view it statically, try Docker!
+静的に閲覧するだけでよければ、Docker を試してください。
 
 ```
 docker run -d --name=ctf-wiki -p 4100:80 ctfwiki/ctf-wiki
 ```
-And then access [http://localhost:4100/](http://localhost:4100/) .
+そのうえで [http://localhost:4100/](http://localhost:4100/) にアクセスしてください。
 
-## How to practice？
+## 練習方法
 
-Firstly, learn some basic security knowledge through online reading.
+まず、オンラインで読んで、セキュリティの基礎知識を学びます。
 
-Secondly, CTF Wiki has two sister projects.
+次に、CTF Wiki には2つの姉妹プロジェクトがあります。
 
-- All of the challenges that are mentioned are in the [ctf-challenges](https://github.com/ctf-wiki/ctf-challenges) repository, you can locate them with their corresponding category.
-- The tools mentioned in the CTF Wiki are constantly added to the [ctf-tools](https://github.com/ctf-wiki/ctf-tools) repository.
+- 取り上げた問題はすべて [ctf-challenges](https://github.com/ctf-wiki/ctf-challenges) リポジトリにあり、対応するカテゴリから探せます。
+- CTF Wiki で取り上げたツールは、[ctf-tools](https://github.com/ctf-wiki/ctf-tools) リポジトリに随時追加されています。
 
-## How to make CTF Wiki Better？
+## CTF Wiki をより良くするには
 
-We welcome to write content for the wiki and share what you have learned. 
+Wiki の内容を書いて、学んだことを共有していただくことを歓迎します。
 
-**Before you decide to contribute content, please read [CONTRIBUTING](https://ctf-wiki.org/en/contribute/before-contributing/)**.
+**内容を寄稿すると決める前に、[CONTRIBUTING](https://ctf-wiki.org/en/contribute/before-contributing/) を読んでください。**
 
-Thank you to all the people who have already contributed to CTF Wiki.
+すでに CTF Wiki に貢献してくださったすべての方に感謝します。
 
 <a href="https://github.com/ctf-wiki/ctf-wiki/graphs/contributors"><img src="https://contrib.rocks/image?repo=ctf-wiki/ctf-wiki" /></a>
 
-## What can you get?
+## 何が得られるか
 
-- Ability to learn new things quickly
-- Different ways of thinking
-- A love for solving problems
-- Interesting security techniques
-- Memorable and enriching experience
+- 新しいことを素早く学ぶ力
+- 異なる考え方
+- 問題を解くことへの愛着
+- 面白いセキュリティ技術
+- 記憶に残る、充実した経験
 
-Before reading the Wiki, we hope to give you some advice:
+Wiki を読む前に、いくつかアドバイスがあります。
 
-- Learn to ask [smart-questions](http://www.catb.org/~esr/faqs/smart-questions.html) .
-- Learn to use Google Search for self-improvement.
-- Be good at least one programming language, such as Python.
-- Practice is the most important learning tool.
-- Maintain the passions and desire to learn about new techniques.
+- [賢い質問](http://www.catb.org/~esr/faqs/smart-questions.html)のしかたを身につけてください。
+- 自分を高めるために、Google 検索を使いこなせるようになってください。
+- Python など、少なくとも1つのプログラミング言語に習熟してください。
+- 実践は、最も重要な学習手段です。
+- 新しい技術を学ぶ情熱と意欲を保ってください。
 
-The security circle is small and the areas of exploration is vast. Let's get started with **CTF Wiki**!
+セキュリティの世界は狭く、探索する領域は広大です。**CTF Wiki** で始めましょう!
