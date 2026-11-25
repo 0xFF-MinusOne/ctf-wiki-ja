@@ -1,0 +1,14 @@
+{
+  "upstreams": [
+    {
+      "repo": "ctf-wiki/ctf-wiki",
+      "branch": "master",
+      "paths": [
+        "docs/zh/docs/pwn",
+        "docs/zh/docs/reverse",
+        "docs/zh/docs/executable"
+      ],
+      "base": "fa49716b3bb33cb6935d650d09582416beb9a45f"
+    }
+  ]
+}
