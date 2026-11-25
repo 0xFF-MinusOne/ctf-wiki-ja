@@ -9,6 +9,7 @@ copyright: >-
   日本語訳(簡体字中国語から翻訳、原文から変更あり)。
   原著: <a href="https://github.com/ctf-wiki/ctf-wiki">ctf-wiki/ctf-wiki</a>(<a href="https://ctf-wiki.org">ctf-wiki.org</a>)。
   ライセンス: <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/deed.ja">CC BY-NC-SA 4.0</a>(非営利の目的でのみ利用できます)。
+  <br>Unofficial Japanese translation of <a href="https://github.com/ctf-wiki/ctf-wiki">ctf-wiki/ctf-wiki</a>. Not reviewed or endorsed by the original authors; the original text prevails.
 
 theme:
   name: material
