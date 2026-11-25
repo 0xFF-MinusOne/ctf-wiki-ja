@@ -13,6 +13,9 @@ copyright: >-
 theme:
   name: material
   language: ja
+  font: false
+  logo: assets/minusone-mark.svg
+  favicon: assets/minusone-avatar-light.svg
   # 本家(ctf-wiki.org)のテーマ設定に合わせる: 白を基調に赤のアクセント、上部の固定タブ、Noto Sans
   palette:
     primary: white
@@ -20,7 +23,6 @@ theme:
     scheme: preference
   icon:
     repo: fontawesome/brands/github-alt
-  logo: static/img/logo.png
   features:
     - navigation.tabs
     - navigation.tabs.sticky
@@ -79,6 +81,7 @@ extra_css:
   - static/css/extra.css
   - assets/ja-docs.css
   - assets/mkdocs.css
+  - assets/minusone.css
 
 extra_javascript:
   - javascripts/mathjax.js
